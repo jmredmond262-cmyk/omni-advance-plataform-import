@@ -41,6 +41,8 @@ private data class OmniJobPost(
     val location: String,
     val workType: String,
     val experience: String,
+    val remuneration: String,
+    val workSchedule: String,
     val contactPhone: String,
     val contactEmail: String,
     val createdAt: Long
@@ -79,6 +81,8 @@ fun JobBoardScreen(onBack: () -> Unit) {
     var location by remember { mutableStateOf("") }
     var workType by remember { mutableStateOf("Presencial") }
     var experience by remember { mutableStateOf("") }
+    var remuneration by remember { mutableStateOf("") }
+    var workSchedule by remember { mutableStateOf("A convenir") }
     var phone by remember { mutableStateOf(user?.phoneNumber.orEmpty()) }
     var email by remember { mutableStateOf(user?.email.orEmpty()) }
     var cvLinks by remember { mutableStateOf("") }
@@ -107,6 +111,8 @@ fun JobBoardScreen(onBack: () -> Unit) {
                                     location = doc.getString("location").orEmpty(),
                                     workType = doc.getString("workType").orEmpty(),
                                     experience = doc.getString("experience").orEmpty(),
+                                    remuneration = doc.getString("remuneration").orEmpty(),
+                                    workSchedule = doc.getString("workSchedule").orEmpty(),
                                     contactPhone = doc.getString("contactPhone").orEmpty(),
                                     contactEmail = doc.getString("contactEmail").orEmpty(),
                                     createdAt = doc.getTimestamp("createdAt")?.toDate()?.time ?: 0L
@@ -119,7 +125,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
                 }
         } else {
             loading = false
-            error = "Iniciá sesión para consultar la Bolsa de Trabajo."
+            error = "Iniciá sesión para consultar OMNI CONEX."
         }
         onDispose { registration?.remove() }
     }
@@ -191,6 +197,8 @@ fun JobBoardScreen(onBack: () -> Unit) {
             "location" to location.trim(),
             "workType" to workType,
             "experience" to experience.trim(),
+            "remuneration" to remuneration.trim(),
+            "workSchedule" to workSchedule,
             "contactPhone" to phone.trim(),
             "contactEmail" to email.trim(),
             "status" to "ACTIVE",
@@ -200,7 +208,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
             busy = false
             showPublish = false
             selectedTab = 0
-            title = ""; description = ""; experience = ""
+            title = ""; description = ""; experience = ""; remuneration = ""; workSchedule = "A convenir"
             feedback = "Publicación creada y visible para la comunidad OMNI."
         }.addOnFailureListener { exception ->
             busy = false
@@ -248,8 +256,8 @@ fun JobBoardScreen(onBack: () -> Unit) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver", tint = Color.White) }
             Column(Modifier.weight(1f)) {
-                Text("OMNI OPORTUNIDADES", color = Color(0xFF57DDF5), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                Text("Bolsa de Trabajo y Servicios", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text("OMNI CONEX", color = Color(0xFF57DDF5), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Empleo, oficios y servicios", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
             }
             Surface(color = Color(0xFF163B36), shape = RoundedCornerShape(8.dp)) {
                 Text("COMUNIDAD", color = Color(0xFF65E3B0), fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(7.dp))
@@ -263,10 +271,10 @@ fun JobBoardScreen(onBack: () -> Unit) {
         }
         if (selectedTab == 0) {
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Buscar empleo, oficio o servicio") }, leadingIcon = { Icon(Icons.Default.Search, null) })
+            OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Buscar por profesión, oficio, servicio o empleo") }, leadingIcon = { Icon(Icons.Default.Search, null) })
             Spacer(Modifier.height(7.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Todos", "Empleo", "Oficios y servicios").forEach { value ->
+                listOf("Todos", "Empleo", "Oficios y servicios", "Profesionales", "Trabajo temporal", "Servicios independientes").forEach { value ->
                     FilterChip(selected = category == value, onClick = { category = value }, label = { Text(value, fontSize = 10.sp) })
                 }
             }
@@ -293,7 +301,9 @@ fun JobBoardScreen(onBack: () -> Unit) {
                                     Surface(color = Color(0xFF1B2B45), shape = RoundedCornerShape(7.dp)) { Text(post.workType, color = Color(0xFFB8C8D9), fontSize = 9.sp, modifier = Modifier.padding(6.dp)) }
                                 }
                                 Text(post.description, color = Color(0xFFD2DCEC), fontSize = 11.sp)
-                                if (post.experience.isNotBlank()) Text("Experiencia: ${post.experience}", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                                if (post.experience.isNotBlank()) Text("Experiencia requerida: ${post.experience}", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                                if (post.workSchedule.isNotBlank()) Text("Jornada: ${post.workSchedule}", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                                if (post.remuneration.isNotBlank()) Text("Remuneración: ${post.remuneration}", color = Color(0xFF65E3B0), fontSize = 10.sp)
                                 Text("Publicado por ${post.ownerName}", color = Color(0xFF9AAAC2), fontSize = 9.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     if (post.ownerUid != uid) {
@@ -341,9 +351,16 @@ fun JobBoardScreen(onBack: () -> Unit) {
             }
             OutlinedTextField(location, { location = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Localidad o zona") }, singleLine = true)
             OutlinedTextField(experience, { experience = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Experiencia o requisitos (opcional)") })
+            OutlinedTextField(remuneration, { remuneration = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Remuneración o presupuesto (opcional)") }, singleLine = true)
+            Text("Jornada o disponibilidad", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                listOf("Completa", "Media jornada", "Por horas", "A convenir").forEach { value ->
+                    FilterChip(selected = workSchedule == value, onClick = { workSchedule = value }, label = { Text(value, fontSize = 9.sp) })
+                }
+            }
             Text("Modalidad", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                listOf("Presencial", "Remoto", "Híbrido").forEach { value ->
+                listOf("Presencial", "Remoto", "Híbrido", "Por proyecto", "Freelance").forEach { value ->
                     FilterChip(selected = workType == value, onClick = { workType = value }, label = { Text(value, fontSize = 10.sp) })
                 }
             }
@@ -368,7 +385,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
                 }
                 else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(applications, key = { it.id }) { application ->
-                        val postTitle = posts.firstOrNull { it.id == application.postId }?.title ?: "Publicación " + application.postId.take(8)
+                        val postTitle = posts.firstOrNull { it.id == application.postId }?.title ?: "Publicación original no disponible · ID ${application.postId.take(8)}"
                         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B30)), shape = RoundedCornerShape(15.dp)) {
                             Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(postTitle, color = Color(0xFF57DDF5), fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -395,6 +412,6 @@ fun JobBoardScreen(onBack: () -> Unit) {
         }
     }
     feedback?.let { message ->
-        AlertDialog(onDismissRequest = { feedback = null }, title = { Text("OMNI Oportunidades") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { feedback = null }) { Text("Aceptar") } })
+        AlertDialog(onDismissRequest = { feedback = null }, title = { Text("OMNI CONEX") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { feedback = null }) { Text("Aceptar") } })
     }
 }
