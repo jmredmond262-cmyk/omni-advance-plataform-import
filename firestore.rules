@@ -247,6 +247,39 @@ service cloud.firestore {
       allow update, delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
+    // OMNI CONEX professional profiles. Public visibility is an explicit owner choice.
+    match /omniProfessionalProfiles/{profileUid} {
+      allow read: if signedIn()
+        && (request.auth.uid == profileUid || resource.data.visibility == "PUBLIC");
+      allow create: if signedIn()
+        && request.auth.uid == profileUid
+        && request.resource.data.ownerUid == profileUid
+        && request.resource.data.profession is string
+        && request.resource.data.profession.size() > 0
+        && request.resource.data.profession.size() <= 100
+        && request.resource.data.skills is string
+        && request.resource.data.skills.size() <= 1000
+        && request.resource.data.experience is string
+        && request.resource.data.experience.size() <= 1000
+        && request.resource.data.education is string
+        && request.resource.data.education.size() <= 500
+        && request.resource.data.location is string
+        && request.resource.data.location.size() > 0
+        && request.resource.data.location.size() <= 100
+        && request.resource.data.availability in ["Disponible", "Buscando activamente", "Freelance", "No disponible"]
+        && request.resource.data.cvLink is string
+        && request.resource.data.cvLink.size() <= 1500
+        && request.resource.data.visibility in ["PUBLIC", "PRIVATE"]
+        && request.resource.data.createdAt is timestamp;
+      allow update: if signedIn()
+        && request.auth.uid == profileUid
+        && resource.data.ownerUid == profileUid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && changedOnly(["profession", "skills", "experience", "education", "location", "availability", "cvLink", "visibility", "updatedAt"])
+        && request.resource.data.visibility in ["PUBLIC", "PRIVATE"];
+      allow delete: if false;
+    }
+
     match /jobPosts/{postId} {
       allow read: if signedIn();
       allow create: if signedIn()
