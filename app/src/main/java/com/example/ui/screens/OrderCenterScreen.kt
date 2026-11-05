@@ -45,6 +45,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.util.UUID
+import org.json.JSONObject
 
 private data class OrderLine(val productId: String, val name: String, val price: Double, val quantity: Int)
 private data class OmniStoreOrder(
@@ -79,7 +80,21 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var merchantReady by remember { mutableStateOf(false) }
     var merchantError by remember { mutableStateOf<String?>(null) }
     var orders by remember { mutableStateOf<List<OmniStoreOrder>>(emptyList()) }
-    var cart by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val cartPreferences = remember { context.getSharedPreferences("omni_order_cart_drafts", 0) }
+    fun readSavedCart(storeId: String): Map<String, Int> {
+        val json = runCatching { JSONObject(cartPreferences.getString(storeId, "{}") ?: "{}") }.getOrNull() ?: JSONObject()
+        return json.keys().asSequence().mapNotNull { key ->
+            val quantity = json.optInt(key, 0)
+            if (quantity > 0) key to quantity else null
+        }.toMap()
+    }
+    fun updateCart(next: Map<String, Int>) {
+        cart = next
+        val json = JSONObject()
+        next.filterValues { it > 0 }.forEach { (id, quantity) -> json.put(id, quantity) }
+        cartPreferences.edit().putString(store.id, json.toString()).apply()
+    }
+    var cart by remember(store.id) { mutableStateOf(readSavedCart(store.id)) }
     var productSearch by remember { mutableStateOf("") }
     var selectedProductCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var fulfillmentType by remember { mutableStateOf("RETIRO") }
@@ -121,7 +136,6 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
 
     LaunchedEffect(store.id) {
         // El carrito pertenece a un único comercio: nunca mezclar artículos de locales distintos.
-        cart = emptyMap()
         productSearch = ""
         selectedProductCategory = null
         deliveryAddress = ""
@@ -251,7 +265,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             profile.fullName, profile.phone, cartLines, total,
                             "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce
                         )
-                        cart = emptyMap()
+                        updateCart(emptyMap())
                     }.addOnFailureListener { e ->
                         sending = false
                         feedback = e.localizedMessage ?: "No se pudo registrar el pedido. Revisá las reglas de Firestore."
@@ -350,7 +364,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             return
         }
         db.collection("storeOrders").document(order.id).update(
-            mapOf("status" to "CANCELADO", "updatedAt" to FieldValue.serverTimestamp(), "cancelledBy" to uid)
+            mapOf("status" to "CANCELADO", "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
             UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_CANCELLED_BY_CUSTOMER", mapOf("operationId" to order.id, "stage" to "CUSTOMER_CANCELLATION_CONFIRMED", "success" to true))
             feedback = "El pedido fue cancelado."
@@ -440,12 +454,12 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             if (!cart.containsKey(product.id) && cart.size >= 30) {
                                 feedback = "El pedido admite hasta 30 productos distintos."
                             } else {
-                                cart = cart + (product.id to ((cart[product.id] ?: 0) + 1))
+                                updateCart(cart + (product.id to ((cart[product.id] ?: 0) + 1)))
                             }
                         },
                         onRemove = {
                             val next = (cart[product.id] ?: 0) - 1
-                            cart = if (next <= 0) cart - product.id else cart + (product.id to next)
+                            updateCart(if (next <= 0) cart - product.id else cart + (product.id to next))
                         }
                     )
                 }
