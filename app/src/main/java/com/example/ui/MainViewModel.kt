@@ -81,6 +81,7 @@ sealed class Screen(val title: String) {
     object Routine : Screen("Modo Rutina")
     object JobBoard : Screen("OMNI CONEX")
     object Events : Screen("Eventos OMNI")
+    object Moments : Screen("OMNI Momentos")
     object OrderCenter : Screen("Pedidos QR")
     object MerchantOrders : Screen("Pedidos y Delivery")
 }
