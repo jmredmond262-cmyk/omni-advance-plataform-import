@@ -435,11 +435,11 @@ async function finance(env) {
       operationCount,
       transactionCount,
       transactionSampleSize: transactions.length,
-      transactionSampleComplete: transactions.length < 100,
+      transactionSampleComplete: transactionCount <= transactions.length,
       accountSampleSize: accountPage.items.length,
       accountSampleComplete: accountPage.complete,
       operationsSampleSize: operationPage.length,
-      operationsSampleComplete: operationPage.length < 5000
+      operationsSampleComplete: operationCount <= operationPage.length
     },
     accounts,
     transactions,
