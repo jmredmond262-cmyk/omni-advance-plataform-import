@@ -3,7 +3,7 @@ name: Deploy OMNI Admin API to Cloudflare
 on:
   workflow_dispatch:
   push:
-    branches: [omni-admin-rebuild]
+    branches: [omni-advance-1.4]
     paths:
       - 'workers/**'
       - '.github/workflows/deploy-omni-admin-cloudflare.yml'
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout OMNI Admin branch
         uses: actions/checkout@v4
         with:
-          ref: omni-admin-rebuild
+          ref: omni-advance-1.4
 
       - name: Configure Node
         uses: actions/setup-node@v4
