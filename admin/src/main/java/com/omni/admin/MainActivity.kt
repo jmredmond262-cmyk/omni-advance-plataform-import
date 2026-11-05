@@ -65,7 +65,7 @@ private data class AdminTab(val id: String, val label: String, val collection: S
 private val tabs = listOf(
   AdminTab("dashboard", "Resumen"), AdminTab("users", "Usuarios", "users"),
   AdminTab("wallets", "Billeteras", "walletAccounts"), AdminTab("operations", "Operaciones", "walletOperations"), AdminTab("finance", "Finanzas"),
-  AdminTab("stores", "Comercios", "merchantProfiles"), AdminTab("orders", "Pedidos", "storeOrders"), AdminTab("events", "Eventos", "omniEvents"), AdminTab("moments", "Momentos", "omniMoments"),
+  AdminTab("stores", "Comercios", "merchantProfiles"), AdminTab("orders", "Pedidos", "storeOrders"), AdminTab("events", "Eventos", "omniEvents"), AdminTab("moments", "Momentos", "omniMoments"), AdminTab("conexPosts", "Publicaciones CONEX", "jobPosts"), AdminTab("conexProfiles", "Perfiles CONEX", "omniProfessionalProfiles"),
   AdminTab("feedback", "Comentarios", "appFeedback"), AdminTab("activity", "Actividad", "usageEvents"), AdminTab("modules", "Módulos", "moduleRegistry"),
   AdminTab("audit", "Auditoría", "adminAuditLogs"), AdminTab("invitations", "Invitaciones", "betaInvitations"), AdminTab("settings", "Configuración")
 )
@@ -74,7 +74,7 @@ private val navGroups = listOf(
   AdminNavGroup("overview", "Inicio", Icons.Default.Dashboard, listOf("dashboard")),
   AdminNavGroup("people", "Personas", Icons.Default.PeopleAlt, listOf("users", "feedback")),
   AdminNavGroup("commerce", "Comercio", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
-  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "modules", "audit", "invitations", "settings"))
+  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings"))
 )
 
 @Composable
@@ -359,7 +359,9 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
     Triple("Sesiones · 7 días", analytics.optInt("sessions7d").toString(), Icons.Default.QueryStats),
     Triple("Operaciones", counts.optInt("walletOperations").toString(), Icons.Default.SwapHoriz),
     Triple("Eventos", counts.optInt("omniEvents").toString(), Icons.Default.Event),
-    Triple("Momentos", counts.optInt("omniMoments").toString(), Icons.Default.Cake)
+    Triple("Momentos", counts.optInt("omniMoments").toString(), Icons.Default.Cake),
+    Triple("Publicaciones CONEX", counts.optInt("jobPosts").toString(), Icons.Default.Work),
+    Triple("Perfiles CONEX", counts.optInt("omniProfessionalProfiles").toString(), Icons.Default.Badge)
   )
   val trend = jsonArrayToList(payload.optJSONArray("usageTrend"))
   val hourlyActivity = jsonArrayToList(analytics.optJSONArray("hourlyActivity"))
@@ -425,6 +427,8 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
               "Operaciones" -> "operations"
               "Eventos" -> "events"
               "Momentos" -> "moments"
+              "Publicaciones CONEX" -> "conexPosts"
+              "Perfiles CONEX" -> "conexProfiles"
               else -> "dashboard"
             }
             Card(
@@ -764,7 +768,7 @@ private val fieldLabels = mapOf(
   "fulfillmentType" to "Entrega", "action" to "Acción", "target" to "Destino",
   "message" to "Mensaje", "description" to "Descripción", "enabled" to "Habilitado",
   "event" to "Evento", "module" to "Módulo", "eventName" to "Evento", "screen" to "Pantalla", "appVersion" to "Versión",
-  "category" to "Categoría", "occasion" to "Tipo de momento", "date" to "Fecha especial", "ownerUid" to "Cuenta propietaria", "startAt" to "Inicio", "endAt" to "Finalización",
+  "category" to "Categoría", "profession" to "Profesión u oficio", "availability" to "Disponibilidad", "visibility" to "Visibilidad", "occasion" to "Tipo de momento", "date" to "Fecha especial", "ownerUid" to "Cuenta propietaria", "startAt" to "Inicio", "endAt" to "Finalización",
   "createdAt" to "Fecha de registro", "updatedAt" to "Última actualización", "lastSeenAt" to "Última actividad", "userLabel" to "Usuario",
   "data" to "Detalles de acción", "screenName" to "Pantalla", "eventId" to "Identificador de evento",
   "cvu" to "CVU"
@@ -817,6 +821,8 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "walletTransactions" -> friendlyEnum(firstPresentValue(item, "type", "kind", "title").ifBlank { "Movimiento OMNI Pay · tipo no informado" })
     "omniEvents" -> firstPresentValue(item, "title", "name", "event", "eventName").ifBlank { "Evento comunitario · título no informado" }
     "omniMoments" -> friendlyEnum(firstPresentValue(item, "occasion").ifBlank { "Fecha especial · tipo no informado" }) + " · " + firstPresentValue(item, "date").ifBlank { "fecha no informada" }
+    "jobPosts" -> firstPresentValue(item, "title").ifBlank { "Publicación CONEX · título no informado" }
+    "omniProfessionalProfiles" -> firstPresentValue(item, "profession").ifBlank { "Perfil profesional · profesión no informada" } + " · " + firstPresentValue(item, "location").ifBlank { "zona no informada" }
     "adminAuditLogs" -> friendlyEnum(firstPresentValue(item, "action").ifBlank { "Registro administrativo · acción no informada" })
     else -> firstPresentValue(item, "title", "name", "action").ifBlank { "Registro de ${type.ifBlank { "módulo no identificado" }} · clasificación pendiente" }
   }
@@ -831,6 +837,8 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "usageEvents" -> listOf("userLabel", "module", "appVersion", "createdAt")
     "omniEvents" -> listOf("description", "category", "status", "startAt", "createdAt")
     "omniMoments" -> listOf("occasion", "date", "status", "ownerUid", "createdAt")
+    "jobPosts" -> listOf("category", "location", "workType", "workSchedule", "remuneration", "status", "createdAt", "ownerUid")
+    "omniProfessionalProfiles" -> listOf("location", "availability", "visibility", "ownerUid", "updatedAt")
     else -> listOf("status", "createdAt", "updatedAt")
   }
   val visible = preferred.mapNotNull { key ->
