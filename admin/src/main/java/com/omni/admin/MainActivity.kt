@@ -637,6 +637,11 @@ private fun FinanceContent(payload: JSONObject) {
   val accounts = jsonArrayToList(payload.optJSONArray("accounts"))
   val transactions = jsonArrayToList(payload.optJSONArray("transactions"))
   val operations = jsonArrayToList(payload.optJSONArray("operations"))
+  val accountCount = summary.optInt("accountCount", accounts.size)
+  val transactionCount = summary.optInt("transactionCount", transactions.size)
+  val accountSampleComplete = summary.optBoolean("accountSampleComplete", true)
+  val transactionSampleComplete = summary.optBoolean("transactionSampleComplete", transactions.size < 100)
+  val operationSampleComplete = summary.optBoolean("operationsSampleComplete", operations.size < 100)
   fun money(key: String): String = "OM$ " + String.format("%.2f", summary.optDouble(key))
   LazyColumn(
     Modifier.fillMaxSize().background(Navy).padding(horizontal = 15.dp),
@@ -652,27 +657,28 @@ private fun FinanceContent(payload: JSONObject) {
       ) {
         Text("OMNI PAY · CONTROL FINANCIERO DEMO", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.2.sp)
         Text(money("currentBalance"), color = White, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
-        Text("Capital virtual actualmente distribuido entre las billeteras", color = Muted, fontSize = 12.sp)
-        Text("${summary.optInt("accountCount")} cuentas · ${summary.optInt("transactionCount")} movimientos individuales", color = Mint, fontSize = 11.sp)
+        Text(if (accountSampleComplete) "Capital virtual DEMO distribuido entre las billeteras" else "Capital virtual DEMO · muestra parcial de cuentas", color = Muted, fontSize = 12.sp)
+        Text("$accountCount cuentas registradas · $transactionCount movimientos individuales", color = Mint, fontSize = 11.sp)
+        Text("Cuentas sumadas: ${summary.optInt("accountSampleSize", accountCount)} · Operaciones analizadas: ${summary.optInt("operationsSampleSize", 0)}${if (operationSampleComplete) " · muestra completa" else " · muestra limitada"}", color = Muted, fontSize = 9.sp)
       }
     }
     item { Text("Capital y circulación", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
     item {
       Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         FinanceMetric("Capital inicial DEMO", money("initialCapital"), Icons.Default.Savings, Modifier.weight(1f))
-        FinanceMetric("Recargas", money("deposits"), Icons.Default.AddCard, Modifier.weight(1f))
+        FinanceMetric(if (operationSampleComplete) "Recargas DEMO" else "Recargas · muestra", money("deposits"), Icons.Default.AddCard, Modifier.weight(1f))
       }
     }
     item {
       Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        FinanceMetric("Transferencias", money("transferVolume"), Icons.Default.SwapHoriz, Modifier.weight(1f))
-        FinanceMetric("Pagos QR", money("qrVolume"), Icons.Default.QrCode2, Modifier.weight(1f))
+        FinanceMetric(if (operationSampleComplete) "Transferencias" else "Transferencias · muestra", money("transferVolume"), Icons.Default.SwapHoriz, Modifier.weight(1f))
+        FinanceMetric(if (operationSampleComplete) "Pagos QR" else "Pagos QR · muestra", money("qrVolume"), Icons.Default.QrCode2, Modifier.weight(1f))
       }
     }
     item {
       Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        FinanceMetric("Transferencias recibidas", money("transferIn"), Icons.Default.CallReceived, Modifier.weight(1f))
-        FinanceMetric("Cobros QR", money("qrCollections"), Icons.Default.QrCode2, Modifier.weight(1f))
+        FinanceMetric(if (operationSampleComplete) "Transferencias recibidas" else "Transferencias recibidas · muestra", money("transferIn"), Icons.Default.CallReceived, Modifier.weight(1f))
+        FinanceMetric(if (operationSampleComplete) "Cobros QR" else "Cobros QR · muestra", money("qrCollections"), Icons.Default.QrCode2, Modifier.weight(1f))
       }
     }
     item {
@@ -686,13 +692,13 @@ private fun FinanceContent(payload: JSONObject) {
         }
       }
     }
-    item { Text("Cuentas y saldos", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+    item { Text("Cuentas y saldos · ${accounts.size} visibles de $accountCount", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
     if (accounts.isEmpty()) item { EmptyState("Todavía no hay billeteras registradas.") }
     else items(accounts, key = { it["id"]?.toString() ?: it.hashCode().toString() }) { RecordCard(it, "walletAccounts") }
-    item { Text("Historial de movimientos", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+    item { Text("Historial de movimientos · ${transactions.size} visibles de $transactionCount", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
     if (transactions.isEmpty()) item { EmptyState("Todavía no hay movimientos individuales registrados.") }
     else items(transactions, key = { it["id"]?.toString() ?: it.hashCode().toString() }) { RecordCard(it, "walletTransactions") }
-    item { Text("Operaciones globales", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+    item { Text("Operaciones globales · ${operations.size} más recientes${if (operationSampleComplete) "" else " · muestra limitada"}", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
     if (operations.isEmpty()) item { EmptyState("Las operaciones se reflejan en el historial individual de cada billetera. La colección global todavía no contiene registros.") }
     else items(operations.take(100), key = { it["id"]?.toString() ?: it.hashCode().toString() }) { RecordCard(it, "walletOperations") }
   }
