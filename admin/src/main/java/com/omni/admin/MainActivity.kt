@@ -507,7 +507,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
       }
     }
   }
-  if (showMap) ActivityMapDialog(onDismiss = { showMap = false })
+  if (showMap) ActivityMapDialog(points = payload.optJSONArray("geoActivity") ?: JSONArray(), onDismiss = { showMap = false })
 }
 
 @Composable
@@ -548,6 +548,17 @@ html,body,#map{height:100%;width:100%;margin:0;background:#071321}
 (function(){
  if(!window.L){document.getElementById('status').innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>No se pudo cargar el proveedor cartográfico. Revisá la conexión a internet.';return;}
  var map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([-31.6333,-60.7000],12);
+ var activityLayer=L.layerGroup().addTo(map);
+ window.setActivityPoints=function(points){
+   activityLayer.clearLayers();
+   (Array.isArray(points)?points:[]).forEach(function(point){
+     var lat=Number(point.latitude), lon=Number(point.longitude), count=Number(point.count);
+     if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(count)||count<3)return;
+     L.circleMarker([lat,lon],{radius:Math.min(18,7+Math.log(count)*2),color:'#00e5ff',weight:2,fillColor:'#00b9e8',fillOpacity:.62})
+       .bindPopup('<b>Actividad agregada OMNI</b><br>'+count+' eventos agrupados')
+       .addTo(activityLayer);
+   });
+ };
  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
    subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap contributors · © CARTO'
  }).addTo(map);
@@ -559,7 +570,8 @@ html,body,#map{height:100%;width:100%;margin:0;background:#071321}
  window.setMapScope=function(scope){
    var item=zones[scope]||zones.Local;
    map.flyTo(item.center,item.zoom,{duration:.65});
-   document.getElementById('status').innerHTML='<b>OMNI · '+scope.toUpperCase()+'</b><br>'+item.label+' · Cartografía base activa. Sin puntos individuales ni ubicaciones inventadas.';
+   var total=activityLayer.getLayers().length;
+   document.getElementById('status').innerHTML='<b>OMNI · '+scope.toUpperCase()+'</b><br>'+item.label+' · '+(total?total+' áreas agregadas de actividad':'Cartografía activa · todavía no hay áreas con volumen suficiente para mostrar')+'.';
    setTimeout(function(){map.invalidateSize();},250);
  };
  setTimeout(function(){map.invalidateSize();},300);
@@ -570,7 +582,7 @@ html,body,#map{height:100%;width:100%;margin:0;background:#071321}
 """.trimIndent()
 
 @Composable
-private fun ActivityMapDialog(onDismiss: () -> Unit) {
+private fun ActivityMapDialog(points: JSONArray, onDismiss: () -> Unit) {
   var scope by remember { mutableStateOf("Local") }
   var mapView by remember { mutableStateOf<WebView?>(null) }
   Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -614,7 +626,13 @@ private fun ActivityMapDialog(onDismiss: () -> Unit) {
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.loadsImagesAutomatically = true
-              webViewClient = WebViewClient()
+              webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView, url: String) {
+                  super.onPageFinished(view, url)
+                  view.evaluateJavascript("window.setActivityPoints && window.setActivityPoints(\${points.toString()})", null)
+                  view.evaluateJavascript("window.setMapScope && window.setMapScope('Local')", null)
+                }
+              }
               setBackgroundColor(android.graphics.Color.rgb(7, 19, 33))
               loadDataWithBaseURL("https://omni-admin.local/", activityMapHtml(), "text/html", "UTF-8", null)
               mapView = this
