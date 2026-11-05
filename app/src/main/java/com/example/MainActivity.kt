@@ -120,6 +120,7 @@ import com.example.ui.screens.WalletScreen
 import com.example.ui.screens.RoutineModeScreen
 import com.example.ui.screens.JobBoardScreen
 import com.example.ui.screens.EventsScreen
+import com.example.ui.screens.MomentsScreen
 import com.example.ui.screens.OrderCenterScreen
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.MyApplicationTheme
@@ -316,6 +317,7 @@ fun OmniApp(viewModel: MainViewModel) {
                 currentScreen is Screen.Routine ||
                 currentScreen is Screen.JobBoard ||
                 currentScreen is Screen.Events ||
+                currentScreen is Screen.Moments ||
                 currentScreen is Screen.MyPurchases ||
                 currentScreen is Screen.OffersBenefits ||
                 currentScreen is Screen.OrderCenter ||
@@ -335,6 +337,7 @@ fun OmniApp(viewModel: MainViewModel) {
             is Screen.Routine -> viewModel.navigateTo(Screen.DailyHub)
             is Screen.JobBoard -> viewModel.navigateTo(Screen.DailyHub)
             is Screen.Events -> viewModel.navigateTo(Screen.DailyHub)
+            is Screen.Moments -> viewModel.navigateTo(Screen.DailyHub)
             is Screen.MyPurchases -> viewModel.navigateTo(Screen.DailyHub)
             is Screen.OffersBenefits -> viewModel.navigateTo(Screen.DailyHub)
             is Screen.OrderCenter -> viewModel.navigateTo(orderCenterReturnScreen)
@@ -691,6 +694,7 @@ fun OmniApp(viewModel: MainViewModel) {
                     Screen.Routine -> RoutineModeScreen(onBack = { viewModel.navigateTo(Screen.DailyHub) })
                     Screen.JobBoard -> JobBoardScreen(onBack = { viewModel.navigateTo(Screen.DailyHub) })
                     Screen.Events -> EventsScreen(onBack = { viewModel.navigateTo(Screen.DailyHub) })
+                    Screen.Moments -> MomentsScreen(onBack = { viewModel.navigateTo(Screen.DailyHub) })
                     Screen.OrderCenter -> OrderCenterScreen(viewModel = viewModel, merchantMode = false, onBack = { viewModel.navigateTo(orderCenterReturnScreen) })
                     Screen.MerchantOrders -> OrderCenterScreen(viewModel = viewModel, merchantMode = true, onBack = { viewModel.navigateTo(Screen.MerchantHub) })
                     else -> DailyHubScreen(viewModel = viewModel)
