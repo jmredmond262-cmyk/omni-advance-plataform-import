@@ -415,7 +415,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
       items(metrics.chunked(columns)) { rowMetrics ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           rowMetrics.forEachIndexed { index, metric ->
-            val accents = listOf(Mint, Color(0xFF27BFEA), Color(0xFF168DBD), Color(0xFF5ADCF4))
+            val accents = listOf(Color(0xFF16CFFF), Color(0xFF32E7A0), Color(0xFFBD70FF), Color(0xFFFFB52E))
             val accent = accents[(metrics.indexOf(metric) % accents.size)]
             val destination = when (metric.first) {
               "Cuentas de usuario", "Usuarios activos · 7 días" -> "users"
@@ -820,15 +820,31 @@ private fun looksLikeTechnicalId(value: String): Boolean =
 @Composable
 private fun RecordCard(item: Map<String, Any?>, type: String) {
   var expanded by remember(item["id"]) { mutableStateOf(false) }
-  val title = when (type) {
+  // RecordsContent passes tab IDs; dashboard panels may pass Firestore collection names.
+  // Normalize both forms so every module uses its real, module-specific fields.
+  val recordType = when (type) {
+    "wallets" -> "walletAccounts"
+    "operations" -> "walletOperations"
+    "stores" -> "merchantProfiles"
+    "orders" -> "storeOrders"
+    "activity" -> "usageEvents"
+    "events" -> "omniEvents"
+    "moments" -> "omniMoments"
+    "conexPosts" -> "jobPosts"
+    "conexProfiles" -> "omniProfessionalProfiles"
+    "feedback" -> "appFeedback"
+    "audit" -> "adminAuditLogs"
+    else -> type
+  }
+  val title = when (recordType) {
     "users" -> firstPresentValue(item, "displayName", "fullName", "name", "email").ifBlank { "Perfil de usuario · nombre no informado" }
     "walletAccounts" -> firstPresentValue(item, "holderName", "ownerName", "fullName", "displayName", "name", "email").ifBlank { "Cuenta OMNI Pay · titular no informado" }
-    "walletOperations" -> friendlyEnum(firstPresentValue(item, "kind", "type", "title").ifBlank { "Operación de billetera · tipo no informado" })
+    "walletOperations" -> friendlyEnum(firstPresentValue(item, "operationType", "transactionType", "kind", "type", "action", "title", "description").ifBlank { "Tipo de movimiento no informado" })
     "merchantProfiles" -> firstPresentValue(item, "storeName", "name").ifBlank { "Perfil comercial · nombre no informado" }
     "storeOrders" -> "Pedido " + firstPresentValue(item, "orderNumber", "status").ifBlank { "de comercio · número no informado" }
     "appFeedback" -> "Comentario de usuario"
     "usageEvents" -> friendlyEnum(firstPresentValue(item, "event", "eventName").ifBlank { "Evento de uso · tipo no informado" })
-    "walletTransactions" -> friendlyEnum(firstPresentValue(item, "type", "kind", "title").ifBlank { "Movimiento OMNI Pay · tipo no informado" })
+    "walletTransactions" -> friendlyEnum(firstPresentValue(item, "operationType", "transactionType", "type", "kind", "action", "title", "description").ifBlank { "Tipo de movimiento no informado" })
     "omniEvents" -> firstPresentValue(item, "title", "name", "event", "eventName").ifBlank { "Evento comunitario · título no informado" }
     "omniMoments" -> friendlyEnum(firstPresentValue(item, "occasion").ifBlank { "Fecha especial · tipo no informado" }) + " · " + firstPresentValue(item, "date").ifBlank { "fecha no informada" }
     "jobPosts" -> firstPresentValue(item, "title").ifBlank { "Publicación CONEX · título no informado" }
@@ -836,7 +852,7 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "adminAuditLogs" -> friendlyEnum(firstPresentValue(item, "action").ifBlank { "Registro administrativo · acción no informada" })
     else -> firstPresentValue(item, "title", "name", "action").ifBlank { "Registro de ${type.ifBlank { "módulo no identificado" }} · clasificación pendiente" }
   }
-  val preferred = when (type) {
+  val preferred = when (recordType) {
     "users" -> listOf("email", "phoneNumber", "phone", "createdAt", "lastSeenAt")
     "walletAccounts" -> listOf("alias", "email", "balance", "cashbackTotal", "createdAt")
     "walletOperations" -> listOf("amount", "status", "createdAt")
@@ -859,21 +875,31 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
   }
   val protectedKeys = setOf("password", "token", "accessToken", "refreshToken", "secret", "apiKey", "qrNonce", "rawData", "authorization")
   val details = item.entries.filter { (key, value) -> key !in protectedKeys && value != null && displayValue(value).isNotBlank() }.sortedBy { it.key }
+  val accent = when (recordType) {
+    "users" -> Color(0xFF16CFFF)
+    "walletAccounts", "walletOperations", "walletTransactions" -> Color(0xFF32E7A0)
+    "merchantProfiles", "storeOrders" -> Color(0xFFFFB52E)
+    "appFeedback", "usageEvents" -> Color(0xFFBD70FF)
+    "omniEvents", "omniMoments" -> Color(0xFF16CFFF)
+    "jobPosts", "omniProfessionalProfiles" -> Color(0xFFFF7DB8)
+    "adminAuditLogs" -> Color(0xFFFF8A65)
+    else -> Mint
+  }
   Card(
-    Modifier.fillMaxWidth().border(1.dp, Color(0xFF1A5068), RoundedCornerShape(14.dp)).clickable { expanded = !expanded },
+    Modifier.fillMaxWidth().border(1.dp, accent.copy(alpha = 0.72f), RoundedCornerShape(14.dp)).clickable { expanded = !expanded },
     colors = CardDefaults.cardColors(containerColor = Panel),
     shape = RoundedCornerShape(14.dp),
     elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
   ) {
-    Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF10243A), Panel))).padding(11.dp)) {
+    Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(accent.copy(alpha = 0.15f), Panel, Color(0xFF091426)))).padding(11.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(title.take(100), modifier = Modifier.weight(1f), color = White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 2)
-        Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = if (expanded) "Contraer detalle" else "Ver detalle", tint = Mint)
+        Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = if (expanded) "Contraer detalle" else "Ver detalle", tint = accent)
       }
       visible.forEach { line -> Spacer(Modifier.height(3.dp)); Text(line.take(180), color = Muted, fontSize = 10.sp, maxLines = 2) }
       if (expanded) {
         Spacer(Modifier.height(10.dp)); HorizontalDivider(color = PanelSoft)
-        Text("Detalle del registro", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 9.dp, bottom = 4.dp))
+        Text("Detalle del registro", color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 9.dp, bottom = 4.dp))
         details.forEach { (key, value) ->
           val rendered = displayValue(value)
           val label = fieldLabels[key] ?: key.replace(Regex("([a-z])([A-Z])"), "$1 $2").replaceFirstChar { it.uppercase() }
@@ -882,7 +908,7 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
             Text(rendered.take(1200), color = White, fontSize = 11.sp)
           }
         }
-      } else Text("Tocá para ver todos los datos disponibles", color = Mint, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+      } else Text("Tocá para ver todos los datos disponibles", color = accent, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
     }
   }
 }
