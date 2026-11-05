@@ -639,6 +639,7 @@ private fun FinanceContent(payload: JSONObject) {
   val operations = jsonArrayToList(payload.optJSONArray("operations"))
   val accountCount = summary.optInt("accountCount", accounts.size)
   val transactionCount = summary.optInt("transactionCount", transactions.size)
+  val operationCount = summary.optInt("operationCount", operations.size)
   val accountSampleComplete = summary.optBoolean("accountSampleComplete", true)
   val transactionSampleComplete = summary.optBoolean("transactionSampleComplete", transactions.size < 100)
   val operationSampleComplete = summary.optBoolean("operationsSampleComplete", operations.size < 100)
@@ -698,7 +699,7 @@ private fun FinanceContent(payload: JSONObject) {
     item { Text("Historial de movimientos · ${transactions.size} visibles de $transactionCount", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
     if (transactions.isEmpty()) item { EmptyState("Todavía no hay movimientos individuales registrados.") }
     else items(transactions, key = { it["id"]?.toString() ?: it.hashCode().toString() }) { RecordCard(it, "walletTransactions") }
-    item { Text("Operaciones globales · ${operations.size} más recientes${if (operationSampleComplete) "" else " · muestra limitada"}", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+    item { Text("Operaciones globales · ${operations.size} visibles de $operationCount${if (operationSampleComplete) "" else " · muestra limitada"}", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
     if (operations.isEmpty()) item { EmptyState("Las operaciones se reflejan en el historial individual de cada billetera. La colección global todavía no contiene registros.") }
     else items(operations.take(100), key = { it["id"]?.toString() ?: it.hashCode().toString() }) { RecordCard(it, "walletOperations") }
   }
