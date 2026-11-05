@@ -59,7 +59,7 @@ async function audit(actor: AdminContext, action: string, target: string, detail
 }
 
 async function dashboard() {
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "appFeedback", "usageEvents", "moduleRegistry"];
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry"];
   const counts = await Promise.all(collections.map(count));
   const since = Timestamp.fromDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
   const [wallets, users, operations, usage, profiles] = await Promise.all([
@@ -156,7 +156,7 @@ async function dashboard() {
 }
 
 async function listCollection(name: string, limit = 100, pageToken = "") {
-  const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
+  const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
   if (!allowed.has(name)) throw new HttpsError("invalid-argument", "Colección no disponible.");
   const safeLimit = Math.min(Math.max(limit, 1), 200);
   let query = db.collection(name).orderBy(FieldPath.documentId()).limit(safeLimit + 1);
@@ -177,6 +177,14 @@ async function listCollection(name: string, limit = 100, pageToken = "") {
           id: doc.id, ownerUid: data.ownerUid, occasion: data.occasion,
           date: data.date, status: data.status, createdAt: data.createdAt,
           updatedAt: data.updatedAt
+        };
+      }
+      if (name === "omniProfessionalProfiles") {
+        // CV links, skills, education and experience remain private even to aggregate Admin views.
+        return {
+          id: doc.id, ownerUid: data.ownerUid, profession: data.profession,
+          location: data.location, availability: data.availability,
+          visibility: data.visibility, updatedAt: data.updatedAt
         };
       }
       return { id: doc.id, ...data };
