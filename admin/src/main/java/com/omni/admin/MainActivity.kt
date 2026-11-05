@@ -769,7 +769,7 @@ private val fieldLabels = mapOf(
   "message" to "Mensaje", "description" to "Descripción", "enabled" to "Habilitado",
   "event" to "Evento", "module" to "Módulo", "eventName" to "Evento", "screen" to "Pantalla", "appVersion" to "Versión",
   "category" to "Categoría", "profession" to "Profesión u oficio", "availability" to "Disponibilidad", "visibility" to "Visibilidad", "occasion" to "Tipo de momento", "date" to "Fecha especial", "ownerUid" to "Cuenta propietaria", "startAt" to "Inicio", "endAt" to "Finalización",
-  "createdAt" to "Fecha de registro", "updatedAt" to "Última actualización", "lastSeenAt" to "Última actividad", "userLabel" to "Usuario",
+  "createdAt" to "Fecha de registro", "expiresAt" to "Vencimiento de publicación", "updatedAt" to "Última actualización", "lastSeenAt" to "Última actividad", "userLabel" to "Usuario",
   "data" to "Detalles de acción", "screenName" to "Pantalla", "eventId" to "Identificador de evento",
   "cvu" to "CVU"
 )
@@ -840,7 +840,7 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "usageEvents" -> listOf("userLabel", "module", "appVersion", "createdAt")
     "omniEvents" -> listOf("description", "category", "status", "startAt", "createdAt")
     "omniMoments" -> listOf("occasion", "date", "status", "ownerUid", "createdAt")
-    "jobPosts" -> listOf("category", "location", "workType", "workSchedule", "remuneration", "status", "createdAt", "ownerUid")
+    "jobPosts" -> listOf("category", "location", "workType", "workSchedule", "remuneration", "status", "createdAt", "expiresAt", "ownerUid")
     "omniProfessionalProfiles" -> listOf("location", "availability", "visibility", "ownerUid", "updatedAt")
     else -> listOf("status", "createdAt", "updatedAt")
   }
