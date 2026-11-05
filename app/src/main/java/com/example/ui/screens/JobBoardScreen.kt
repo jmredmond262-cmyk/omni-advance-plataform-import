@@ -338,9 +338,10 @@ fun JobBoardScreen(onBack: () -> Unit) {
         }
         Spacer(Modifier.height(10.dp))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(selected = selectedTab == 0, onClick = { selectedTab = 0 }, shape = SegmentedButtonDefaults.itemShape(0, 3)) { Text("Buscar") }
-            SegmentedButton(selected = selectedTab == 1, onClick = { selectedTab = 1 }, shape = SegmentedButtonDefaults.itemShape(1, 3)) { Text("Publicar") }
-            SegmentedButton(selected = selectedTab == 2, onClick = { selectedTab = 2 }, shape = SegmentedButtonDefaults.itemShape(2, 3)) { Text("Postulaciones") }
+            SegmentedButton(selected = selectedTab == 0, onClick = { selectedTab = 0 }, shape = SegmentedButtonDefaults.itemShape(0, 4)) { Text("Buscar") }
+            SegmentedButton(selected = selectedTab == 1, onClick = { selectedTab = 1 }, shape = SegmentedButtonDefaults.itemShape(1, 4)) { Text("Publicar") }
+            SegmentedButton(selected = selectedTab == 2, onClick = { selectedTab = 2 }, shape = SegmentedButtonDefaults.itemShape(2, 4)) { Text("Postulaciones") }
+            SegmentedButton(selected = selectedTab == 3, onClick = { selectedTab = 3 }, shape = SegmentedButtonDefaults.itemShape(3, 4)) { Text("Mi perfil") }
         }
         if (selectedTab == 0) {
             Spacer(Modifier.height(10.dp))
@@ -447,7 +448,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
             }
             Text("No publiques datos sensibles. El contacto que ingreses será visible para usuarios autenticados de OMNI.", color = Color(0xFFFFC66D), fontSize = 10.sp)
             }
-        } else {
+        } else if (selectedTab == 2) {
             Spacer(Modifier.height(10.dp))
             Text("Postulaciones recibidas en tus publicaciones", color = Color(0xFF9AAAC2), fontSize = 11.sp)
             when {
@@ -483,6 +484,39 @@ fun JobBoardScreen(onBack: () -> Unit) {
                             }
                         }
                     }
+                }
+            }
+        } else {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Spacer(Modifier.height(6.dp))
+                Text("Perfil profesional y de servicios", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Completá tu experiencia para que empleadores y clientes puedan conocerte. No se publica ningún dato hasta que habilites la visibilidad.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                if (profileLoading) {
+                    Box(Modifier.fillMaxWidth().height(90.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
+                } else {
+                    OutlinedTextField(profileProfession, { profileProfession = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Profesión u oficio principal") }, singleLine = true)
+                    OutlinedTextField(profileSkills, { profileSkills = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Habilidades y especialidades") }, minLines = 2)
+                    OutlinedTextField(profileExperience, { profileExperience = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Experiencia profesional") }, minLines = 2)
+                    OutlinedTextField(profileEducation, { profileEducation = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Formación y certificaciones") }, minLines = 2)
+                    OutlinedTextField(profileLocation, { profileLocation = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Localidad o zona de cobertura") }, singleLine = true)
+                    Text("Disponibilidad", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(listOf("Disponible", "Buscando activamente", "Freelance", "No disponible")) { value ->
+                            FilterChip(selected = profileAvailability == value, onClick = { profileAvailability = value }, label = { Text(value, fontSize = 9.sp) })
+                        }
+                    }
+                    OutlinedTextField(profileCvLink, { profileCvLink = it }, modifier = Modifier.fillMaxWidth(), label = { Text("CV / portfolio / certificados · enlace") }, singleLine = true)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Hacer visible mi perfil", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(if (profilePublic) "Visible para usuarios autenticados de OMNI." else "Privado: sólo vos podés consultar este perfil.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                        }
+                        Switch(checked = profilePublic, onCheckedChange = { profilePublic = it })
+                    }
+                    Button(onClick = { saveProfessionalProfile() }, enabled = !busy, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
+                        if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp) else Text("Guardar mi perfil profesional")
+                    }
+                    Text("Los enlaces a CV y certificados se guardan como referencias externas; OMNI no aloja documentos en esta etapa gratuita.", color = Color(0xFFFFC66D), fontSize = 10.sp)
                 }
             }
         }
