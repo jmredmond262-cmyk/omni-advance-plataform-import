@@ -424,6 +424,7 @@ async function finance(env) {
       totalCredits: initialCapital + deposits,
       outflows: transferVolume + qrVolume,
       accountCount,
+      operationCount,
       transactionCount,
       transactionSampleSize: transactions.length,
       transactionSampleComplete: transactions.length < 100,
