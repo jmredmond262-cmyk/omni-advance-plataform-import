@@ -365,9 +365,70 @@ async function dashboard(env) {
     }
   };
 }
+async function listAllDocuments(env, collection, maxItems = 1000) {
+  const items = [];
+  let pageToken = "";
+  do {
+    const page = await listDocumentsPage(env, collection, Math.min(200, maxItems - items.length), pageToken);
+    items.push(...page.items);
+    pageToken = page.nextPageToken;
+  } while (pageToken && items.length < maxItems);
+  return { items, complete: !pageToken };
+}
+async function recentTransactionDocuments(env, limit = 100) {
+  const structuredQuery = {
+    from: [{ collectionId: "transactions", allDescendants: true }],
+    orderBy: [{ field: { fieldPath: "createdAt" }, direction: "DESCENDING" }],
+    limit: Math.min(Math.max(Number(limit) || 100, 1), 500)
+  };
+  const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
+  return (rows || []).filter(row => row.document).map(row => documentData(row.document));
+}
+async function finance(env) {
+  const [accountCount, accountPage, operationCount, operationPage, transactions] = await Promise.all([
+    countDocuments(env, "walletAccounts"),
+    listAllDocuments(env, "walletAccounts", 1000),
+    countDocuments(env, "walletOperations"),
+    recentDocuments(env, "walletOperations", 5000),
+    recentTransactionDocuments(env, 100)
+  ]);
+  const accounts = accountPage.items.slice(0, 100);
+  const operations = operationPage.slice(0, 100);
+  const currentBalance = accountPage.items.reduce((sum, account) => sum + (Number(account.balance) || 0), 0);
+  const initialCapital = accountCount * 50000;
+  const deposits = operationPage.filter(item => item.kind === "DEPOSIT").reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const transferVolume = operationPage.filter(item => item.kind === "TRANSFER").reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const qrVolume = operationPage.filter(item => item.kind === "QR_PAYMENT").reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const transferIn = operationPage.filter(item => item.kind === "TRANSFER" && item.recipientUid).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const qrCollections = operationPage.filter(item => item.kind === "QR_PAYMENT" && item.recipientUid).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  return {
+    summary: {
+      currentBalance,
+      initialCapital,
+      deposits,
+      transferVolume,
+      qrVolume,
+      transferIn,
+      qrCollections,
+      totalCredits: initialCapital + deposits,
+      outflows: transferVolume + qrVolume,
+      accountCount,
+      transactionCount: operationCount,
+      accountSampleSize: accountPage.items.length,
+      accountSampleComplete: accountPage.complete,
+      operationsSampleSize: operationPage.length,
+      operationsSampleComplete: operationPage.length < 5000
+    },
+    accounts,
+    transactions,
+    operations
+  };
+}
+
 async function handleAction(env, actor, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
+    case "finance": return finance(env);
     case "list": {
       const collection = String(data.collection || "");
       const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
