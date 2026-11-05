@@ -136,7 +136,7 @@ fun MomentsScreen(onBack: () -> Unit) {
                     Text("Agregá el primer cumpleaños, aniversario o recuerdo importante.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
                 }
             }
-            else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(moments, key = { it.id }) { moment ->
                     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B30)), shape = RoundedCornerShape(13.dp)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
