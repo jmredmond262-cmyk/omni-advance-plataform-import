@@ -292,8 +292,14 @@ service cloud.firestore {
         && request.resource.data.description.size() <= 3000
         && request.resource.data.location is string
         && request.resource.data.location.size() > 0
-        && request.resource.data.status == "ACTIVE";
-      allow update, delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+        && request.resource.data.status == "ACTIVE"
+        && request.resource.data.expiresAt is timestamp;
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && changedOnly(["title", "description", "category", "location", "workType", "experience", "remuneration", "workSchedule", "contactPhone", "contactEmail", "status", "expiresAt", "updatedAt"])
+        && request.resource.data.status in ["ACTIVE", "CLOSED"];
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
     match /jobApplications/{applicationId} {
