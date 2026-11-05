@@ -395,15 +395,23 @@ async function recentTransactionDocuments(env, limit = 100) {
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
 async function finance(env) {
-  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions] = await Promise.all([
+  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions, userPage] = await Promise.all([
     countDocuments(env, "walletAccounts"),
     listAllDocuments(env, "walletAccounts", 1000),
     countDocuments(env, "walletOperations"),
     recentDocuments(env, "walletOperations", 5000),
     countSubcollectionDocuments(env, "transactions"),
-    recentTransactionDocuments(env, 100)
+    recentTransactionDocuments(env, 100),
+    listAllDocuments(env, "users", 1000)
   ]);
-  const accounts = accountPage.items.slice(0, 100);
+  const profileByUid = new Map(userPage.items.map(profile => [
+    String(profile.uid || profile.id || ""),
+    String(profile.displayName || profile.fullName || profile.name || profile.email || "Titular no informado")
+  ]));
+  const accounts = accountPage.items.slice(0, 100).map(account => ({
+    ...account,
+    holderName: profileByUid.get(String(account.uid || account.id || "")) || "Titular no informado"
+  }));
   const operations = operationPage.slice(0, 100);
   const currentBalance = accountPage.items.reduce((sum, account) => sum + (Number(account.balance) || 0), 0);
   const initialCapital = accountCount * 50000;
@@ -458,7 +466,19 @@ async function handleAction(env, actor, action, data) {
         return { items: attachUserLabels(items.slice(0, pageSize), profiles), hasMore, nextOffset: hasMore ? offset + pageSize : null };
       }
       const page = await listDocumentsPage(env, collection, data.limit, String(data.pageToken || ""));
-      const items = page.items.map(item => {
+      let items = page.items;
+      if (collection === "walletAccounts") {
+        const profiles = await listAllDocuments(env, "users", 1000);
+        const labels = new Map(profiles.items.map(profile => [
+          String(profile.uid || profile.id || ""),
+          String(profile.displayName || profile.fullName || profile.name || profile.email || "Titular no informado")
+        ]));
+        items = items.map(item => ({
+          ...item,
+          holderName: labels.get(String(item.uid || item.id || "")) || "Titular no informado"
+        }));
+      }
+      items = items.map(item => {
         if (collection === "omniMoments") {
           return {
             id: item.id, ownerUid: item.ownerUid, occasion: item.occasion,
