@@ -354,7 +354,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
     Triple("Comercios", counts.optInt("merchantProfiles").toString(), Icons.Default.Storefront),
     Triple("Pedidos", counts.optInt("storeOrders").toString(), Icons.Default.ShoppingCart),
     Triple("Billeteras DEMO", counts.optInt("walletAccounts").toString(), Icons.Default.AccountBalanceWallet),
-    Triple("Capital virtual", "OM$ " + String.format("%.0f", payload.optDouble("walletBalanceSample")), Icons.Default.AccountBalance),
+    Triple("Capital virtual · muestra", "OM$ " + String.format("%.0f", payload.optDouble("walletBalanceSample")), Icons.Default.AccountBalance),
     Triple("Activos · 7 días", payload.optInt("activeUsers7d").toString(), Icons.Default.Person),
     Triple("Sesiones · 7 días", analytics.optInt("sessions7d").toString(), Icons.Default.QueryStats),
     Triple("Operaciones", counts.optInt("walletOperations").toString(), Icons.Default.SwapHoriz),
@@ -394,7 +394,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
           Spacer(Modifier.width(14.dp))
           Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("OMNI · CONTROL CENTER", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.7.sp)
-            Text("Bienvenido, Administrador", color = White, fontSize = if (tabletLayout) 23.sp else 19.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Centro de mando de OMNI", color = White, fontSize = if (tabletLayout) 23.sp else 19.sp, fontWeight = FontWeight.ExtraBold)
             Text("Panel ejecutivo del ecosistema OMNI", color = Muted, fontSize = 12.sp)
           }
           if (tabletLayout) {
@@ -577,7 +577,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(Icons.Default.History, null, tint = Mint)
           Spacer(Modifier.width(8.dp))
-          Text("Actividad reciente", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+          Text("Eventos de uso y operaciones recientes", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
           Spacer(Modifier.weight(1f))
           Text("REGISTROS REALES", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         }
@@ -595,8 +595,8 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
                     Icon(if (index % 2 == 0) Icons.Default.Bolt else Icons.Default.ReceiptLong, null, tint = if (index % 2 == 0) Mint else Color(0xFFB77CFF), modifier = Modifier.size(19.dp))
                   }
                   Column(Modifier.weight(1f)) {
-                    Text(firstPresentValue(record, "event", "eventName", "kind", "type", "action").ifBlank { "Actividad registrada" }.let { friendlyEnum(it) }, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Text(firstPresentValue(record, "userLabel", "storeName", "email", "module").ifBlank { "Ecosistema OMNI" }, color = Muted, fontSize = 10.sp, maxLines = 1)
+                    Text(firstPresentValue(record, "event", "eventName", "kind", "type", "action").ifBlank { "Tipo de evento no informado" }.let { friendlyEnum(it) }, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(firstPresentValue(record, "userLabel", "storeName", "email", "module").ifBlank { "Módulo o usuario no informado" }, color = Muted, fontSize = 10.sp, maxLines = 1)
                   }
                   Text(firstPresentValue(record, "createdAt", "timestamp").take(16), color = Muted, fontSize = 9.sp, maxLines = 1)
                 }
@@ -650,7 +650,7 @@ private fun FinanceContent(payload: JSONObject) {
     item { Text("Capital y circulación", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
     item {
       Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        FinanceMetric("Capital inicial asignado", money("initialCapital"), Icons.Default.Savings, Modifier.weight(1f))
+        FinanceMetric("Capital inicial DEMO", money("initialCapital"), Icons.Default.Savings, Modifier.weight(1f))
         FinanceMetric("Recargas", money("deposits"), Icons.Default.AddCard, Modifier.weight(1f))
       }
     }
@@ -692,9 +692,9 @@ private fun FinanceContent(payload: JSONObject) {
 @Composable
 private fun FinanceMetric(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier) {
   Card(modifier, colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1830)), shape = RoundedCornerShape(15.dp)) {
-    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-      Icon(icon, null, tint = Mint, modifier = Modifier.size(20.dp))
-      Text(value, color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    Column(Modifier.fillMaxWidth().padding(9.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+      Icon(icon, null, tint = Mint, modifier = Modifier.size(17.dp))
+      Text(value, color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
       Text(label, color = Muted, fontSize = 10.sp, maxLines = 2)
     }
   }
@@ -721,7 +721,7 @@ private fun RecordsContent(selected: String, array: JSONArray, hasMore: Boolean,
         verticalArrangement = Arrangement.spacedBy(7.dp)
       ) {
         Text("GESTIÓN · OMNI ADMIN", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.8.sp)
-        Text(tabs.first { it.id == selected }.label, color = White, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+        Text(tabs.first { it.id == selected }.label, color = White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
         Text("${filtered.size} de ${records.size} registros cargados · historial paginado", color = Muted, fontSize = 12.sp)
       }
     }
@@ -765,6 +765,9 @@ private val fieldLabels = mapOf(
   "cvu" to "CVU"
 )
 private fun friendlyEnum(value: String): String = when (value.uppercase()) {
+  "UNKNOWN" -> "Tipo de evento no informado"
+  "UNSPECIFIED" -> "Tipo no especificado"
+  "OTHER" -> "Otro tipo · requiere clasificación"
   "SESSION_START" -> "Inicio de sesión"
   "SESSION_END" -> "Fin de sesión"
   "APP_FOREGROUND" -> "Aplicación en primer plano"
@@ -777,7 +780,6 @@ private fun friendlyEnum(value: String): String = when (value.uppercase()) {
   "QR_PAYMENT" -> "Pago con QR"
   "COMPRA_LOCAL" -> "Compra en comercio"
   "REINTEGRO_CASHBACK" -> "Reintegro de cashback"
-  "CARGA_SALDO" -> "Carga de saldo"
   "TRANSFERENCIA_ENVIADA" -> "Transferencia enviada"
   "TRANSFERENCIA_RECIBIDA" -> "Transferencia recibida"
   "QR_PAGO" -> "Pago con QR"
@@ -926,7 +928,7 @@ private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boo
       val id = item["id"]?.toString() ?: return@items
       var enabled by remember(id, item["enabled"]) { mutableStateOf(item["enabled"] == true) }
       val title = item["title"]?.toString() ?: id
-      val description = item["description"]?.toString() ?: "Sin descripción registrada."
+      val description = item["description"]?.toString()?.takeIf { it.isNotBlank() } ?: "Descripción no cargada para esta ficha de módulo."
       Card(Modifier.fillMaxWidth().border(1.dp, if (enabled) Color(0xFF17647A) else Color(0xFF34445B), RoundedCornerShape(18.dp)), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
