@@ -152,9 +152,9 @@ fun OmniExperienceScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             }
         }
         if (section == "Todos" || section == "Usuarios") {
-            item { ExperienceSectionHeader("⭐", "BENEFICIOS PARA USUARIOS", "Promociones generales de comercios adheridos") }
+            item { ExperienceSectionHeader("⭐", "BENEFICIOS DE COMERCIOS ADHERIDOS", "Promociones y ventajas publicadas por comercios locales") }
             if (userDeals.isEmpty()) {
-                item { ExperienceEmptyState("Todavía no hay promociones generales publicadas.") }
+                item { ExperienceEmptyState("No hay promociones publicadas por comercios adheridos en este momento.") }
             } else {
                 items(userDeals, key = { "user-deal-" + it.first.id + "-" + it.second.title }) { offer ->
                     AudienceDealCard(store = offer.first, deal = offer.second)
