@@ -135,7 +135,7 @@ fun DailyHubScreen(
             .apply()
     }
     val currentCity by viewModel.currentCity.collectAsState()
-    val displayLocality = currentCity.ifBlank { "Malabrigo" }
+    val displayLocality = currentCity.ifBlank { "Tu zona" }
     val stores by viewModel.stores.collectAsState()
     val weather by viewModel.liveWeatherData.collectAsState()
     val touristAttractions by viewModel.touristAttractions.collectAsState()
@@ -239,7 +239,7 @@ fun DailyHubScreen(
             .testTag("daily_hub_screen"),
         // El padding inferior de 100.dp previene que la barra dock o la barra del sistema tape contenido
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 100.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Acceso directo al pronóstico extendido desde Inicio.
         item {
@@ -780,7 +780,7 @@ fun CyberCategoryCard(item: HomeCategoryItem, modifier: Modifier = Modifier) {
     val glow = if (pressed) 1f else pulse
     val shape = RoundedCornerShape(14.dp)
     Box(
-        modifier = modifier.height(106.dp).clip(shape)
+        modifier = modifier.height(90.dp).clip(shape)
             .background(Brush.radialGradient(listOf(item.accentColor.copy(alpha = 0.16f), Color(0xFF101B30), Color(0xFF080F1D))))
             .drawBehind {
                 val radius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())
@@ -798,11 +798,11 @@ fun CyberCategoryCard(item: HomeCategoryItem, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         Column(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
-            Box(Modifier.size(29.dp).drawBehind {
+            Box(Modifier.size(25.dp).drawBehind {
                 drawCircle(item.accentColor.copy(alpha = 0.18f + glow * 0.20f), radius = size.minDimension * 0.48f)
                 drawCircle(item.accentColor.copy(alpha = 0.10f + glow * 0.12f), radius = size.minDimension * 0.62f)
             }, contentAlignment = Alignment.Center) {
-                Icon(item.icon, contentDescription = item.title, tint = item.accentColor, modifier = Modifier.size(23.dp))
+                Icon(item.icon, contentDescription = item.title, tint = item.accentColor, modifier = Modifier.size(20.dp))
             }
             Text(item.title, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
             Text(item.subtitle, fontSize = 8.sp, lineHeight = 10.sp, color = Color(0xFF9AAAC2), maxLines = 2,
