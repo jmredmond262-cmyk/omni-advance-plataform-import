@@ -191,83 +191,120 @@ async function audit(env, actor, action, target, details = {}) {
 function userLabels(profiles) {
   return new Map(profiles.map(profile => [
     String(profile.uid || profile.id || ""),
-    String(profile.displayName || profile.fullName || profile.name || profile.email || "Usuario OMNI")
+    String(profile.displayName || profile.fullName || profile.name || profile.email || "Cuenta OMNI · nombre no informado")
   ]).filter(([uid]) => uid));
 }
 function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
-  return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Usuario OMNI" }));
+  return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
 function summarizeUsage(events) {
   const meaningful = events.filter(event => event.event !== "DIAGNOSTIC_TEST");
   const activeUids = new Set(meaningful.map(event => String(event.uid || "")).filter(Boolean));
   const sessionGroups = new Map();
+  const hourlyActivity = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
+  const weekdayActivity = Array.from({ length: 7 }, (_, day) => ({
+    day, label: ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][day], count: 0
+  }));
+  const sessionDurations = [];
+  const screenDurations = [];
   for (const event of meaningful) {
-    const key = String(event.sessionId || "");
-    if (!key) continue;
-    if (!sessionGroups.has(key)) sessionGroups.set(key, []);
-    sessionGroups.get(key).push(event);
+    const sessionId = String(event.sessionId || "");
+    if (sessionId) {
+      if (!sessionGroups.has(sessionId)) sessionGroups.set(sessionId, []);
+      sessionGroups.get(sessionId).push(event);
+    }
+    const hour = Number(event.localHour);
+    if (Number.isInteger(hour) && hour >= 0 && hour <= 23) hourlyActivity[hour].count += 1;
+    const weekday = Number(event.localDayOfWeek);
+    if (Number.isInteger(weekday) && weekday >= 1 && weekday <= 7) weekdayActivity[weekday - 1].count += 1;
+    const data = event.data && typeof event.data === "object" ? event.data : {};
+    const screenSeconds = Number(data.screenDurationSeconds ?? event.screenDurationSeconds ?? 0);
+    if (event.event === "SCREEN_EXIT" && Number.isFinite(screenSeconds) && screenSeconds > 0) screenDurations.push(screenSeconds);
   }
   let totalSessionMs = 0;
   let completedSessions = 0;
   let totalScreenMs = 0;
-  let measuredScreens = 0;
-  let screenViews7d = 0;
-  let actions7d = 0;
+  let measuredScreens = screenDurations.length;
+  const screenViews7d = meaningful.filter(event => event.event === "SCREEN_VIEW").length;
+  const actions7d = meaningful.filter(event => ![
+    "SESSION_START", "SESSION_END", "APP_FOREGROUND", "APP_BACKGROUND", "SCREEN_VIEW", "SCREEN_EXIT"
+  ].includes(event.event)).length;
   const topScreens = new Map();
   const moduleUsage = new Map();
   const eventUsage = new Map();
-  const reserved = new Set(["SESSION_START", "SESSION_END", "APP_FOREGROUND", "APP_BACKGROUND", "SCREEN_VIEW", "SCREEN_EXIT", "DIAGNOSTIC_TEST"]);
   for (const event of meaningful) {
     if (event.event === "SCREEN_VIEW") {
-      screenViews7d += 1;
-      topScreens.set(event.module, (topScreens.get(event.module) || 0) + 1);
-    } else if (!reserved.has(event.event)) {
-      actions7d += 1;
-      moduleUsage.set(event.module, (moduleUsage.get(event.module) || 0) + 1);
-      eventUsage.set(event.event, (eventUsage.get(event.event) || 0) + 1);
+      const screen = String(event.screen || event.module || "PANTALLA_NO_INFORMADA");
+      topScreens.set(screen, (topScreens.get(screen) || 0) + 1);
+    } else if (!["SESSION_START", "SESSION_END", "APP_FOREGROUND", "APP_BACKGROUND", "SCREEN_EXIT"].includes(event.event)) {
+      const module = String(event.module || "MODULO_NO_INFORMADO");
+      const eventName = String(event.event || "TIPO_DE_EVENTO_NO_INFORMADO");
+      moduleUsage.set(module, (moduleUsage.get(module) || 0) + 1);
+      eventUsage.set(eventName, (eventUsage.get(eventName) || 0) + 1);
     }
   }
   for (const group of sessionGroups.values()) {
     group.sort((a, b) => Date.parse(a.createdAt || 0) - Date.parse(b.createdAt || 0));
-    const start = group.find(event => event.event === "SESSION_START");
+    const sessionStart = group.find(event => event.event === "SESSION_START");
     const finish = [...group].reverse().find(event => event.event === "SESSION_END");
-    if (start && finish) {
-      const duration = Date.parse(finish.createdAt) - Date.parse(start.createdAt);
-      if (Number.isFinite(duration) && duration >= 0) {
+    if (sessionStart && finish) {
+      const finishData = finish.data && typeof finish.data === "object" ? finish.data : {};
+      const measuredSeconds = Number(finishData.sessionDurationSeconds ?? finish.sessionDurationSeconds ?? 0);
+      const duration = Number.isFinite(measuredSeconds) && measuredSeconds > 0
+        ? measuredSeconds * 1000
+        : Date.parse(finish.createdAt) - Date.parse(sessionStart.createdAt);
+      if (Number.isFinite(duration) && duration > 0) {
         totalSessionMs += duration;
         completedSessions += 1;
       }
     }
-    for (let i = 0; i < group.length; i++) {
-      const event = group[i];
-      if (event.event !== "SCREEN_VIEW") continue;
-      const next = group.slice(i + 1).find(item =>
-        item.event === "SCREEN_VIEW" || item.event === "APP_BACKGROUND" || item.event === "SESSION_END"
-      );
-      if (!next) continue;
-      const duration = Date.parse(next.createdAt) - Date.parse(event.createdAt);
-      if (Number.isFinite(duration) && duration >= 0 && duration <= 6 * 60 * 60 * 1000) {
-        totalScreenMs += duration;
-        measuredScreens += 1;
+    if (!screenDurations.length) {
+      for (let i = 0; i < group.length; i++) {
+        const event = group[i];
+        if (event.event !== "SCREEN_VIEW") continue;
+        const next = group.slice(i + 1).find(item =>
+          item.event === "SCREEN_EXIT" || item.event === "SCREEN_VIEW" ||
+          item.event === "APP_BACKGROUND" || item.event === "SESSION_END"
+        );
+        if (!next) continue;
+        const duration = Date.parse(next.createdAt) - Date.parse(event.createdAt);
+        if (Number.isFinite(duration) && duration > 0 && duration <= 6 * 60 * 60 * 1000) {
+          totalScreenMs += duration;
+          measuredScreens += 1;
+        }
       }
     }
   }
+  if (screenDurations.length) totalScreenMs = screenDurations.reduce((sum, seconds) => sum + seconds * 1000, 0);
+  const observedHours = hourlyActivity.filter(item => item.count > 0);
+  const peakActivityHour = observedHours.length
+    ? observedHours.reduce((best, item) => item.count > best.count ? item : best)
+    : null;
+  const quietestActivityHour = observedHours.length
+    ? observedHours.reduce((best, item) => item.count < best.count ? item : best)
+    : null;
   return {
     activeUsers7d: activeUids.size,
     sessions7d: new Set(meaningful.filter(event => event.event === "SESSION_START").map(event => event.sessionId).filter(Boolean)).size,
     screenViews7d,
     actions7d,
-    averageSessionSeconds: completedSessions ? Math.round(totalSessionMs / completedSessions / 1000) : 0,
-    averageScreenSeconds: measuredScreens ? Math.round(totalScreenMs / measuredScreens / 1000) : 0,
-    topScreens: [...topScreens.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 6),
-    moduleUsage: [...moduleUsage.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 10),
-    eventBreakdown: [...eventUsage.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 10),
+    averageSessionSeconds: completedSessions ? Math.round(totalSessionMs / completedSessions / 1000) : null,
+    averageScreenSeconds: measuredScreens ? Math.round(totalScreenMs / measuredScreens / 1000) : null,
+    measuredSessions: completedSessions,
+    measuredScreens,
+    hourlyActivity,
+    weekdayActivity,
+    peakActivityHour,
+    quietestActivityHour,
+    topScreens: [...topScreens.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8),
+    moduleUsage: [...moduleUsage.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 12),
+    eventBreakdown: [...eventUsage.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 16),
     featureMetrics: {
       aiCameraScans: moduleUsage.get("ai_camera") || 0,
       mapsInteractions: moduleUsage.get("maps_locations") || 0,
       commerceShares: [...eventUsage.entries()].filter(([name]) => name.includes("SHARED") || name.includes("SHARE")).reduce((sum, [, count]) => sum + count, 0),
-      jobInteractions: moduleUsage.get("jobs") || 0,
+      jobInteractions: moduleUsage.get("jobs") || moduleUsage.get("conex") || 0,
       tourismInteractions: moduleUsage.get("tourism") || 0,
       routineWeatherInteractions: moduleUsage.get("routine_weather") || 0,
       eventInteractions: (moduleUsage.get("events") || 0) + (moduleUsage.get("community") || 0),
@@ -276,7 +313,7 @@ function summarizeUsage(events) {
   };
 }
 async function dashboard(env) {
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
   const counts = await Promise.all(collections.map(name => countDocuments(env, name)));
   const [walletPage, operations, userProfiles, usageEvents] = await Promise.all([
     listDocumentsPage(env, "walletAccounts", 200),
@@ -333,7 +370,7 @@ async function handleAction(env, actor, action, data) {
     case "dashboard": return dashboard(env);
     case "list": {
       const collection = String(data.collection || "");
-      const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
+      const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
       if (!allowed.has(collection)) throw new ApiError(400, "invalid-argument", "Colección no disponible.");
       if (collection === "usageEvents") {
         const offset = Math.max(0, Math.min(Number(data.offset) || 0, 50000));
@@ -346,7 +383,24 @@ async function handleAction(env, actor, action, data) {
         return { items: attachUserLabels(items.slice(0, pageSize), profiles), hasMore, nextOffset: hasMore ? offset + pageSize : null };
       }
       const page = await listDocumentsPage(env, collection, data.limit, String(data.pageToken || ""));
-      return { items: page.items, nextPageToken: page.nextPageToken, hasMore: Boolean(page.nextPageToken) };
+      const items = page.items.map(item => {
+        if (collection === "omniMoments") {
+          return {
+            id: item.id, ownerUid: item.ownerUid, occasion: item.occasion,
+            date: item.date, status: item.status, createdAt: item.createdAt,
+            updatedAt: item.updatedAt
+          };
+        }
+        if (collection === "omniProfessionalProfiles") {
+          return {
+            id: item.id, ownerUid: item.ownerUid, profession: item.profession,
+            location: item.location, availability: item.availability,
+            visibility: item.visibility, updatedAt: item.updatedAt
+          };
+        }
+        return item;
+      });
+      return { items, nextPageToken: page.nextPageToken, hasMore: Boolean(page.nextPageToken) };
     }
     case "getConfig": {
       const snap = await getDocument(env, "adminConfig", "global");
