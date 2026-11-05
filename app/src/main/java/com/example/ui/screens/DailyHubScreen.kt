@@ -346,8 +346,8 @@ fun DailyHubScreen(
                 ) {
                     Text("🧰", fontSize = 25.sp)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Bolsa de Trabajo y Servicios", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("Encontrá oportunidades o publicá tus servicios", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                        Text("OMNI CONEX", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Empleo, oficios, profesionales y servicios", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                     }
                     Text("ABRIR ›", color = CyberGlowPurple, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
                 }
