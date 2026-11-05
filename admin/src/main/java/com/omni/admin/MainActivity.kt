@@ -363,6 +363,8 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
   )
   val trend = jsonArrayToList(payload.optJSONArray("usageTrend"))
   val hourlyActivity = jsonArrayToList(analytics.optJSONArray("hourlyActivity"))
+  val weekdayActivity = jsonArrayToList(analytics.optJSONArray("weekdayActivity"))
+  val busiestDay = weekdayActivity.maxByOrNull { (it["count"] as? Number)?.toInt() ?: 0 }
   val peakHour = analytics.optJSONObject("peakActivityHour")
   val quietestHour = analytics.optJSONObject("quietestActivityHour")
   val recentUsers = jsonArrayToList(payload.optJSONArray("recentUsers"))
@@ -418,7 +420,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
               "Comercios" -> "stores"
               "Pedidos" -> "orders"
               "Billeteras DEMO" -> "wallets"
-              "Capital virtual" -> "finance"
+              "Capital virtual" , "Capital virtual · muestra" -> "finance"
               "Sesiones · 7 días" -> "activity"
               "Operaciones" -> "operations"
               "Eventos" -> "events"
@@ -551,8 +553,11 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
                 }
               }
               Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(peakHour?.let { "Mayor actividad: %02d:00 · %s eventos".format(it.optInt("hour"), it.optInt("count")) } ?: "Mayor actividad: sin datos", color = Mint, fontSize = 10.sp)
-                Text(quietestHour?.let { "Menor: %02d:00".format(it.optInt("hour")) } ?: "", color = Muted, fontSize = 10.sp)
+                Text(peakHour?.let { "Hora pico local: %02d:00 · %s eventos".format(it.optInt("hour"), it.optInt("count")) } ?: "Hora pico: sin datos registrados", color = Mint, fontSize = 10.sp)
+                Text(quietestHour?.let { "Menor actividad registrada: %02d:00".format(it.optInt("hour")) } ?: "", color = Muted, fontSize = 10.sp)
+                busiestDay?.takeIf { (it["count"] as? Number)?.toInt()?.let { n -> n > 0 } == true }?.let {
+                    Text("Día de mayor actividad: ${it["label"]} · ${it["count"]} eventos", color = Muted, fontSize = 10.sp)
+                }
               }
             }
           }
