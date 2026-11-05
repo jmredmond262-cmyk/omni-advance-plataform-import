@@ -361,6 +361,9 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
     Triple("Eventos", counts.optInt("omniEvents").toString(), Icons.Default.Event)
   )
   val trend = jsonArrayToList(payload.optJSONArray("usageTrend"))
+  val hourlyActivity = jsonArrayToList(analytics.optJSONArray("hourlyActivity"))
+  val peakHour = analytics.optJSONObject("peakActivityHour")
+  val quietestHour = analytics.optJSONObject("quietestActivityHour")
   val recentUsers = jsonArrayToList(payload.optJSONArray("recentUsers"))
   val recentActivity = jsonArrayToList(payload.optJSONArray("recentUsageEvents"))
   val recentOperations = jsonArrayToList(payload.optJSONArray("recentOperations"))
@@ -421,25 +424,25 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
               else -> "dashboard"
             }
             Card(
-              Modifier.weight(1f).heightIn(min = 118.dp)
+              Modifier.weight(1f).heightIn(min = 88.dp)
                 .clickable { onSelect(destination) }
-                .border(1.dp, accent.copy(alpha = 0.72f), RoundedCornerShape(18.dp)),
+                .border(1.dp, accent.copy(alpha = 0.72f), RoundedCornerShape(14.dp)),
               colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1830)),
-              shape = RoundedCornerShape(18.dp),
+              shape = RoundedCornerShape(14.dp),
               elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
             ) {
               Column(
                 Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f), Color(0xFF0B1830), Color(0xFF091426))))
-                  .padding(13.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+                   .padding(9.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
               ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                  Icon(metric.third, null, tint = accent, modifier = Modifier.size(23.dp))
+                  Icon(metric.third, null, tint = accent, modifier = Modifier.size(18.dp))
                   Spacer(Modifier.weight(1f))
-                  Icon(Icons.Default.ArrowOutward, contentDescription = "Abrir ${metric.first}", tint = accent, modifier = Modifier.size(16.dp))
+                  Icon(Icons.Default.ArrowOutward, contentDescription = "Abrir ${metric.first}", tint = accent, modifier = Modifier.size(13.dp))
                 }
-                Text(metric.second, color = White, fontSize = if (tabletLayout) 27.sp else 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                Text(metric.first, color = Muted, fontSize = 10.sp, maxLines = 2, lineHeight = 13.sp)
+                Text(metric.second, color = White, fontSize = if (tabletLayout) 21.sp else 19.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                Text(metric.first, color = Muted, fontSize = 9.sp, maxLines = 2, lineHeight = 11.sp)
               }
             }
           }
@@ -506,6 +509,48 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
                 Text(if (testSeen) "Conexión verificada" else "En observación", color = if (testSeen) Color(0xFF36F39A) else Color(0xFFFFB84D), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Text("Eventos visibles (7 días): $eventCount", color = Muted, fontSize = 10.sp)
                 Text("Perfiles visibles: " + diagnostics.optInt("userProfilesVisible"), color = Muted, fontSize = 10.sp)
+              }
+            }
+          }
+        }
+      }
+      item {
+        Card(
+          Modifier.fillMaxWidth().border(1.dp, Color(0xFF15516B), RoundedCornerShape(16.dp)),
+          colors = CardDefaults.cardColors(containerColor = Panel),
+          shape = RoundedCornerShape(16.dp)
+        ) {
+          Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(Icons.Default.Schedule, null, tint = Mint, modifier = Modifier.size(19.dp))
+              Spacer(Modifier.width(7.dp))
+              Column(Modifier.weight(1f)) {
+                Text("Actividad y horarios", color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("Distribución por hora local informada por los dispositivos · últimos 7 días", color = Muted, fontSize = 9.sp)
+              }
+              Text("24 H", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
+            if (hourlyActivity.isEmpty() || hourlyActivity.none { (it["count"] as? Number)?.toInt()?.let { n -> n > 0 } == true }) {
+              Text("Todavía no hay eventos con horario local registrado. La medición se completará con la telemetría nueva.", color = Muted, fontSize = 11.sp)
+            } else {
+              val maxHour = (hourlyActivity.maxOfOrNull { (it["count"] as? Number)?.toFloat() ?: 0f } ?: 0f).coerceAtLeast(1f)
+              Row(Modifier.fillMaxWidth().height(82.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+                hourlyActivity.sortedBy { (it["hour"] as? Number)?.toInt() ?: 0 }.forEach { point ->
+                  val hour = (point["hour"] as? Number)?.toInt() ?: 0
+                  val value = (point["count"] as? Number)?.toFloat() ?: 0f
+                  Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                    Box(
+                      Modifier.fillMaxWidth().fillMaxHeight((value / maxHour).coerceIn(0.035f, 1f))
+                        .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                        .background(if (value > 0f) Brush.verticalGradient(listOf(Mint, Color(0xFF0876B5))) else Brush.verticalGradient(listOf(PanelSoft, PanelSoft)))
+                    )
+                    if (hour % 6 == 0) Text(hour.toString().padStart(2, '0'), color = Muted, fontSize = 8.sp)
+                  }
+                }
+              }
+              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(peakHour?.let { "Mayor actividad: %02d:00 · %s eventos".format(it.optInt("hour"), it.optInt("count")) } ?: "Mayor actividad: sin datos", color = Mint, fontSize = 10.sp)
+                Text(quietestHour?.let { "Menor: %02d:00".format(it.optInt("hour")) } ?: "", color = Muted, fontSize = 10.sp)
               }
             }
           }
@@ -705,9 +750,9 @@ private val technicalFields = setOf(
 private val fieldLabels = mapOf(
   "displayName" to "Nombre", "fullName" to "Nombre", "name" to "Nombre",
   "email" to "Correo", "phoneNumber" to "Teléfono", "phone" to "Teléfono",
-  "alias" to "Alias", "balance" to "Saldo", "cashbackTotal" to "Cashback acumulado",
+  "alias" to "Alias secundario", "holderName" to "Titular", "ownerName" to "Titular", "balance" to "Saldo", "cashbackTotal" to "Cashback acumulado",
   "amount" to "Importe", "peerName" to "Contraparte", "title" to "Concepto", "senderUid" to "Cuenta de origen", "recipientUid" to "Cuenta de destino", "kind" to "Tipo", "type" to "Tipo", "status" to "Estado",
-  "storeName" to "Comercio", "orderNumber" to "Pedido", "total" to "Total",
+  "storeName" to "Comercio", "orderNumber" to "Número de pedido", "localHour" to "Hora local del dispositivo", "localDayOfWeek" to "Día local de la semana", "timezoneOffsetMinutes" to "Diferencia horaria UTC (minutos)", "localDate" to "Fecha local del dispositivo", "sessionId" to "Sesión", "total" to "Total",
   "paymentStatus" to "Estado del pago", "paymentMethod" to "Medio de pago",
   "fulfillmentType" to "Entrega", "action" to "Acción", "target" to "Destino",
   "message" to "Mensaje", "description" to "Descripción", "enabled" to "Habilitado",
@@ -753,21 +798,21 @@ private fun looksLikeTechnicalId(value: String): Boolean =
 private fun RecordCard(item: Map<String, Any?>, type: String) {
   var expanded by remember(item["id"]) { mutableStateOf(false) }
   val title = when (type) {
-    "users" -> firstPresentValue(item, "displayName", "fullName", "name", "email").ifBlank { "Usuario OMNI" }
-    "walletAccounts" -> firstPresentValue(item, "alias").ifBlank { "Billetera OMNI Pay" }
-    "walletOperations" -> friendlyEnum(firstPresentValue(item, "kind", "type", "title").ifBlank { "Operación" })
-    "merchantProfiles" -> firstPresentValue(item, "storeName", "name").ifBlank { "Comercio OMNI" }
-    "storeOrders" -> "Pedido " + firstPresentValue(item, "orderNumber", "status").ifBlank { "OMNI" }
+    "users" -> firstPresentValue(item, "displayName", "fullName", "name", "email").ifBlank { "Perfil de usuario · nombre no informado" }
+    "walletAccounts" -> firstPresentValue(item, "displayName", "holderName", "ownerName", "fullName", "email").ifBlank { "Cuenta OMNI Pay · titular no informado" }
+    "walletOperations" -> friendlyEnum(firstPresentValue(item, "kind", "type", "title").ifBlank { "Operación de billetera · tipo no informado" })
+    "merchantProfiles" -> firstPresentValue(item, "storeName", "name").ifBlank { "Perfil comercial · nombre no informado" }
+    "storeOrders" -> "Pedido " + firstPresentValue(item, "orderNumber", "status").ifBlank { "de comercio · número no informado" }
     "appFeedback" -> "Comentario de usuario"
-    "usageEvents" -> friendlyEnum(firstPresentValue(item, "event", "eventName").ifBlank { "Evento de uso" })
-    "walletTransactions" -> friendlyEnum(firstPresentValue(item, "type", "kind", "title").ifBlank { "Movimiento de billetera" })
-    "omniEvents" -> firstPresentValue(item, "title", "name", "event", "eventName").ifBlank { "Evento OMNI" }
-    "adminAuditLogs" -> friendlyEnum(firstPresentValue(item, "action").ifBlank { "Actividad administrativa" })
-    else -> firstPresentValue(item, "title", "name", "action").ifBlank { "Actividad sin categoría" }
+    "usageEvents" -> friendlyEnum(firstPresentValue(item, "event", "eventName").ifBlank { "Evento de uso · tipo no informado" })
+    "walletTransactions" -> friendlyEnum(firstPresentValue(item, "type", "kind", "title").ifBlank { "Movimiento OMNI Pay · tipo no informado" })
+    "omniEvents" -> firstPresentValue(item, "title", "name", "event", "eventName").ifBlank { "Evento comunitario · título no informado" }
+    "adminAuditLogs" -> friendlyEnum(firstPresentValue(item, "action").ifBlank { "Registro administrativo · acción no informada" })
+    else -> firstPresentValue(item, "title", "name", "action").ifBlank { "Registro de ${type.ifBlank { "módulo no identificado" }} · clasificación pendiente" }
   }
   val preferred = when (type) {
     "users" -> listOf("email", "phoneNumber", "phone", "createdAt", "lastSeenAt")
-    "walletAccounts" -> listOf("balance", "cashbackTotal", "createdAt")
+    "walletAccounts" -> listOf("alias", "email", "balance", "cashbackTotal", "createdAt")
     "walletOperations" -> listOf("amount", "status", "createdAt")
     "walletTransactions" -> listOf("amount", "status", "peerName", "createdAt")
     "merchantProfiles" -> listOf("description", "category", "address", "status", "createdAt")
@@ -786,26 +831,26 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
   val protectedKeys = setOf("password", "token", "accessToken", "refreshToken", "secret", "apiKey", "qrNonce", "rawData", "authorization")
   val details = item.entries.filter { (key, value) -> key !in protectedKeys && value != null && displayValue(value).isNotBlank() }.sortedBy { it.key }
   Card(
-    Modifier.fillMaxWidth().border(1.dp, Color(0xFF1A5068), RoundedCornerShape(19.dp)).clickable { expanded = !expanded },
+    Modifier.fillMaxWidth().border(1.dp, Color(0xFF1A5068), RoundedCornerShape(14.dp)).clickable { expanded = !expanded },
     colors = CardDefaults.cardColors(containerColor = Panel),
-    shape = RoundedCornerShape(19.dp),
+    shape = RoundedCornerShape(14.dp),
     elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
   ) {
-    Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF10243A), Panel))).padding(17.dp)) {
+    Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF10243A), Panel))).padding(11.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(title.take(100), modifier = Modifier.weight(1f), color = White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 2)
+        Text(title.take(100), modifier = Modifier.weight(1f), color = White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 2)
         Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = if (expanded) "Contraer detalle" else "Ver detalle", tint = Mint)
       }
-      visible.forEach { line -> Spacer(Modifier.height(5.dp)); Text(line.take(180), color = Muted, fontSize = 12.sp, maxLines = 2) }
+      visible.forEach { line -> Spacer(Modifier.height(3.dp)); Text(line.take(180), color = Muted, fontSize = 10.sp, maxLines = 2) }
       if (expanded) {
         Spacer(Modifier.height(10.dp)); HorizontalDivider(color = PanelSoft)
-        Text("Detalle del registro", color = Mint, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 9.dp, bottom = 4.dp))
+        Text("Detalle del registro", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 9.dp, bottom = 4.dp))
         details.forEach { (key, value) ->
           val rendered = displayValue(value)
           val label = fieldLabels[key] ?: key.replace(Regex("([a-z])([A-Z])"), "$1 $2").replaceFirstChar { it.uppercase() }
           Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
             Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-            Text(rendered.take(1200), color = White, fontSize = 12.sp)
+            Text(rendered.take(1200), color = White, fontSize = 11.sp)
           }
         }
       } else Text("Tocá para ver todos los datos disponibles", color = Mint, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
