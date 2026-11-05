@@ -6,6 +6,10 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import java.util.UUID
+import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Universal first-party analytics. Firestore's Android SDK persists pending writes
@@ -29,6 +33,7 @@ object UsageAnalyticsRepository {
     @Volatile private var activeUid: String = ""
     @Volatile private var lastScreen: String = ""
     @Volatile private var screenStartedAt: Long = 0L
+    @Volatile private var sessionStartedAt: Long = 0L
     @Volatile private var sessionActive: Boolean = false
 
     @Synchronized fun startSession(uid: String) {
@@ -50,6 +55,7 @@ object UsageAnalyticsRepository {
         sessionId = UUID.randomUUID().toString()
         sessionActive = true
         screenStartedAt = 0L
+        sessionStartedAt = System.currentTimeMillis()
         record(uid, "app", "SESSION_START")
         record(uid, "diagnostics", "DIAGNOSTIC_TEST")
         if (lastScreen.isNotBlank()) trackScreen(uid, lastScreen)
@@ -60,9 +66,11 @@ object UsageAnalyticsRepository {
         val uid = activeUid
         closeCurrentScreen(uid)
         record(uid, "app", "APP_BACKGROUND")
-        record(uid, "app", "SESSION_END")
+        val durationSeconds = if (sessionStartedAt > 0L) ((System.currentTimeMillis() - sessionStartedAt) / 1000L).coerceAtLeast(0L) else 0L
+        record(uid, "app", "SESSION_END", if (durationSeconds > 0L) mapOf("sessionDurationSeconds" to durationSeconds) else emptyMap())
         sessionActive = false
         screenStartedAt = 0L
+        sessionStartedAt = 0L
     }
 
     @Synchronized fun trackScreen(uid: String, screen: String) {
@@ -78,7 +86,10 @@ object UsageAnalyticsRepository {
 
     @Synchronized private fun closeCurrentScreen(uid: String) {
         if (lastScreen.isNotBlank() && screenStartedAt > 0L) {
-            record(uid, lastScreen, "SCREEN_EXIT", mapOf("screenName" to lastScreen))
+            val durationSeconds = ((System.currentTimeMillis() - screenStartedAt) / 1000L).coerceAtLeast(0L)
+            val metadata = mutableMapOf<String, Any>("screenName" to lastScreen)
+            if (durationSeconds > 0L) metadata["screenDurationSeconds"] = durationSeconds
+            record(uid, lastScreen, "SCREEN_EXIT", metadata)
         }
         screenStartedAt = 0L
     }
@@ -122,8 +133,15 @@ object UsageAnalyticsRepository {
             "event" to eventName.trim().uppercase().take(80),
             "sessionId" to sessionId.ifBlank { UUID.randomUUID().toString() },
             "appVersion" to BuildConfig.VERSION_NAME, "platform" to "android",
-            "schemaVersion" to 2, "createdAt" to FieldValue.serverTimestamp()
+            "schemaVersion" to 3, "createdAt" to FieldValue.serverTimestamp()
         )
+        val now = System.currentTimeMillis()
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = now
+        event["localHour"] = calendar.get(Calendar.HOUR_OF_DAY)
+        event["localDayOfWeek"] = calendar.get(Calendar.DAY_OF_WEEK)
+        event["timezoneOffsetMinutes"] = calendar.timeZone.getOffset(now) / 60000
+        event["localDate"] = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date(now))
         val safe = safeMetadata(metadata)
         if (safe.isNotEmpty()) event["data"] = safe
         firestore.collection("usageEvents").document(eventId).set(event)
