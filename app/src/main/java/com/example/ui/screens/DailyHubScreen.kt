@@ -177,16 +177,6 @@ fun DailyHubScreen(
             }
         ),
         HomeCategoryItem(
-            id = "services",
-            title = "Servicios",
-            subtitle = "Técnicos, oficios y gas",
-            icon = Icons.Default.Build,
-            accentColor = Color(0xFFB879FF),
-            onClick = {
-                viewModel.navigateTo(Screen.Contacts)
-            }
-        ),
-        HomeCategoryItem(
             id = "health",
             title = "Salud",
             subtitle = "Farmacias y emergencias",
