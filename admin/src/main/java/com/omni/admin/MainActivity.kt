@@ -470,7 +470,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                   Text("Evolución de OMNI", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                  Text("Actividad registrada · últimos 7 días", color = Muted, fontSize = 10.sp)
+                  Text("Actividad registrada · últimos 7 días · fechas UTC", color = Muted, fontSize = 10.sp)
                 }
                 Text("7 DÍAS", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Bold)
               }
