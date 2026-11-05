@@ -14,7 +14,7 @@ android {
     targetSdk = 36
     // GitHub Actions run numbers increase monotonically, allowing in-place Android updates.
     versionCode = (System.getenv("OMNI_ADMIN_VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "4").toInt()
-    versionName = "1.4.1"
+    versionName = "1.4.2"
   }
 
   signingConfigs {
