@@ -357,7 +357,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo cancelar el pedido." }
     }
 
-    Column(Modifier.fillMaxSize().background(Color(0xFF070A14)).padding(16.dp)) {
+    Column(Modifier.fillMaxSize().background(Color(0xFF070A14)).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver", tint = Color.White) }
             Column(Modifier.weight(1f)) {
@@ -379,7 +379,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 )
             }
             if (merchantError != null) Text(merchantError.orEmpty(), color = Color(0xFFFF9B8F), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
-            else if (!merchantReady) Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
+            else if (!merchantReady) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
         } else {
             Text("Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
             Text("CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
@@ -433,8 +433,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 if (visibleProducts.isEmpty()) {
                     Text("No hay productos que coincidan con la búsqueda en este comercio.", color = Color(0xFFFFC978), fontSize = 12.sp)
                 }
-                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(top = 4.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(visibleProducts, key = { it.id }) { product ->
+                Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                visibleProducts.forEach { product ->
                     OrderProductRow(product, cart[product.id] ?: 0,
                         onAdd = {
                             if (!cart.containsKey(product.id) && cart.size >= 30) {
@@ -462,8 +462,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         if (fulfillmentType == "DELIVERY") {
                             OutlinedTextField(deliveryAddress, { deliveryAddress = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Dirección de entrega") }, singleLine = true)
                         }
+                        Text("Podés seguir agregando productos. El QR se genera únicamente cuando confirmás el pedido.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                         Button(onClick = { showOrderReview = true }, enabled = !sending, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
-                            Text("Revisar y confirmar pedido")
+                            Text("Revisar carrito y generar QR")
                         }
                     }
                 }
@@ -472,10 +473,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
 
         if (merchantMode && merchantReady && merchantError == null) {
             if (orders.isEmpty()) {
-                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { Text("Todavía no recibiste pedidos.", color = Color(0xFF9AAAC2), fontSize = 12.sp) }
+                Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) { Text("Todavía no recibiste pedidos.", color = Color(0xFF9AAAC2), fontSize = 12.sp) }
             } else {
-                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(top = 10.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    items(orders, key = { it.id }) { order ->
+                Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    orders.forEach { order ->
                         OrderStatusCard(order, merchantMode = true, onAdvance = { next -> advanceOrder(order, next) })
                     }
                 }
@@ -484,8 +485,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             val ownOrders = orders.filter { it.customerUid == uid }
             if (ownOrders.isNotEmpty()) {
                 Text("MIS PEDIDOS", color = Color(0xFF57DDF5), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(top = 6.dp, bottom = 80.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(ownOrders, key = { it.id }) { order ->
+                Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 80.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ownOrders.forEach { order ->
                         OrderStatusCard(
                             order, merchantMode = false,
                             onAdvance = { next -> if (next == "CANCELADO") cancelCustomerOrder(order) },
