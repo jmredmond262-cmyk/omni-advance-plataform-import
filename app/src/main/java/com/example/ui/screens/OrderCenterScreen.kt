@@ -88,13 +88,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             if (quantity > 0) key to quantity else null
         }.toMap()
     }
+    var cart by remember(store.id) { mutableStateOf(readSavedCart(store.id)) }
     fun updateCart(next: Map<String, Int>) {
         cart = next
         val json = JSONObject()
         next.filterValues { it > 0 }.forEach { (id, quantity) -> json.put(id, quantity) }
         cartPreferences.edit().putString(store.id, json.toString()).apply()
     }
-    var cart by remember(store.id) { mutableStateOf(readSavedCart(store.id)) }
     var productSearch by remember { mutableStateOf("") }
     var selectedProductCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var fulfillmentType by remember { mutableStateOf("RETIRO") }
