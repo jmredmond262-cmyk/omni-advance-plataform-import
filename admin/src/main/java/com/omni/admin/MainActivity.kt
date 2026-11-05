@@ -525,76 +525,50 @@ private fun CompactDashboardStat(label: String, value: String, icon: androidx.co
 }
 
 private fun activityMapHtml(): String = """
-<!doctype html>
-<html lang="es">
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!doctype html><html lang="es"><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
-html,body,#map{height:100%;width:100%;margin:0;background:#071321;overflow:hidden}
-#map{position:absolute;inset:0}
-#map-frame{height:100%;width:100%;border:0;display:block;background:#071321}
-.map-status{position:absolute;z-index:10;left:12px;right:12px;top:12px;padding:10px 12px;border:1px solid #1679a6;border-radius:10px;background:rgba(5,15,29,.94);color:#dceaf8;font:12px/1.4 Arial,sans-serif;box-shadow:0 4px 18px #0008;pointer-events:none}
-.map-status b{color:#00e5ff}
-#fallback{display:none;position:absolute;z-index:8;inset:0;background:#071321;color:#dceaf8;align-items:center;justify-content:center;text-align:center;padding:28px;font:14px/1.5 Arial,sans-serif}
-</style>
-</head>
-<body>
-<div id="map"><iframe id="map-frame" title="Mapa geográfico OMNI" referrerpolicy="no-referrer-when-downgrade" loading="eager"></iframe></div>
-<div class="map-status" id="status"><b>OMNI · CARTOGRAFÍA</b><br>Conectando con OpenStreetMap…</div>
-<div id="fallback">No fue posible conectar con los proveedores cartográficos.<br>El panel y los datos de OMNI siguen disponibles; revisá la conexión del dispositivo.</div>
+html,body,#map,#map-frame{height:100%;width:100%;margin:0;background:#071321}#map{position:relative;overflow:hidden}
+#map-frame{display:none;border:0}.leaflet-container{background:#071321;font-family:Arial,sans-serif}
+.leaflet-control-attribution{background:rgba(5,12,24,.82)!important;color:#9eafc3!important}
+.leaflet-control-attribution a{color:#00dfff!important}.leaflet-bar a{background:#0d2035!important;color:#00e5ff!important;border-color:#24516b!important}
+.map-status{position:absolute;z-index:900;left:12px;right:12px;top:12px;padding:10px 12px;border:1px solid #1679a6;border-radius:10px;background:rgba(5,15,29,.94);color:#dceaf8;font:12px/1.4 Arial,sans-serif;box-shadow:0 4px 18px #0008;pointer-events:none}
+.map-status b{color:#00e5ff}#fallback{display:none;position:absolute;z-index:850;inset:0;background:#071321;color:#dceaf8;align-items:center;justify-content:center;text-align:center;padding:28px;font:14px/1.5 Arial,sans-serif}
+</style></head><body>
+<div id="map"><iframe id="map-frame" title="Mapa geográfico OMNI" referrerpolicy="no-referrer-when-downgrade"></iframe></div>
+<div class="map-status" id="status"><b>OMNI · CARTOGRAFÍA</b><br>Iniciando visor geográfico…</div><div id="fallback">No fue posible conectar con los proveedores cartográficos.<br>Revisá la conexión del dispositivo.</div>
 <script>
 (function(){
- var status=document.getElementById('status');
- var frame=document.getElementById('map-frame');
- var fallback=document.getElementById('fallback');
- var activeScope='Local', fallbackTimer=null, loaded=false;
- var scopes={
-  'Local':{bbox:'-60.86,-31.73,-60.54,-31.52',marker:'-31.6333,-60.7000',label:'Área local · Santa Fe capital'},
-  'Santa Fe':{bbox:'-62.75,-34.05,-58.75,-28.00',marker:'-30.7069,-60.9500',label:'Provincia de Santa Fe'},
-  'Argentina':{bbox:'-73.60,-55.10,-53.60,-21.70',marker:'-38.4161,-63.6167',label:'República Argentina'}
- };
- function show(message){status.innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>'+message;}
- function osmUrl(scope){
-  var z=scopes[scope]||scopes.Local;
-  return 'https://www.openstreetmap.org/export/embed.html?bbox='+encodeURIComponent(z.bbox)+'&layer=mapnik&marker='+encodeURIComponent(z.marker);
- }
- function googleUrl(scope){
-  var z=scopes[scope]||scopes.Local;
-  return 'https://maps.google.com/maps?q='+encodeURIComponent(z.marker)+'&z='+(scope==='Argentina'?4:scope==='Santa Fe'?7:13)+'&output=embed';
- }
- function loadScope(scope,provider){
-  activeScope=scope;
-  var z=scopes[scope]||scopes.Local;
-  loaded=false;
-  fallback.style.display='none';
-  show(z.label+' · cargando cartografía…');
-  if(fallbackTimer)clearTimeout(fallbackTimer);
-  frame.onload=function(){
-   loaded=true;
-   show(z.label+' · mapa base conectado. Los indicadores aparecen cuando hay actividad agregada disponible.');
-  };
-  frame.src=provider==='google'?googleUrl(scope):osmUrl(scope);
-  fallbackTimer=setTimeout(function(){
-   if(!loaded && provider!=='google'){
-    show('OpenStreetMap no respondió. Probando proveedor alternativo…');
-    loadScope(scope,'google');
-   }else if(!loaded){
-    show('No se recibió cartografía de los proveedores disponibles.');
-    fallback.style.display='flex';
-   }
-  },10000);
- }
- window.setMapScope=function(scope){loadScope(scope,'osm');};
- window.setActivityPoints=function(points){
-  var total=Array.isArray(points)?points.length:0;
-  if(total>0)show(scopes[activeScope].label+' · '+total+' grupos de actividad recibidos. La cartografía base es independiente de esos datos.');
- };
- window.onerror=function(message){show('Error interno del visor: '+String(message).slice(0,140));};
- loadScope('Local','osm');
+var status=document.getElementById('status'),frame=document.getElementById('map-frame'),fallback=document.getElementById('fallback'),map=null,activityLayer=null,tileLayer=null,scope='Local',timer=null,frameLoaded=false;
+var zones={'Local':{center:[-31.6333,-60.7000],zoom:12,bbox:'-60.86,-31.73,-60.54,-31.52',marker:'-31.6333,-60.7000',label:'Área local · Santa Fe capital'},'Santa Fe':{center:[-30.7069,-60.9500],zoom:7,bbox:'-62.75,-34.05,-58.75,-28.00',marker:'-30.7069,-60.9500',label:'Provincia de Santa Fe'},'Argentina':{center:[-38.4161,-63.6167],zoom:4,bbox:'-73.60,-55.10,-53.60,-21.70',marker:'-38.4161,-63.6167',label:'República Argentina'}};
+function show(m){status.innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>'+m;}
+function url(s,p){var z=zones[s]||zones.Local;return p==='google'?'https://maps.google.com/maps?q='+encodeURIComponent(z.marker)+'&z='+(s==='Argentina'?4:s==='Santa Fe'?7:13)+'&output=embed':'https://www.openstreetmap.org/export/embed.html?bbox='+encodeURIComponent(z.bbox)+'&layer=mapnik&marker='+encodeURIComponent(z.marker);}
+function fallbackMap(provider){
+if(timer)clearTimeout(timer);if(map){try{map.remove();}catch(e){}map=null;activityLayer=null;tileLayer=null;}
+frame.style.display='block';fallback.style.display='none';frameLoaded=false;show(zones[scope].label+' · abriendo cartografía alternativa…');
+frame.onload=function(){frameLoaded=true;show(zones[scope].label+' · mapa base conectado.');};frame.src=url(scope,provider);
+timer=setTimeout(function(){if(!frameLoaded&&provider!=='google')fallbackMap('google');else if(!frameLoaded){show('No se recibió cartografía de los proveedores disponibles.');fallback.style.display='flex';}},10000);
+}
+function attachTiles(){
+var loads=0,errors=0;if(tileLayer)map.removeLayer(tileLayer);
+tileLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'});
+tileLayer.on('tileload',function(){loads++;if(loads===1)show(zones[scope].label+' · calles y cartografía cargadas.');});
+tileLayer.on('tileerror',function(){errors++;if(errors>=2&&loads===0){show('No responde el servicio de mosaicos. Activando mapa alternativo…');fallbackMap('osm');}});
+tileLayer.addTo(map);
+}
+function boot(){
+if(!window.L){fallbackMap('osm');return;}
+try{
+map=L.map('map',{zoomControl:true,preferCanvas:true}).setView(zones.Local.center,zones.Local.zoom);activityLayer=L.layerGroup().addTo(map);
+window.setActivityPoints=function(points){activityLayer.clearLayers();(Array.isArray(points)?points:[]).forEach(function(p){var lat=Number(p.latitude),lon=Number(p.longitude),count=Number(p.count);if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(count)||count<3)return;L.circleMarker([lat,lon],{radius:Math.min(18,7+Math.log(count)*2),color:'#00e5ff',weight:2,fillColor:'#00b9e8',fillOpacity:.62}).bindPopup('<b>Actividad agregada OMNI</b><br>'+count+' eventos agrupados').addTo(activityLayer);});};
+window.setMapScope=function(s){scope=zones[s]?s:'Local';var z=zones[scope];if(map){map.flyTo(z.center,z.zoom,{duration:.5});setTimeout(function(){map.invalidateSize(true);},250);}else if(frame.style.display==='block')fallbackMap('osm');show(z.label+' · '+(activityLayer&&activityLayer.getLayers().length?activityLayer.getLayers().length+' áreas agregadas':'mapa base disponible; sin áreas agregadas todavía')+'.');};
+attachTiles();setTimeout(function(){if(map)map.invalidateSize(true);},350);
+}catch(e){show('Error al iniciar el visor: '+String(e.message||e));fallbackMap('osm');}
+}
+window.onerror=function(m){show('Error del visor: '+String(m).slice(0,140));};
+var script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';script.onload=boot;script.onerror=function(){show('No se pudo cargar Leaflet. Activando mapa alternativo…');fallbackMap('osm');};document.head.appendChild(script);
 })();
-</script>
-</body>
-</html>
+</script></body></html>
 """.trimIndent()
 @Composable
 private fun ActivityMapDialog(points: JSONArray, onDismiss: () -> Unit) {
