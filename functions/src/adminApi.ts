@@ -84,10 +84,11 @@ async function dashboard() {
   const screenEvents = events.filter((event) => /screen|view|navigation/i.test(eventName(event)));
   const actionEvents = events.filter((event) => !/screen|view|navigation/i.test(eventName(event)));
   const dayCounts: Record<string, number> = {};
-  const todayLocal = new Date();
+  const todayUtc = new Date();
+  todayUtc.setUTCHours(0, 0, 0, 0);
   for (let offset = 6; offset >= 0; offset--) {
-    const day = new Date(todayLocal); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - offset);
-    const key = day.toLocaleDateString("en-CA");
+    const day = new Date(todayUtc); day.setUTCDate(day.getUTCDate() - offset);
+    const key = day.toISOString().slice(0, 10);
     dayCounts[key] = 0;
   }
   const hourlyCounts = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
@@ -97,8 +98,8 @@ async function dashboard() {
   for (const event of events) {
     const raw = valueOf(event, ["createdAt", "timestamp", "serverTimestamp"]);
     const date = raw instanceof Timestamp ? raw.toDate() : raw instanceof Date ? raw : null;
-    const localDate = String(valueOf(event, ["localDate"]) ?? (date ? date.toLocaleDateString("en-CA") : ""));
-    if (localDate in dayCounts) dayCounts[localDate]++;
+    const utcDate = date ? date.toISOString().slice(0, 10) : "";
+    if (utcDate in dayCounts) dayCounts[utcDate]++;
     const hourRaw = valueOf(event, ["localHour"]);
     const hour = Number(hourRaw);
     if (Number.isInteger(hour) && hour >= 0 && hour <= 23) hourlyCounts[hour].count++;
