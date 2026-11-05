@@ -375,6 +375,16 @@ async function listAllDocuments(env, collection, maxItems = 1000) {
   } while (pageToken && items.length < maxItems);
   return { items, complete: !pageToken };
 }
+async function countSubcollectionDocuments(env, collectionId) {
+  const query = {
+    structuredAggregationQuery: {
+      structuredQuery: { from: [{ collectionId, allDescendants: true }] },
+      aggregations: [{ count: {}, alias: "total" }]
+    }
+  };
+  const result = await firestore(env, ":runAggregationQuery", { method: "POST", body: JSON.stringify(query) });
+  return Number(result[0]?.result?.aggregateFields?.total?.integerValue || 0);
+}
 async function recentTransactionDocuments(env, limit = 100) {
   const structuredQuery = {
     from: [{ collectionId: "transactions", allDescendants: true }],
@@ -385,11 +395,12 @@ async function recentTransactionDocuments(env, limit = 100) {
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
 async function finance(env) {
-  const [accountCount, accountPage, operationCount, operationPage, transactions] = await Promise.all([
+  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions] = await Promise.all([
     countDocuments(env, "walletAccounts"),
     listAllDocuments(env, "walletAccounts", 1000),
     countDocuments(env, "walletOperations"),
     recentDocuments(env, "walletOperations", 5000),
+    countSubcollectionDocuments(env, "transactions"),
     recentTransactionDocuments(env, 100)
   ]);
   const accounts = accountPage.items.slice(0, 100);
@@ -413,7 +424,9 @@ async function finance(env) {
       totalCredits: initialCapital + deposits,
       outflows: transferVolume + qrVolume,
       accountCount,
-      transactionCount: operationCount,
+      transactionCount,
+      transactionSampleSize: transactions.length,
+      transactionSampleComplete: transactions.length < 100,
       accountSampleSize: accountPage.items.length,
       accountSampleComplete: accountPage.complete,
       operationsSampleSize: operationPage.length,
