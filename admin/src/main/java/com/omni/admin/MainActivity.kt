@@ -386,12 +386,16 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
     Triple("Comercios", "stores", Icons.Default.Storefront),
     Triple("Pedidos", "orders", Icons.Default.ShoppingBag),
     Triple("Eventos", "events", Icons.Default.Event),
+    Triple("Momentos", "moments", Icons.Default.Cake),
     Triple("Bolsa de trabajo", "conexPosts", Icons.Default.Work),
     Triple("Perfiles", "conexProfiles", Icons.Default.Badge),
+    Triple("Opiniones", "feedback", Icons.Default.Forum),
     Triple("Estadísticas", "activity", Icons.Default.QueryStats),
     Triple("Movimientos", "operations", Icons.Default.SwapHoriz),
     Triple("Auditoría", "audit", Icons.Default.FactCheck),
     Triple("Módulos", "modules", Icons.Default.Extension),
+    Triple("Finanzas DEMO", "finance", Icons.Default.Savings),
+    Triple("Accesos", "invitations", Icons.Default.VpnKey),
     Triple("Configuración", "settings", Icons.Default.Settings)
   )
   val accents = listOf(Color(0xFF00DFFC), Color(0xFF28DFA2), Color(0xFF9B78FF), Color(0xFFFFB547), Color(0xFFFF5C9A))
