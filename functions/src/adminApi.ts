@@ -59,7 +59,7 @@ async function audit(actor: AdminContext, action: string, target: string, detail
 }
 
 async function dashboard() {
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "appFeedback", "usageEvents", "moduleRegistry"];
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "appFeedback", "usageEvents", "moduleRegistry"];
   const counts = await Promise.all(collections.map(count));
   const since = Timestamp.fromDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
   const [wallets, users, operations, usage, profiles] = await Promise.all([
@@ -156,7 +156,7 @@ async function dashboard() {
 }
 
 async function listCollection(name: string, limit = 100, pageToken = "") {
-  const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
+  const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
   if (!allowed.has(name)) throw new HttpsError("invalid-argument", "Colección no disponible.");
   const safeLimit = Math.min(Math.max(limit, 1), 200);
   let query = db.collection(name).orderBy(FieldPath.documentId()).limit(safeLimit + 1);
@@ -169,7 +169,18 @@ async function listCollection(name: string, limit = 100, pageToken = "") {
   const hasMore = snapshot.docs.length > safeLimit;
   const page = snapshot.docs.slice(0, safeLimit);
   return {
-    items: page.map((doc) => ({ id: doc.id, ...clean(doc.data()) as object })),
+    items: page.map((doc) => {
+      const data = clean(doc.data()) as Record<string, unknown>;
+      if (name === "omniMoments") {
+        // Private greeting text, personal notes and names are never exposed in Admin listings.
+        return {
+          id: doc.id, ownerUid: data.ownerUid, occasion: data.occasion,
+          date: data.date, status: data.status, createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        };
+      }
+      return { id: doc.id, ...data };
+    }),
     nextPageToken: hasMore ? page[page.length - 1]?.id ?? "" : "",
     hasMore
   };
