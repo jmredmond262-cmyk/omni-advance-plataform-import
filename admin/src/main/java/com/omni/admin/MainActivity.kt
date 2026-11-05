@@ -1,6 +1,9 @@
 package com.omni.admin
 
 import android.os.Bundle
+import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.WebViewClient
+import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -521,52 +524,112 @@ private fun CompactDashboardStat(label: String, value: String, icon: androidx.co
   }
 }
 
+private fun activityMapHtml(): String = """
+<!doctype html>
+<html lang="es">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+html,body,#map{height:100%;width:100%;margin:0;background:#071321}
+.leaflet-container{background:#071321;font-family:Arial,sans-serif}
+.leaflet-control-attribution{background:rgba(5,12,24,.82)!important;color:#9eafc3!important}
+.leaflet-control-attribution a{color:#00dfff!important}
+.leaflet-bar a{background:#0d2035!important;color:#00e5ff!important;border-color:#24516b!important}
+.map-status{position:absolute;z-index:900;left:12px;right:12px;top:12px;padding:10px 12px;border:1px solid #1679a6;border-radius:10px;background:rgba(5,15,29,.92);color:#dceaf8;font-size:12px;line-height:1.4;box-shadow:0 4px 18px #0008}
+.map-status b{color:#00e5ff}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="map-status" id="status"><b>OMNI · CARTOGRAFÍA</b><br>Mapa geográfico real. La actividad se mostrará únicamente cuando existan coordenadas agregadas y autorizadas.</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+ if(!window.L){document.getElementById('status').innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>No se pudo cargar el proveedor cartográfico. Revisá la conexión a internet.';return;}
+ var map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([-31.6333,-60.7000],12);
+ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+   subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap contributors · © CARTO'
+ }).addTo(map);
+ var zones={
+   'Local':{center:[-31.6333,-60.7000],zoom:12,label:'Área local · Santa Fe capital'},
+   'Santa Fe':{center:[-30.7069,-60.9500],zoom:7,label:'Provincia de Santa Fe'},
+   'Argentina':{center:[-38.4161,-63.6167],zoom:4,label:'República Argentina'}
+ };
+ window.setMapScope=function(scope){
+   var item=zones[scope]||zones.Local;
+   map.flyTo(item.center,item.zoom,{duration:.65});
+   document.getElementById('status').innerHTML='<b>OMNI · '+scope.toUpperCase()+'</b><br>'+item.label+' · Cartografía base activa. Sin puntos individuales ni ubicaciones inventadas.';
+   setTimeout(function(){map.invalidateSize();},250);
+ };
+ setTimeout(function(){map.invalidateSize();},300);
+})();
+</script>
+</body>
+</html>
+""".trimIndent()
+
 @Composable
 private fun ActivityMapDialog(onDismiss: () -> Unit) {
   var scope by remember { mutableStateOf("Local") }
+  var mapView by remember { mutableStateOf<WebView?>(null) }
   Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-    Box(Modifier.fillMaxSize().background(Color(0xFF050C18)).padding(12.dp)) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF050C18)).padding(8.dp)) {
       Column(
-        Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).border(1.dp, Color(0xFF168AC5), RoundedCornerShape(18.dp))
-          .background(Color(0xFF071321)).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp))
+          .border(1.dp, Color(0xFF168AC5), RoundedCornerShape(18.dp))
+          .background(Color(0xFF071321)).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Icon(Icons.Default.Map, null, tint = Mint, modifier = Modifier.size(25.dp))
-          Spacer(Modifier.width(9.dp))
+          Icon(Icons.Default.Map, null, tint = Mint, modifier = Modifier.size(24.dp))
+          Spacer(Modifier.width(8.dp))
           Column(Modifier.weight(1f)) {
-            Text("Mapa de actividad OMNI", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Text("Vista geográfica ampliada", color = Muted, fontSize = 10.sp)
+            Text("Mapa de actividad OMNI", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Cartografía interactiva · vista ampliada", color = Muted, fontSize = 10.sp)
           }
           IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Cerrar mapa", tint = Mint) }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
           listOf("Local", "Santa Fe", "Argentina").forEach { level ->
-            FilterChip(selected = scope == level, onClick = { scope = level }, label = { Text(level, fontSize = 11.sp) })
-          }
-        }
-        Box(
-          Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(14.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF061A2A), Color(0xFF091B30))))
-            .border(1.dp, Color(0xFF12658C), RoundedCornerShape(14.dp)),
-          contentAlignment = Alignment.Center
-        ) {
-          Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Icon(Icons.Default.LocationSearching, null, tint = Mint, modifier = Modifier.size(44.dp))
-            Text(scope, color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text(
-              "La capa geográfica se completará cuando OMNI disponga de ubicaciones autorizadas y datos agregados para esta zona.",
-              color = Muted, fontSize = 12.sp, lineHeight = 17.sp
+            FilterChip(
+              selected = scope == level,
+              onClick = {
+                scope = level
+                mapView?.evaluateJavascript("window.setMapScope && window.setMapScope('" + level + "')", null)
+              },
+              label = { Text(level, fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = Mint, selectedLabelColor = Navy,
+                labelColor = Muted, containerColor = PanelSoft
+              )
             )
-            Text("No se muestran posiciones individuales ni ubicaciones inventadas.", color = Color(0xFF68DDB8), fontSize = 10.sp)
           }
         }
-        Text("La vista aprovecha la pantalla completa y se adapta al girar el celular.", color = Muted, fontSize = 10.sp)
+        AndroidView(
+          modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(13.dp))
+            .border(1.dp, Color(0xFF12658C), RoundedCornerShape(13.dp)),
+          factory = { context ->
+            WebView(context).apply {
+              settings.javaScriptEnabled = true
+              settings.domStorageEnabled = true
+              settings.loadsImagesAutomatically = true
+              webViewClient = WebViewClient()
+              setBackgroundColor(android.graphics.Color.rgb(7, 19, 33))
+              loadDataWithBaseURL("https://omni-admin.local/", activityMapHtml(), "text/html", "UTF-8", null)
+              mapView = this
+            }
+          },
+          update = { mapView = it }
+        )
+        Text(
+          "La cartografía es real y navegable. Los puntos de actividad requieren coordenadas autorizadas y agregadas; no se simulan ubicaciones.",
+          color = Muted, fontSize = 9.sp, lineHeight = 13.sp
+        )
       }
     }
   }
 }
-
 @Composable
 private fun FinanceContent(payload: JSONObject) {
   val summary = payload.optJSONObject("summary") ?: JSONObject()
