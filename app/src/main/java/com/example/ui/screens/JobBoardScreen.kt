@@ -31,6 +31,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import com.example.data.analytics.UsageAnalyticsRepository
 
 private data class OmniJobPost(
@@ -90,6 +91,41 @@ fun JobBoardScreen(onBack: () -> Unit) {
     var cvLinks by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
+    var profileProfession by remember { mutableStateOf("") }
+    var profileSkills by remember { mutableStateOf("") }
+    var profileExperience by remember { mutableStateOf("") }
+    var profileEducation by remember { mutableStateOf("") }
+    var profileLocation by remember { mutableStateOf("") }
+    var profileAvailability by remember { mutableStateOf("Disponible") }
+    var profileCvLink by remember { mutableStateOf("") }
+    var profilePublic by remember { mutableStateOf(false) }
+    var profileLoading by remember { mutableStateOf(true) }
+
+    DisposableEffect(uid) {
+        var registration: ListenerRegistration? = null
+        if (uid.isNotBlank()) {
+            registration = db.collection("omniProfessionalProfiles").document(uid)
+                .addSnapshotListener { snapshot, exception ->
+                    if (exception != null) {
+                        profileLoading = false
+                        feedback = exception.localizedMessage ?: "No se pudo cargar tu perfil profesional."
+                    } else if (snapshot != null && snapshot.exists()) {
+                        profileProfession = snapshot.getString("profession").orEmpty()
+                        profileSkills = snapshot.getString("skills").orEmpty()
+                        profileExperience = snapshot.getString("experience").orEmpty()
+                        profileEducation = snapshot.getString("education").orEmpty()
+                        profileLocation = snapshot.getString("location").orEmpty()
+                        profileAvailability = snapshot.getString("availability") ?: "Disponible"
+                        profileCvLink = snapshot.getString("cvLink").orEmpty()
+                        profilePublic = snapshot.getString("visibility") == "PUBLIC"
+                        profileLoading = false
+                    } else {
+                        profileLoading = false
+                    }
+                }
+        } else profileLoading = false
+        onDispose { registration?.remove() }
+    }
 
     DisposableEffect(uid) {
         var registration: ListenerRegistration? = null
@@ -215,6 +251,41 @@ fun JobBoardScreen(onBack: () -> Unit) {
         }.addOnFailureListener { exception ->
             busy = false
             feedback = exception.localizedMessage ?: "No se pudo publicar. Revisá las reglas de Firestore."
+        }
+    }
+
+    fun saveProfessionalProfile() {
+        if (uid.isBlank() || profileProfession.isBlank() || profileLocation.isBlank()) {
+            feedback = "Completá profesión u oficio y localidad para guardar tu perfil."
+            return
+        }
+        busy = true
+        val ref = db.collection("omniProfessionalProfiles").document(uid)
+        ref.get().addOnSuccessListener { existing ->
+            val data = mutableMapOf<String, Any>(
+                "ownerUid" to uid,
+                "profession" to profileProfession.trim().take(100),
+                "skills" to profileSkills.trim().take(1000),
+                "experience" to profileExperience.trim().take(1000),
+                "education" to profileEducation.trim().take(500),
+                "location" to profileLocation.trim().take(100),
+                "availability" to profileAvailability,
+                "cvLink" to profileCvLink.trim().take(1500),
+                "visibility" to if (profilePublic) "PUBLIC" else "PRIVATE",
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (!existing.exists()) data["createdAt"] = FieldValue.serverTimestamp()
+            ref.set(data, SetOptions.merge()).addOnSuccessListener {
+                busy = false
+                feedback = if (profilePublic) "Perfil profesional guardado y visible para usuarios autenticados." else "Perfil profesional guardado en modo privado."
+                UsageAnalyticsRepository.trackEvent(uid, "conex", "PROFESSIONAL_PROFILE_SAVED", mapOf("status" to if (profilePublic) "PUBLIC" else "PRIVATE", "success" to true))
+            }.addOnFailureListener { exception ->
+                busy = false
+                feedback = exception.localizedMessage ?: "No se pudo guardar tu perfil profesional."
+            }
+        }.addOnFailureListener { exception ->
+            busy = false
+            feedback = exception.localizedMessage ?: "No se pudo verificar tu perfil profesional."
         }
     }
 
