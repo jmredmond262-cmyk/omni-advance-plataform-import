@@ -258,50 +258,62 @@ private fun AdminHome(
     topBar = {
       Column(
         Modifier.fillMaxWidth()
-          .background(Brush.verticalGradient(listOf(Color(0xFF10243A), Color(0xFF091321))))
-          .border(width = 1.dp, color = Color(0xFF12364D))
-          .padding(horizontal = 16.dp, vertical = 12.dp)
+          .background(Brush.verticalGradient(listOf(Color(0xFF101D35), Color(0xFF070D1B))))
+          .border(width = 1.dp, color = Color(0xFF164B68))
+          .padding(horizontal = 14.dp, vertical = 11.dp)
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Box(
-            Modifier.size(38.dp).clip(RoundedCornerShape(13.dp))
-              .background(Brush.linearGradient(listOf(Mint, Color(0xFF1268D8)))),
+            Modifier.size(42.dp).clip(RoundedCornerShape(14.dp))
+              .background(Brush.linearGradient(listOf(Color(0xFF00E5FF), Color(0xFF1768D8), Color(0xFF7048D8))))
+              .border(1.dp, Color(0xFF58F0FF), RoundedCornerShape(14.dp)),
             contentAlignment = Alignment.Center
-          ) { Text("O", color = Navy, fontSize = 25.sp, fontWeight = FontWeight.Black) }
-          Spacer(Modifier.width(10.dp))
-          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("OMNI ADMIN", color = White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
-            Text(activeTab?.label ?: "Centro de control", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+          ) {
+            Icon(Icons.Default.Public, null, tint = White, modifier = Modifier.size(25.dp))
           }
-          IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Actualizar datos", tint = Mint) }
-          IconButton(onClick = onSignOut) { Icon(Icons.Default.Logout, "Cerrar sesión", tint = Muted) }
+          Spacer(Modifier.width(11.dp))
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+              Text("OMNI ADMIN", color = White, fontSize = 15.sp, fontWeight = FontWeight.Black, letterSpacing = 1.6.sp)
+              Box(Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF073B4A)).border(1.dp, Mint.copy(alpha = .7f), RoundedCornerShape(20.dp)).padding(horizontal = 7.dp, vertical = 3.dp)) {
+                Text("CONTROL CENTER", color = Mint, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = .7.sp)
+              }
+            }
+            Text(activeTab?.label ?: "Panel ejecutivo", color = Color(0xFF9CB1CA), fontSize = 11.sp)
+          }
+          IconButton(onClick = onRefresh) {
+            Icon(Icons.Default.Refresh, "Actualizar datos", tint = Mint)
+          }
+          IconButton(onClick = onSignOut) {
+            Icon(Icons.Default.Logout, "Cerrar sesión", tint = Color(0xFF9CB1CA))
+          }
         }
         Spacer(Modifier.height(9.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Box(Modifier.size(7.dp).background(Mint, RoundedCornerShape(50)))
+          Box(Modifier.size(7.dp).background(Color(0xFF32E7A0), RoundedCornerShape(50)))
           Spacer(Modifier.width(7.dp))
-          Text(email, color = Muted, fontSize = 11.sp, maxLines = 1)
+          Text(email, color = Color(0xFF9CB1CA), fontSize = 10.sp, maxLines = 1)
           Spacer(Modifier.weight(1f))
-          Text("PANEL PRIVADO", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+          Text("SESIÓN ADMINISTRATIVA", color = Color(0xFF6F88A7), fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = .8.sp)
         }
         val groupTabs = tabs.filter { it.id in activeGroup.tabIds }
         if (groupTabs.size > 1) {
-          Spacer(Modifier.height(12.dp))
+          Spacer(Modifier.height(11.dp))
           Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             groupTabs.forEach { tab ->
               FilterChip(
                 selected = selected == tab.id,
                 onClick = { onSelect(tab.id) },
-                label = { Text(tab.label, maxLines = 1, fontSize = 11.sp) },
+                label = { Text(tab.label, maxLines = 1, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
                 colors = FilterChipDefaults.filterChipColors(
-                  selectedContainerColor = Mint,
-                  selectedLabelColor = Navy,
-                  labelColor = Muted,
-                  containerColor = PanelSoft
+                  selectedContainerColor = Color(0xFF063D50),
+                  selectedLabelColor = Mint,
+                  labelColor = Color(0xFF9CB1CA),
+                  containerColor = Color(0xFF0B1426)
                 ),
                 border = FilterChipDefaults.filterChipBorder(
                   enabled = true, selected = selected == tab.id,
-                  borderColor = Color(0xFF21445D), selectedBorderColor = Mint
+                  borderColor = Color(0xFF263B59), selectedBorderColor = Mint
                 )
               )
             }
@@ -310,33 +322,44 @@ private fun AdminHome(
       }
     },
     bottomBar = {
-      NavigationBar(containerColor = Color(0xFF0A1423), contentColor = Mint, tonalElevation = 0.dp) {
+      NavigationBar(
+        containerColor = Color(0xFF080F1F),
+        contentColor = Mint,
+        tonalElevation = 0.dp,
+        modifier = Modifier.border(width = 1.dp, color = Color(0xFF18314C))
+      ) {
         navGroups.forEach { group ->
           NavigationBarItem(
             selected = activeGroup.id == group.id,
             onClick = { onSelect(group.tabIds.first()) },
             icon = { Icon(group.icon, contentDescription = group.label) },
-            label = { Text(group.label, fontSize = 10.sp, maxLines = 1) },
+            label = { Text(group.label, fontSize = 9.sp, maxLines = 1, fontWeight = FontWeight.SemiBold) },
             colors = NavigationBarItemDefaults.colors(
               selectedIconColor = Mint,
               selectedTextColor = Mint,
-              indicatorColor = Color(0xFF12384C),
-              unselectedIconColor = Muted,
-              unselectedTextColor = Muted
+              indicatorColor = Color(0xFF073B4A),
+              unselectedIconColor = Color(0xFF7186A3),
+              unselectedTextColor = Color(0xFF7186A3)
             )
           )
         }
       }
     }
   ) { padding ->
-    Column(Modifier.fillMaxSize().padding(padding)) {
-      if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Mint, trackColor = Panel)
-      if (error.isNotBlank()) Text(
-        error,
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        color = if (error.contains("correctamente") || error.contains("registrada") || error.contains("actualizado")) Mint else Danger,
-        fontSize = 13.sp
+    Column(Modifier.fillMaxSize().background(Navy).padding(padding)) {
+      if (loading) LinearProgressIndicator(
+        Modifier.fillMaxWidth(),
+        color = Mint,
+        trackColor = Color(0xFF14243B)
       )
+      if (error.isNotBlank()) {
+        Text(
+          error,
+          Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+          color = if (error.contains("correctamente") || error.contains("registrada") || error.contains("actualizado")) Color(0xFF32E7A0) else Danger,
+          fontSize = 12.sp
+        )
+      }
       when (selected) {
         "dashboard" -> DashboardContent(payload, onSelect)
         "finance" -> FinanceContent(payload)
