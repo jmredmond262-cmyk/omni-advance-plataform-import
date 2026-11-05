@@ -110,7 +110,10 @@ fun MorningBriefingScreen(
             if (locality != null) {
                 runCatching {
                     val jobs = db.collection("jobPosts").whereEqualTo("status", "ACTIVE").get().await()
-                    nearbyConexCount = jobs.documents.count { it.getString("location").orEmpty().contains(locality, true) }
+                    nearbyConexCount = jobs.documents.count { job ->
+                        val expiry = job.getTimestamp("expiresAt")?.toDate()?.time ?: Long.MAX_VALUE
+                        expiry > System.currentTimeMillis() && job.getString("location").orEmpty().contains(locality, true)
+                    }
                 }.onFailure { nearbyConexCount = 0 }
                 runCatching {
                     val events = db.collection("omniEvents").get().await()
