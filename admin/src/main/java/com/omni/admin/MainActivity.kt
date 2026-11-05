@@ -822,7 +822,7 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
   var expanded by remember(item["id"]) { mutableStateOf(false) }
   val title = when (type) {
     "users" -> firstPresentValue(item, "displayName", "fullName", "name", "email").ifBlank { "Perfil de usuario · nombre no informado" }
-    "walletAccounts" -> firstPresentValue(item, "displayName", "holderName", "ownerName", "fullName", "email").ifBlank { "Cuenta OMNI Pay · titular no informado" }
+    "walletAccounts" -> firstPresentValue(item, "holderName", "ownerName", "fullName", "displayName", "name", "email").ifBlank { "Cuenta OMNI Pay · titular no informado" }
     "walletOperations" -> friendlyEnum(firstPresentValue(item, "kind", "type", "title").ifBlank { "Operación de billetera · tipo no informado" })
     "merchantProfiles" -> firstPresentValue(item, "storeName", "name").ifBlank { "Perfil comercial · nombre no informado" }
     "storeOrders" -> "Pedido " + firstPresentValue(item, "orderNumber", "status").ifBlank { "de comercio · número no informado" }
