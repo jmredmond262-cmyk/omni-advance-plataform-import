@@ -73,9 +73,9 @@ async function dashboard() {
   const events = usage.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   const valueOf = (event: Record<string, unknown>, keys: string[]) =>
     keys.map((key) => event[key]).find((value) => value !== undefined && value !== null);
-  const eventName = (event: Record<string, unknown>) => String(valueOf(event, ["eventType", "type", "event", "name", "action"]) ?? "UNKNOWN");
-  const screenName = (event: Record<string, unknown>) => String(valueOf(event, ["screen", "screenName", "route"]) ?? "");
-  const moduleName = (event: Record<string, unknown>) => String(valueOf(event, ["module", "moduleId", "feature"]) ?? "");
+  const eventName = (event: Record<string, unknown>) => String(valueOf(event, ["eventType", "type", "event", "name", "action"]) ?? "TIPO_DE_EVENTO_NO_INFORMADO");
+  const screenName = (event: Record<string, unknown>) => String(valueOf(event, ["screen", "screenName", "route"]) ?? "PANTALLA_NO_INFORMADA");
+  const moduleName = (event: Record<string, unknown>) => String(valueOf(event, ["module", "moduleId", "feature"]) ?? "MODULO_NO_INFORMADO");
   const countBy = (values: string[]) => Object.entries(values.filter(Boolean).reduce<Record<string, number>>((acc, value) => {
     acc[value] = (acc[value] ?? 0) + 1; return acc;
   }, {})).map(([name, value]) => ({ name, count: value })).sort((a, b) => b.count - a.count);
@@ -84,18 +84,35 @@ async function dashboard() {
   const screenEvents = events.filter((event) => /screen|view|navigation/i.test(eventName(event)));
   const actionEvents = events.filter((event) => !/screen|view|navigation/i.test(eventName(event)));
   const dayCounts: Record<string, number> = {};
+  const todayLocal = new Date();
   for (let offset = 6; offset >= 0; offset--) {
-    const day = new Date(); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - offset);
-    dayCounts[day.toISOString().slice(5, 10)] = 0;
+    const day = new Date(todayLocal); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - offset);
+    const key = day.toLocaleDateString("en-CA");
+    dayCounts[key] = 0;
   }
+  const hourlyCounts = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
+  const weekdayCounts = Array.from({ length: 7 }, (_, index) => ({ day: index, label: ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][index], count: 0 }));
+  const sessionDurations: number[] = [];
+  const screenDurations: number[] = [];
   for (const event of events) {
     const raw = valueOf(event, ["createdAt", "timestamp", "serverTimestamp"]);
     const date = raw instanceof Timestamp ? raw.toDate() : raw instanceof Date ? raw : null;
-    if (date) {
-      const key = date.toISOString().slice(5, 10);
-      if (key in dayCounts) dayCounts[key]++;
-    }
+    const localDate = String(valueOf(event, ["localDate"]) ?? (date ? date.toLocaleDateString("en-CA") : ""));
+    if (localDate in dayCounts) dayCounts[localDate]++;
+    const hourRaw = valueOf(event, ["localHour"]);
+    const hour = Number(hourRaw);
+    if (Number.isInteger(hour) && hour >= 0 && hour <= 23) hourlyCounts[hour].count++;
+    const weekdayRaw = Number(valueOf(event, ["localDayOfWeek"]));
+    if (Number.isInteger(weekdayRaw) && weekdayRaw >= 1 && weekdayRaw <= 7) weekdayCounts[weekdayRaw - 1].count++;
+    const data = event.data && typeof event.data === "object" ? event.data as Record<string, unknown> : {};
+    const sessionDuration = Number(data.sessionDurationSeconds ?? event.sessionDurationSeconds ?? 0);
+    const screenDuration = Number(data.screenDurationSeconds ?? event.screenDurationSeconds ?? 0);
+    if (eventName(event) === "SESSION_END" && Number.isFinite(sessionDuration) && sessionDuration > 0) sessionDurations.push(sessionDuration);
+    if (eventName(event) === "SCREEN_EXIT" && Number.isFinite(screenDuration) && screenDuration > 0) screenDurations.push(screenDuration);
   }
+  const observedHours = hourlyCounts.filter((item) => item.count > 0);
+  const peakActivityHour = observedHours.length ? observedHours.reduce((best, item) => item.count > best.count ? item : best) : null;
+  const quietestActivityHour = observedHours.length ? observedHours.reduce((best, item) => item.count < best.count ? item : best) : null;
   const diagnosticEventSeen = events.some((event) => /diagnostic|health.?check/i.test(eventName(event)));
   return {
     counts: Object.fromEntries(collections.map((name, index) => [name, counts[index]])),
@@ -104,8 +121,14 @@ async function dashboard() {
       sessions7d: sessions.size,
       screenViews7d: screenEvents.length,
       actions7d: actionEvents.length,
-      averageSessionSeconds: 0,
-      averageScreenSeconds: 0,
+      averageSessionSeconds: sessionDurations.length ? Math.round(sessionDurations.reduce((sum, value) => sum + value, 0) / sessionDurations.length) : null,
+      averageScreenSeconds: screenDurations.length ? Math.round(screenDurations.reduce((sum, value) => sum + value, 0) / screenDurations.length) : null,
+      measuredSessions: sessionDurations.length,
+      measuredScreens: screenDurations.length,
+      hourlyActivity: hourlyCounts,
+      weekdayActivity: weekdayCounts,
+      peakActivityHour,
+      quietestActivityHour,
       featureMetrics: {
         aiCameraScans: events.filter((event) => /camera|scan|image.?analysis/i.test(eventName(event))).length,
         mapsInteractions: events.filter((event) => /map|route|place/i.test(eventName(event) + " " + moduleName(event))).length,
