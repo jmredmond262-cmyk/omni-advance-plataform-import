@@ -362,6 +362,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
     Triple("Eventos", "events", Icons.Default.Event),
     Triple("Talentos", "conexPosts", Icons.Default.Work),
     Triple("Momentos", "moments", Icons.Default.Cake),
+    Triple("Perfiles", "conexProfiles", Icons.Default.Badge),
     Triple("Opiniones", "feedback", Icons.Default.Forum),
     Triple("Estadísticas", "activity", Icons.Default.QueryStats),
     Triple("Movimientos", "operations", Icons.Default.SwapHoriz),
@@ -523,46 +524,47 @@ private fun CompactDashboardStat(label: String, value: String, icon: androidx.co
 @Composable
 private fun ActivityMapDialog(onDismiss: () -> Unit) {
   var scope by remember { mutableStateOf("Local") }
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    containerColor = Color(0xFF071321),
-    titleContentColor = White,
-    textContentColor = Muted,
-    title = {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.Map, null, tint = Mint)
-        Spacer(Modifier.width(8.dp))
-        Text("Mapa de actividad OMNI", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-      }
-    },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+  Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF050C18)).padding(12.dp)) {
+      Column(
+        Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).border(1.dp, Color(0xFF168AC5), RoundedCornerShape(18.dp))
+          .background(Color(0xFF071321)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(Icons.Default.Map, null, tint = Mint, modifier = Modifier.size(25.dp))
+          Spacer(Modifier.width(9.dp))
+          Column(Modifier.weight(1f)) {
+            Text("Mapa de actividad OMNI", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("Vista geográfica ampliada", color = Muted, fontSize = 10.sp)
+          }
+          IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Cerrar mapa", tint = Mint) }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
           listOf("Local", "Santa Fe", "Argentina").forEach { level ->
-            FilterChip(selected = scope == level, onClick = { scope = level }, label = { Text(level, fontSize = 10.sp) })
+            FilterChip(selected = scope == level, onClick = { scope = level }, label = { Text(level, fontSize = 11.sp) })
           }
         }
-        BoxWithConstraints(
-          Modifier.fillMaxWidth().heightIn(min = 190.dp, max = 330.dp)
-            .clip(RoundedCornerShape(13.dp)).background(Color(0xFF061A2A))
-            .border(1.dp, Color(0xFF12658C), RoundedCornerShape(13.dp)),
+        Box(
+          Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF061A2A), Color(0xFF091B30))))
+            .border(1.dp, Color(0xFF12658C), RoundedCornerShape(14.dp)),
           contentAlignment = Alignment.Center
         ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(16.dp)) {
-            Icon(Icons.Default.LocationSearching, null, tint = Mint, modifier = Modifier.size(38.dp))
-            Text(scope, color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+          Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Icon(Icons.Default.LocationSearching, null, tint = Mint, modifier = Modifier.size(44.dp))
+            Text(scope, color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text(
-              "La vista geográfica se completará cuando OMNI disponga de ubicaciones autorizadas y datos agregados para esta zona.",
-              color = Muted, fontSize = 11.sp, lineHeight = 16.sp
+              "La capa geográfica se completará cuando OMNI disponga de ubicaciones autorizadas y datos agregados para esta zona.",
+              color = Muted, fontSize = 12.sp, lineHeight = 17.sp
             )
-            Text("No se muestran posiciones individuales ni ubicaciones inventadas.", color = Color(0xFF68DDB8), fontSize = 9.sp)
+            Text("No se muestran posiciones individuales ni ubicaciones inventadas.", color = Color(0xFF68DDB8), fontSize = 10.sp)
           }
         }
-        Text("La pantalla se adapta al girar el celular en horizontal.", color = Muted, fontSize = 10.sp)
+        Text("La vista aprovecha la pantalla completa y se adapta al girar el celular.", color = Muted, fontSize = 10.sp)
       }
-    },
-    confirmButton = { TextButton(onClick = onDismiss) { Text("Volver al panel", color = Mint) } }
-  )
+    }
+  }
 }
 
 @Composable
