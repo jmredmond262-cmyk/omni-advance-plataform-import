@@ -63,17 +63,17 @@ class MainActivity : ComponentActivity() {
 
 private data class AdminTab(val id: String, val label: String, val collection: String? = null)
 private val tabs = listOf(
-  AdminTab("dashboard", "Resumen"), AdminTab("users", "Usuarios", "users"),
-  AdminTab("wallets", "Billeteras", "walletAccounts"), AdminTab("operations", "Operaciones", "walletOperations"), AdminTab("finance", "Finanzas"),
-  AdminTab("stores", "Comercios", "merchantProfiles"), AdminTab("orders", "Pedidos", "storeOrders"), AdminTab("events", "Eventos", "omniEvents"), AdminTab("moments", "Momentos", "omniMoments"), AdminTab("conexPosts", "Publicaciones CONEX", "jobPosts"), AdminTab("conexProfiles", "Perfiles CONEX", "omniProfessionalProfiles"),
-  AdminTab("feedback", "Comentarios", "appFeedback"), AdminTab("activity", "Actividad", "usageEvents"), AdminTab("modules", "Módulos", "moduleRegistry"),
-  AdminTab("audit", "Auditoría", "adminAuditLogs"), AdminTab("invitations", "Invitaciones", "betaInvitations"), AdminTab("settings", "Configuración")
+  AdminTab("dashboard", "Panel ejecutivo"), AdminTab("users", "Cuentas de usuario", "users"),
+  AdminTab("wallets", "Cuentas OMNI Pay", "walletAccounts"), AdminTab("operations", "Movimientos OMNI Pay", "walletOperations"), AdminTab("finance", "Control financiero DEMO"),
+  AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
+  AdminTab("feedback", "Opiniones y reportes", "appFeedback"), AdminTab("activity", "Actividad de uso", "usageEvents"), AdminTab("modules", "Módulos y funciones", "moduleRegistry"),
+  AdminTab("audit", "Auditoría y trazabilidad", "adminAuditLogs"), AdminTab("invitations", "Accesos de prueba", "betaInvitations"), AdminTab("settings", "Parámetros generales")
 )
 private data class AdminNavGroup(val id: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val tabIds: List<String>)
 private val navGroups = listOf(
-  AdminNavGroup("overview", "Inicio", Icons.Default.Dashboard, listOf("dashboard")),
-  AdminNavGroup("people", "Personas", Icons.Default.PeopleAlt, listOf("users", "feedback")),
-  AdminNavGroup("commerce", "Comercio", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
+  AdminNavGroup("overview", "Panel", Icons.Default.Dashboard, listOf("dashboard")),
+  AdminNavGroup("people", "Usuarios", Icons.Default.PeopleAlt, listOf("users", "feedback")),
+  AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
   AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings"))
 )
 
@@ -350,18 +350,18 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
   val analytics = payload.optJSONObject("analytics") ?: JSONObject()
   val diagnostics = payload.optJSONObject("diagnostics") ?: JSONObject()
   val metrics = listOf(
-    Triple("Usuarios", counts.optInt("users").toString(), Icons.Default.PeopleAlt),
-    Triple("Comercios", counts.optInt("merchantProfiles").toString(), Icons.Default.Storefront),
-    Triple("Pedidos", counts.optInt("storeOrders").toString(), Icons.Default.ShoppingCart),
-    Triple("Billeteras DEMO", counts.optInt("walletAccounts").toString(), Icons.Default.AccountBalanceWallet),
-    Triple("Capital virtual · muestra", "OM$ " + String.format("%.0f", payload.optDouble("walletBalanceSample")), Icons.Default.AccountBalance),
-    Triple("Activos · 7 días", payload.optInt("activeUsers7d").toString(), Icons.Default.Person),
-    Triple("Sesiones · 7 días", analytics.optInt("sessions7d").toString(), Icons.Default.QueryStats),
-    Triple("Operaciones", counts.optInt("walletOperations").toString(), Icons.Default.SwapHoriz),
-    Triple("Eventos", counts.optInt("omniEvents").toString(), Icons.Default.Event),
-    Triple("Momentos", counts.optInt("omniMoments").toString(), Icons.Default.Cake),
-    Triple("Publicaciones CONEX", counts.optInt("jobPosts").toString(), Icons.Default.Work),
-    Triple("Perfiles CONEX", counts.optInt("omniProfessionalProfiles").toString(), Icons.Default.Badge)
+    Triple("Cuentas de usuario", counts.optInt("users").toString(), Icons.Default.PeopleAlt),
+    Triple("Comercios registrados", counts.optInt("merchantProfiles").toString(), Icons.Default.Storefront),
+    Triple("Pedidos comerciales", counts.optInt("storeOrders").toString(), Icons.Default.ShoppingCart),
+    Triple("Cuentas OMNI Pay", counts.optInt("walletAccounts").toString(), Icons.Default.AccountBalanceWallet),
+    Triple("Capital virtual DEMO", "OM$ " + String.format("%.0f", payload.optDouble("walletBalanceSample")), Icons.Default.AccountBalance),
+    Triple("Usuarios activos · 7 días", payload.optInt("activeUsers7d").toString(), Icons.Default.Person),
+    Triple("Sesiones registradas · 7 días", analytics.optInt("sessions7d").toString(), Icons.Default.QueryStats),
+    Triple("Movimientos OMNI Pay", counts.optInt("walletOperations").toString(), Icons.Default.SwapHoriz),
+    Triple("Eventos publicados", counts.optInt("omniEvents").toString(), Icons.Default.Event),
+    Triple("Fechas especiales", counts.optInt("omniMoments").toString(), Icons.Default.Cake),
+    Triple("Ofertas laborales", counts.optInt("jobPosts").toString(), Icons.Default.Work),
+    Triple("Perfiles profesionales", counts.optInt("omniProfessionalProfiles").toString(), Icons.Default.Badge)
   )
   val trend = jsonArrayToList(payload.optJSONArray("usageTrend"))
   val hourlyActivity = jsonArrayToList(analytics.optJSONArray("hourlyActivity"))
@@ -398,8 +398,8 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
           Spacer(Modifier.width(14.dp))
           Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("OMNI · CONTROL CENTER", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.7.sp)
-            Text("Centro de mando de OMNI", color = White, fontSize = if (tabletLayout) 23.sp else 19.sp, fontWeight = FontWeight.ExtraBold)
-            Text("Panel ejecutivo del ecosistema OMNI", color = Muted, fontSize = 12.sp)
+            Text("Panel ejecutivo de operaciones", color = White, fontSize = if (tabletLayout) 23.sp else 19.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Indicadores, actividad y estado operativo del ecosistema", color = Muted, fontSize = 12.sp)
           }
           if (tabletLayout) {
             Column(horizontalAlignment = Alignment.End) {
@@ -415,24 +415,24 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
       items(metrics.chunked(columns)) { rowMetrics ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           rowMetrics.forEachIndexed { index, metric ->
-            val accents = listOf(Color(0xFF16CFFF), Color(0xFF32E7A0), Color(0xFFBD70FF), Color(0xFFFFB52E))
+            val accents = listOf(Mint, Color(0xFF27BFEA), Color(0xFF168DBD), Color(0xFF5ADCF4))
             val accent = accents[(metrics.indexOf(metric) % accents.size)]
             val destination = when (metric.first) {
-              "Usuarios", "Activos · 7 días" -> "users"
-              "Comercios" -> "stores"
-              "Pedidos" -> "orders"
-              "Billeteras DEMO" -> "wallets"
-              "Capital virtual" , "Capital virtual · muestra" -> "finance"
-              "Sesiones · 7 días" -> "activity"
-              "Operaciones" -> "operations"
-              "Eventos" -> "events"
-              "Momentos" -> "moments"
-              "Publicaciones CONEX" -> "conexPosts"
-              "Perfiles CONEX" -> "conexProfiles"
+              "Cuentas de usuario", "Usuarios activos · 7 días" -> "users"
+              "Comercios registrados" -> "stores"
+              "Pedidos comerciales" -> "orders"
+              "Cuentas OMNI Pay" -> "wallets"
+              "Capital virtual DEMO" -> "finance"
+              "Sesiones registradas · 7 días" -> "activity"
+              "Movimientos OMNI Pay" -> "operations"
+              "Eventos publicados" -> "events"
+              "Fechas especiales" -> "moments"
+              "Ofertas laborales" -> "conexPosts"
+              "Perfiles profesionales" -> "conexProfiles"
               else -> "dashboard"
             }
             Card(
-              Modifier.weight(1f).heightIn(min = 88.dp)
+              Modifier.weight(1f).heightIn(min = 78.dp)
                 .clickable { onSelect(destination) }
                 .border(1.dp, accent.copy(alpha = 0.72f), RoundedCornerShape(14.dp)),
               colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1830)),
@@ -441,8 +441,8 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
             ) {
               Column(
                 Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f), Color(0xFF0B1830), Color(0xFF091426))))
-                   .padding(9.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
               ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                   Icon(metric.third, null, tint = accent, modifier = Modifier.size(18.dp))
@@ -533,7 +533,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
               Icon(Icons.Default.Schedule, null, tint = Mint, modifier = Modifier.size(19.dp))
               Spacer(Modifier.width(7.dp))
               Column(Modifier.weight(1f)) {
-                Text("Actividad y horarios", color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("Uso de OMNI por horario", color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Text("Distribución por hora local informada por los dispositivos · últimos 7 días", color = Muted, fontSize = 9.sp)
               }
               Text("24 H", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Bold)
@@ -586,7 +586,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(Icons.Default.History, null, tint = Mint)
           Spacer(Modifier.width(8.dp))
-          Text("Eventos de uso y operaciones recientes", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+          Text("Actividad reciente del ecosistema", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
           Spacer(Modifier.weight(1f))
           Text("REGISTROS REALES", color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         }
@@ -619,7 +619,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(Icons.Default.PeopleAlt, null, tint = Mint)
           Spacer(Modifier.width(8.dp))
-          Text("Usuarios recientes", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+          Text("Últimas cuentas registradas", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         }
       }
       if (recentUsers.isEmpty()) item { EmptyState("Todavía no hay perfiles recientes disponibles.") }
@@ -736,7 +736,7 @@ private fun RecordsContent(selected: String, array: JSONArray, hasMore: Boolean,
           .border(1.dp, Color(0xFF1A6078), RoundedCornerShape(22.dp)).padding(19.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
       ) {
-        Text("GESTIÓN · OMNI ADMIN", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.8.sp)
+        Text("SUPERVISIÓN OPERATIVA · OMNI", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.8.sp)
         Text(tabs.first { it.id == selected }.label, color = White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
         Text("${filtered.size} de ${records.size} registros cargados · historial paginado", color = Muted, fontSize = 12.sp)
       }
