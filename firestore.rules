@@ -369,7 +369,7 @@ service cloud.firestore {
         && (!("localHour" in request.resource.data) || (request.resource.data.localHour is int && request.resource.data.localHour >= 0 && request.resource.data.localHour <= 23))
         && (!("localDayOfWeek" in request.resource.data) || (request.resource.data.localDayOfWeek is int && request.resource.data.localDayOfWeek >= 1 && request.resource.data.localDayOfWeek <= 7))
         && (!("timezoneOffsetMinutes" in request.resource.data) || (request.resource.data.timezoneOffsetMinutes is int && request.resource.data.timezoneOffsetMinutes >= -840 && request.resource.data.timezoneOffsetMinutes <= 840))
-        && (!("localDate" in request.resource.data) || (request.resource.data.localDate is string && request.resource.data.localDate.matches('^\\d{4}-\\d{2}-\\d{2}
+        && (!("localDate" in request.resource.data) || (request.resource.data.localDate is string && request.resource.data.localDate.matches('^\\d{4}-\\d{2}-\\d{2}$')))
       allow update, delete: if false;
     }
 
