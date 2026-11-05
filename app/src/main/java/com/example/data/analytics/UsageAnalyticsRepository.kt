@@ -26,7 +26,8 @@ object UsageAnalyticsRepository {
     private val allowedMetadataKeys = setOf(
         "category", "source", "resultCount", "durationMs", "success",
         "itemType", "method", "flow", "surface", "destinationType",
-        "screenName", "radiusBucket", "status", "operationId", "correlationId", "stage"
+        "screenName", "radiusBucket", "status", "operationId", "correlationId", "stage",
+        "sessionDurationSeconds", "screenDurationSeconds"
     )
 
     @Volatile private var sessionId: String = ""
