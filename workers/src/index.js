@@ -198,6 +198,31 @@ function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
+function aggregateGeoActivity(events) {
+  const buckets = new Map();
+  let locatedEvents = 0;
+  for (const event of events) {
+    if (event.event === "DIAGNOSTIC_TEST") continue;
+    const data = event.data && typeof event.data === "object" ? event.data : {};
+    const location = event.location && typeof event.location === "object" ? event.location : {};
+    const nested = data.location && typeof data.location === "object" ? data.location : {};
+    const lat = Number(event.latitude ?? event.lat ?? location.latitude ?? location.lat ?? data.latitude ?? data.lat ?? nested.latitude ?? nested.lat);
+    const lon = Number(event.longitude ?? event.lng ?? event.lon ?? location.longitude ?? location.lng ?? data.longitude ?? data.lng ?? data.lon ?? nested.longitude ?? nested.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+    locatedEvents += 1;
+    // Round to two decimals so the map never receives a person's precise coordinates.
+    const bucketLat = Math.round(lat * 100) / 100;
+    const bucketLon = Math.round(lon * 100) / 100;
+    const key = bucketLat.toFixed(2) + "," + bucketLon.toFixed(2);
+    const current = buckets.get(key) || { latitude: bucketLat, longitude: bucketLon, count: 0 };
+    current.count += 1;
+    buckets.set(key, current);
+  }
+  // Minimum threshold prevents a single activity from identifying an individual location.
+  const points = [...buckets.values()].filter(point => point.count >= 3);
+  return { points, locatedEvents, privacyThreshold: 3 };
+}
+
 function summarizeUsage(events) {
   const meaningful = events.filter(event => event.event !== "DIAGNOSTIC_TEST");
   const activeUids = new Set(meaningful.map(event => String(event.uid || "")).filter(Boolean));
@@ -345,6 +370,7 @@ async function dashboard(env) {
     count: usageByDay[day]
   }));
   const analytics = summarizeUsage(usageEvents);
+  const geoActivity = aggregateGeoActivity(usageEvents);
   return {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
@@ -355,6 +381,8 @@ async function dashboard(env) {
     usageSampleLimit: 5000,
     usageSampleComplete: usageEvents.length < 5000,
     recentUsers, recentOperations: operations,
+    geoActivity: geoActivity.points,
+    geoActivitySummary: { locatedEvents: geoActivity.locatedEvents, visibleAreas: geoActivity.points.length, privacyThreshold: geoActivity.privacyThreshold },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
       usageEventsVisibleLast7Days: usageEvents.length,
