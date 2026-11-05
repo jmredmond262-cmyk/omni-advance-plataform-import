@@ -59,7 +59,6 @@ fun MomentsScreen(onBack: () -> Unit) {
             error = "Iniciá sesión para administrar tus fechas especiales."
         } else {
             listener = db.collection("omniMoments").whereEqualTo("ownerUid", uid)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
                 .addSnapshotListener { snapshot, exception ->
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar tus fechas especiales."
@@ -147,7 +146,7 @@ fun MomentsScreen(onBack: () -> Unit) {
                                     Text(moment.occasion + " · " + moment.date, color = Color(0xFF57DDF5), fontSize = 10.sp)
                                 }
                                 IconButton(onClick = {
-                                    val message = "✨ \${moment.occasion}: \${moment.personName}\\nFecha: \${moment.date}\\n\${moment.greeting}\\n\${moment.note}\\nCompartido desde OMNI Momentos."
+                                    val message = "✨ ${moment.occasion}: ${moment.personName}\nFecha: ${moment.date}\n${moment.greeting}\n${moment.note}\nCompartido desde OMNI Momentos."
                                     val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, message) }
                                     runCatching { context.startActivity(Intent.createChooser(intent, "Compartir saludo")) }
                                         .onFailure { feedback = "No se pudo abrir el menú para compartir." }
