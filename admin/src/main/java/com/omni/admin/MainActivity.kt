@@ -629,7 +629,7 @@ private fun ActivityMapDialog(points: JSONArray, onDismiss: () -> Unit) {
               webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
                   super.onPageFinished(view, url)
-                  view.evaluateJavascript("window.setActivityPoints && window.setActivityPoints(\${points.toString()})", null)
+                  view.evaluateJavascript("window.setActivityPoints && window.setActivityPoints(${points.toString()})", null)
                   view.evaluateJavascript("window.setMapScope && window.setMapScope('Local')", null)
                 }
               }
