@@ -48,6 +48,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.MainViewModel
+import com.example.ui.Screen
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -72,6 +76,50 @@ fun MorningBriefingScreen(
     }
     val profile by viewModel.userProfile.collectAsState()
     val activeDeals = 0
+    val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    var upcomingMoments by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var nearbyConexCount by remember { mutableStateOf(0) }
+    var nearbyEventCount by remember { mutableStateOf(0) }
+    LaunchedEffect(uid, city) {
+        if (uid.isNotBlank()) {
+            val db = FirebaseFirestore.getInstance()
+            runCatching {
+                val snapshot = db.collection("omniMoments").whereEqualTo("ownerUid", uid).get().await()
+                val today = java.util.Calendar.getInstance()
+                val now = System.currentTimeMillis()
+                upcomingMoments = snapshot.documents.mapNotNull { doc ->
+                    val raw = doc.getString("date").orEmpty()
+                    val parts = raw.split("/")
+                    if (parts.size != 3) return@mapNotNull null
+                    val month = parts[1].toIntOrNull()?.minus(1) ?: return@mapNotNull null
+                    val day = parts[0].toIntOrNull() ?: return@mapNotNull null
+                    val next = (today.clone() as java.util.Calendar).apply {
+                        set(java.util.Calendar.MONTH, month)
+                        set(java.util.Calendar.DAY_OF_MONTH, day)
+                        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+                        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+                        if (timeInMillis < now) add(java.util.Calendar.YEAR, 1)
+                    }
+                    val days = ((next.timeInMillis - now) / 86400000L).toInt()
+                    if (days !in 0..30) null else (doc.getString("occasion").orEmpty() + " · " + doc.getString("personName").orEmpty()) to
+                        (if (days == 0) "Hoy" else "En $days días")
+                }.sortedBy { it.second.removePrefix("En ").removeSuffix(" días").toIntOrNull() ?: 0 }.take(4)
+            }.onFailure { upcomingMoments = emptyList() }
+            val locality = city.trim().takeUnless { it.isBlank() || it.equals("Detectando ubicación", true) }
+            if (locality != null) {
+                runCatching {
+                    val jobs = db.collection("jobPosts").whereEqualTo("status", "ACTIVE").get().await()
+                    nearbyConexCount = jobs.documents.count { it.getString("location").orEmpty().contains(locality, true) }
+                }.onFailure { nearbyConexCount = 0 }
+                runCatching {
+                    val events = db.collection("omniEvents").get().await()
+                    nearbyEventCount = events.documents.count { it.getString("location").orEmpty().contains(locality, true) }
+                }.onFailure { nearbyEventCount = 0 }
+            } else {
+                nearbyConexCount = 0; nearbyEventCount = 0
+            }
+        }
+    }
     val preferences = remember { context.getSharedPreferences("omni_morning_briefing", android.content.Context.MODE_PRIVATE) }
     var showWeather by remember { mutableStateOf(preferences.getBoolean("show_weather", true)) }
     var showMetrics by remember { mutableStateOf(preferences.getBoolean("show_metrics", true)) }
@@ -187,6 +235,41 @@ fun MorningBriefingScreen(
                 if (rainChance >= 35) Text("☔ Llevá paraguas o impermeable: probabilidad de lluvia de hasta $rainChance% en las próximas horas.", color = Color(0xFFFFC978), fontSize = 11.sp)
                 if (severeCode) Text("⛈️ Posible tormenta${if (hailExpected) " o granizo" else ""}: evitá exponerte y buscá un lugar cerrado y seguro si se aproxima.", color = Color(0xFFFF9B8F), fontSize = 11.sp)
                 if (maxWind >= 45.0) Text("💨 Atención al viento: se esperan velocidades de hasta ${maxWind.toInt()} km/h. Asegurá objetos sueltos y evitá zonas arboladas.", color = Color(0xFFFFC978), fontSize = 11.sp)
+            }
+        }
+
+        if (upcomingMoments.isNotEmpty() || nearbyConexCount > 0 || nearbyEventCount > 0) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF101B30)),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("NOVEDADES PARA VOS", color = Color(0xFF72E4FF), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.2.sp)
+                    if (upcomingMoments.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("OMNI MOMENTOS · próximas fechas", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            upcomingMoments.forEach { item ->
+                                Text("• ${item.first} — ${item.second}", color = Color(0xFFB5C7D9), fontSize = 10.sp)
+                            }
+                            TextButton(onClick = { viewModel.navigateTo(Screen.Moments) }) { Text("Abrir OMNI Momentos", color = Color(0xFF72E4FF), fontSize = 10.sp) }
+                        }
+                    }
+                    if (nearbyConexCount > 0) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("OMNI CONEX · ${nearbyConexCount} oportunidades en ${city}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Publicaciones con ubicación coincidente", color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                        }
+                        TextButton(onClick = { viewModel.navigateTo(Screen.JobBoard) }) { Text("Ver", color = Color(0xFF72E4FF)) }
+                    }
+                    if (nearbyEventCount > 0) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Agenda local · ${nearbyEventCount} eventos en ${city}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Actividades publicadas con ubicación coincidente", color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                        }
+                        TextButton(onClick = { viewModel.navigateTo(Screen.Events) }) { Text("Ver", color = Color(0xFF72E4FF)) }
+                    }
+                }
             }
         }
 
