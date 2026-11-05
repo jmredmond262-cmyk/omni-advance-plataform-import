@@ -236,7 +236,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
         val ref = db.collection("jobPosts").document()
         ref.set(mapOf(
             "ownerUid" to uid,
-            "ownerName" to (user?.displayName?.takeIf { it.isNotBlank() } ?: user?.email?.substringBefore("@") ?: "Usuario OMNI"),
+            "ownerName" to (user?.displayName?.takeIf { it.isNotBlank() } ?: user?.email?.substringBefore("@") ?: "Publicador OMNI · nombre no informado"),
             "title" to title.trim(),
             "description" to description.trim(),
             "category" to postCategory,
@@ -312,7 +312,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
                         "postId" to post.id,
                         "postOwnerUid" to post.ownerUid,
                         "applicantUid" to uid,
-                        "applicantName" to (user?.displayName ?: user?.email?.substringBefore("@") ?: "Usuario OMNI"),
+                        "applicantName" to (user?.displayName ?: user?.email?.substringBefore("@") ?: "Solicitante OMNI · nombre no informado"),
                         "applicantEmail" to user?.email.orEmpty(),
                         "applicantPhone" to user?.phoneNumber.orEmpty(),
                         "message" to "Me interesa esta oportunidad. Podemos conversar.",
@@ -387,7 +387,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
                                 if (post.experience.isNotBlank()) Text("Experiencia requerida: ${post.experience}", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                                 if (post.workSchedule.isNotBlank()) Text("Jornada: ${post.workSchedule}", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                                 if (post.remuneration.isNotBlank()) Text("Remuneración: ${post.remuneration}", color = Color(0xFF65E3B0), fontSize = 10.sp)
-                                Text("Publicado por ${post.ownerName}", color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                                Text("Publicado por ${post.ownerName.ifBlank { "Publicador OMNI · nombre no informado" }}", color = Color(0xFF9AAAC2), fontSize = 9.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     if (post.ownerUid != uid) {
                                         OutlinedButton(onClick = { applyTo(post) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Postularme", fontSize = 10.sp) }
