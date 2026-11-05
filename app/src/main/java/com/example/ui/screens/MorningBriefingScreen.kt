@@ -103,7 +103,7 @@ fun MorningBriefingScreen(
     } ?: ""
 
     val shareMessage = buildString {
-        appendLine("🌅 OMNI BUENOS DÍAS")
+        appendLine("✨ OMNI FLOW")
         appendLine(todayDateText)
         if (city.isNotBlank() && !city.equals("Detectando ubicación", true)) appendLine("📍 $city")
         if (showWeather) appendLine("🌤️ $weatherLine")
@@ -131,7 +131,7 @@ fun MorningBriefingScreen(
                     Spacer(Modifier.size(10.dp))
                     Column {
                         Text("OMNI", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
-                        Text("BUENOS DÍAS", color = Color(0xFF66E4FF), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                        Text("FLOW", color = Color(0xFF66E4FF), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                     }
                 }
                 Text(
@@ -240,7 +240,7 @@ fun MorningBriefingScreen(
 
         Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF10243A)), shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("PERSONALIZAR OMNI BUENOS DÍAS", color = Color(0xFF72E4FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("PERSONALIZAR OMNI FLOW", color = Color(0xFF72E4FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 BriefingSettingRow("Mostrar clima", showWeather) { showWeather = it; preferences.edit().putBoolean("show_weather", it).apply() }
                 BriefingSettingRow("Mostrar indicadores", showMetrics) { showMetrics = it; preferences.edit().putBoolean("show_metrics", it).apply() }
                 BriefingSettingRow("Mostrar frase diaria", showQuote) { showQuote = it; preferences.edit().putBoolean("show_quote", it).apply() }
@@ -252,10 +252,10 @@ fun MorningBriefingScreen(
             onClick = {
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "OMNI Buenos Días")
+                    putExtra(Intent.EXTRA_SUBJECT, "OMNI FLOW")
                     putExtra(Intent.EXTRA_TEXT, shareMessage)
                 }
-                runCatching { context.startActivity(Intent.createChooser(intent, "Compartir OMNI Buenos Días")) }
+                runCatching { context.startActivity(Intent.createChooser(intent, "Compartir OMNI FLOW")) }
             },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF66E4FF))
