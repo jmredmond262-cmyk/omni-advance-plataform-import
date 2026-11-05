@@ -775,6 +775,9 @@ private val fieldLabels = mapOf(
 )
 private fun friendlyEnum(value: String): String = when (value.uppercase()) {
   "UNKNOWN" -> "Tipo de evento no informado"
+  "TIPO_DE_EVENTO_NO_INFORMADO" -> "Tipo de evento no informado"
+  "MODULO_NO_INFORMADO" -> "Módulo no informado"
+  "PANTALLA_NO_INFORMADA" -> "Pantalla no informada"
   "UNSPECIFIED" -> "Tipo no especificado"
   "OTHER" -> "Otro tipo · requiere clasificación"
   "SESSION_START" -> "Inicio de sesión"
