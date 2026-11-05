@@ -32,6 +32,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.Timestamp
 import com.example.data.analytics.UsageAnalyticsRepository
 
 private data class OmniJobPost(
@@ -48,7 +49,9 @@ private data class OmniJobPost(
     val workSchedule: String,
     val contactPhone: String,
     val contactEmail: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val expiresAt: Long,
+    val status: String
 )
 
 private data class OmniJobApplication(
@@ -86,6 +89,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
     var experience by remember { mutableStateOf("") }
     var remuneration by remember { mutableStateOf("") }
     var workSchedule by remember { mutableStateOf("A convenir") }
+    var expiresInDays by remember { mutableStateOf(30) }
     var phone by remember { mutableStateOf(user?.phoneNumber.orEmpty()) }
     var email by remember { mutableStateOf(user?.email.orEmpty()) }
     var cvLinks by remember { mutableStateOf("") }
@@ -153,7 +157,9 @@ fun JobBoardScreen(onBack: () -> Unit) {
                                     workSchedule = doc.getString("workSchedule").orEmpty(),
                                     contactPhone = doc.getString("contactPhone").orEmpty(),
                                     contactEmail = doc.getString("contactEmail").orEmpty(),
-                                    createdAt = doc.getTimestamp("createdAt")?.toDate()?.time ?: 0L
+                                    createdAt = doc.getTimestamp("createdAt")?.toDate()?.time ?: 0L,
+                                    expiresAt = doc.getTimestamp("expiresAt")?.toDate()?.time ?: 0L,
+                                    status = doc.getString("status") ?: "ACTIVE"
                                 )
                             }.getOrNull()
                         }
@@ -214,7 +220,9 @@ fun JobBoardScreen(onBack: () -> Unit) {
     }
 
     val visiblePosts = posts.filter { post ->
-        (category == "Todos" || post.category == category) &&
+        post.status == "ACTIVE" &&
+            (post.expiresAt == 0L || post.expiresAt > System.currentTimeMillis()) &&
+            (category == "Todos" || post.category == category) &&
             listOf(post.title, post.description, post.location, post.category)
                 .any { it.contains(search, ignoreCase = true) }
     }
@@ -240,13 +248,14 @@ fun JobBoardScreen(onBack: () -> Unit) {
             "contactPhone" to phone.trim(),
             "contactEmail" to email.trim(),
             "status" to "ACTIVE",
-            "createdAt" to FieldValue.serverTimestamp()
+            "createdAt" to FieldValue.serverTimestamp(),
+            "expiresAt" to Timestamp(java.util.Date(System.currentTimeMillis() + expiresInDays * 86400000L))
         )).addOnSuccessListener {
             UsageAnalyticsRepository.trackEvent(uid, "jobs", "JOB_POST_PUBLISHED", mapOf("category" to postCategory, "success" to true))
             busy = false
             showPublish = false
             selectedTab = 0
-            title = ""; description = ""; experience = ""; remuneration = ""; workSchedule = "A convenir"
+            title = ""; description = ""; experience = ""; remuneration = ""; workSchedule = "A convenir"; expiresInDays = 30
             feedback = "Publicación creada y visible para la comunidad OMNI."
         }.addOnFailureListener { exception ->
             busy = false
@@ -383,7 +392,11 @@ fun JobBoardScreen(onBack: () -> Unit) {
                                     if (post.ownerUid != uid) {
                                         OutlinedButton(onClick = { applyTo(post) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Postularme", fontSize = 10.sp) }
                                     } else {
-                                        Text("Tu publicación", color = Color(0xFF65E3B0), fontSize = 10.sp, modifier = Modifier.weight(1f).align(Alignment.CenterVertically))
+                                        TextButton(onClick = {
+                                            db.collection("jobPosts").document(post.id).update("status", "CLOSED")
+                                                .addOnSuccessListener { feedback = "Publicación cerrada: ${post.title}" }
+                                                .addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo cerrar la publicación." }
+                                        }, modifier = Modifier.weight(1f)) { Text("Cerrar publicación", color = Color(0xFFFF9B8F), fontSize = 9.sp) }
                                     }
                                     Button(onClick = {
                                         val phoneNumber = post.contactPhone.filter { it.isDigit() }
@@ -432,6 +445,12 @@ fun JobBoardScreen(onBack: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 listOf("Completa", "Media jornada", "Por horas", "A convenir").forEach { value ->
                     FilterChip(selected = workSchedule == value, onClick = { workSchedule = value }, label = { Text(value, fontSize = 9.sp) })
+                }
+            }
+            Text("Vigencia de la publicación", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(listOf(15, 30, 60)) { days ->
+                    FilterChip(selected = expiresInDays == days, onClick = { expiresInDays = days }, label = { Text("${days} días", fontSize = 9.sp) })
                 }
             }
             Text("Modalidad", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
