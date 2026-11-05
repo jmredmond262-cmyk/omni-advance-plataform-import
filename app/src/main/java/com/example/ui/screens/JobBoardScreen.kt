@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -273,8 +275,8 @@ fun JobBoardScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Buscar por profesión, oficio, servicio o empleo") }, leadingIcon = { Icon(Icons.Default.Search, null) })
             Spacer(Modifier.height(7.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Todos", "Empleo", "Oficios y servicios", "Profesionales", "Trabajo temporal", "Servicios independientes").forEach { value ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(listOf("Todos", "Empleo", "Oficios y servicios", "Profesionales", "Trabajo temporal", "Servicios independientes")) { value ->
                     FilterChip(selected = category == value, onClick = { category = value }, label = { Text(value, fontSize = 10.sp) })
                 }
             }
@@ -340,14 +342,16 @@ fun JobBoardScreen(onBack: () -> Unit) {
                 }
             }
         } else if (selectedTab == 1) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Spacer(Modifier.height(10.dp))
             Text("Compartí una oportunidad con personas de tu zona.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
             OutlinedTextField(title, { title = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Título de la publicación") }, singleLine = true)
             OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Descripción y requisitos") }, minLines = 3)
             Text("Tipo de publicación", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                FilterChip(selected = postCategory == "Empleo", onClick = { postCategory = "Empleo" }, label = { Text("Empleo") })
-                FilterChip(selected = postCategory == "Oficios y servicios", onClick = { postCategory = "Oficios y servicios" }, label = { Text("Oficio / Servicio") })
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(listOf("Empleo", "Oficios y servicios", "Profesionales", "Trabajo temporal", "Servicios independientes")) { value ->
+                    FilterChip(selected = postCategory == value, onClick = { postCategory = value }, label = { Text(value, fontSize = 9.sp) })
+                }
             }
             OutlinedTextField(location, { location = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Localidad o zona") }, singleLine = true)
             OutlinedTextField(experience, { experience = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Experiencia o requisitos (opcional)") })
@@ -371,6 +375,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
                 if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp) else Text("Publicar oportunidad")
             }
             Text("No publiques datos sensibles. El contacto que ingreses será visible para usuarios autenticados de OMNI.", color = Color(0xFFFFC66D), fontSize = 10.sp)
+            }
         } else {
             Spacer(Modifier.height(10.dp))
             Text("Postulaciones recibidas en tus publicaciones", color = Color(0xFF9AAAC2), fontSize = 11.sp)
