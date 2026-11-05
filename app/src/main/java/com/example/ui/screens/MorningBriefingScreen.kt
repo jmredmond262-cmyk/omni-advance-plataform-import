@@ -94,6 +94,7 @@ fun MorningBriefingScreen(
                     val month = parts[1].toIntOrNull()?.minus(1) ?: return@mapNotNull null
                     val day = parts[0].toIntOrNull() ?: return@mapNotNull null
                     val next = (today.clone() as java.util.Calendar).apply {
+                        set(java.util.Calendar.DAY_OF_MONTH, 1)
                         set(java.util.Calendar.MONTH, month)
                         set(java.util.Calendar.DAY_OF_MONTH, day)
                         set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
@@ -113,7 +114,11 @@ fun MorningBriefingScreen(
                 }.onFailure { nearbyConexCount = 0 }
                 runCatching {
                     val events = db.collection("omniEvents").get().await()
-                    nearbyEventCount = events.documents.count { it.getString("location").orEmpty().contains(locality, true) }
+                    val eventParser = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "AR"))
+                    nearbyEventCount = events.documents.count { event ->
+                        val future = runCatching { eventParser.parse(event.getString("dateTime").orEmpty())?.time ?: 0L }.getOrDefault(0L)
+                        future > System.currentTimeMillis() && event.getString("location").orEmpty().contains(locality, true)
+                    }
                 }.onFailure { nearbyEventCount = 0 }
             } else {
                 nearbyConexCount = 0; nearbyEventCount = 0
