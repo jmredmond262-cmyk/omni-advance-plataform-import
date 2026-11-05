@@ -259,8 +259,7 @@ fun DailyHubScreen(
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("Clima y pronóstico extendido", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            text = weather?.let { "${it.temperatureC.toInt()}° · ${it.weatherDescription} · ${it.locationName}" }
-                                ?: "Consultar condiciones y próximos 7 días en $displayLocality",
+                            text = "Pronóstico por hora, próximos 7 días y alertas de tu zona",
                             color = Color(0xFF9AAAC2), fontSize = 10.sp, maxLines = 1
                         )
                     }
