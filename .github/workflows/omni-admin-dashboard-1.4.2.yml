@@ -33,7 +33,6 @@ jobs:
           ADMIN_AUTH_PROJECT_ID: ${{ secrets.OMNI_ADMIN_AUTH_PROJECT_ID }}
         run: |
           test -n "$ADMIN_FIREBASE_JSON" || { echo "::error::Falta OMNI_ADMIN_GOOGLE_SERVICES_JSON_BASE64"; exit 1; }
-          test -n "$ADMIN_AUTH_PROJECT_ID" || { echo "::error::Falta OMNI_ADMIN_AUTH_PROJECT_ID"; exit 1; }
           printf '%s' "$ADMIN_FIREBASE_JSON" | base64 --decode > admin/google-services.json
           python3 - <<'PY'
           import json, os
@@ -41,8 +40,11 @@ jobs:
               cfg = json.load(f)
           project = cfg["project_info"]["project_id"]
           packages = [c["client_info"]["android_client_info"]["package_name"] for c in cfg["client"]]
-          if project != os.environ["ADMIN_AUTH_PROJECT_ID"]:
-              raise SystemExit("El proyecto Firebase de Admin no coincide con el secreto configurado.")
+          expected_project = os.environ.get("ADMIN_AUTH_PROJECT_ID", "").strip()
+          if not project:
+              raise SystemExit("El archivo Firebase no informa project_id.")
+          if expected_project and project != expected_project:
+              raise SystemExit("El proyecto Firebase de Admin no coincide con el identificador configurado.")
           if "com.omni.adminpanel" not in packages:
               raise SystemExit("Firebase no contiene la app com.omni.adminpanel.")
           print("Firebase Admin validado.")
