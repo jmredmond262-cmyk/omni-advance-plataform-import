@@ -536,103 +536,28 @@ private fun CompactDashboardStat(label: String, value: String, icon: androidx.co
   }
 }
 
-private fun activityMapHtml(): String = """
-<!doctype html><html lang="es"><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<style>
-html,body,#map,#map-frame{height:100%;width:100%;margin:0;background:#071321}#map{position:relative;overflow:hidden}
-#map-frame{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:#071321}.leaflet-container{background:#071321;font-family:Arial,sans-serif}
-.leaflet-control-attribution{background:rgba(5,12,24,.82)!important;color:#9eafc3!important}
-.leaflet-control-attribution a{color:#00dfff!important}.leaflet-bar a{background:#0d2035!important;color:#00e5ff!important;border-color:#24516b!important}
-.map-status{position:absolute;z-index:900;left:12px;right:12px;top:12px;padding:10px 12px;border:1px solid #1679a6;border-radius:10px;background:rgba(5,15,29,.94);color:#dceaf8;font:12px/1.4 Arial,sans-serif;box-shadow:0 4px 18px #0008;pointer-events:none}
-.map-status b{color:#00e5ff}#fallback{display:none;position:absolute;z-index:850;inset:0;background:#071321;color:#dceaf8;align-items:center;justify-content:center;text-align:center;padding:28px;font:14px/1.5 Arial,sans-serif}
-</style></head><body>
-<div id="map"><iframe id="map-frame" title="Mapa geográfico OMNI" referrerpolicy="no-referrer-when-downgrade"></iframe></div>
-<div class="map-status" id="status"><b>OMNI · CARTOGRAFÍA</b><br>Iniciando visor geográfico…</div><div id="fallback">No fue posible conectar con los proveedores cartográficos.<br>Revisá la conexión del dispositivo.</div>
-<script>
-(function(){
-window.__omniPoints=[];window.__omniScope='Local';
-window.setActivityPoints=function(points){window.__omniPoints=Array.isArray(points)?points:[];if(window.__omniRenderPoints)window.__omniRenderPoints(window.__omniPoints);};
-window.setMapScope=function(value){window.__omniScope=value||'Local';if(window.__omniRenderScope)window.__omniRenderScope(window.__omniScope);};
-var status=document.getElementById('status'),frame=document.getElementById('map-frame'),fallback=document.getElementById('fallback'),map=null,activityLayer=null,tileLayer=null,scope='Local',timer=null,frameLoaded=false,allActivityPoints=[];
-var zones={'Local':{center:[-31.6333,-60.7000],zoom:12,bbox:'-60.86,-31.73,-60.54,-31.52',marker:'-31.6333,-60.7000',label:'Vista local · Santa Fe'},'Santa Fe':{center:[-30.7069,-60.9500],zoom:7,bbox:'-62.75,-34.05,-58.75,-28.00',marker:'-30.7069,-60.9500',label:'Provincia de Santa Fe'},'Argentina':{center:[-38.4161,-63.6167],zoom:4,bbox:'-73.60,-55.10,-53.60,-21.70',marker:'-38.4161,-63.6167',label:'República Argentina'}};
-function show(m){status.innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>'+m;}
-function url(s,p){var z=zones[s]||zones.Local;return p==='google'?'https://maps.google.com/maps?q='+encodeURIComponent(z.marker)+'&z='+(s==='Argentina'?4:s==='Santa Fe'?7:13)+'&output=embed':'https://www.openstreetmap.org/export/embed.html?bbox='+encodeURIComponent(z.bbox)+'&layer=mapnik&marker='+encodeURIComponent(z.marker);}
-function fallbackMap(provider){
-if(timer)clearTimeout(timer);if(map){try{map.remove();}catch(e){}map=null;activityLayer=null;tileLayer=null;}
-var mapElement=document.getElementById('map');if(frame.parentNode!==mapElement)mapElement.appendChild(frame);
-frame.style.display='block';frame.style.position='absolute';frame.style.inset='0';frame.style.width='100%';frame.style.height='100%';frame.style.zIndex='2';fallback.style.display='none';frameLoaded=false;show(zones[scope].label+' · abriendo cartografía alternativa…');
-frame.onload=function(){frameLoaded=true;show(zones[scope].label+' · mapa base conectado.');};frame.src=url(scope,provider);
-timer=setTimeout(function(){if(!frameLoaded&&provider!=='google')fallbackMap('google');else if(!frameLoaded){show('No se recibió cartografía de los proveedores disponibles.');fallback.style.display='flex';}},10000);
+private fun activityMapUrl(scope: String): String {
+  val (zoom, latitude, longitude) = when (scope) {
+    "Santa Fe" -> Triple(7, -30.7069, -60.9500)
+    "Argentina" -> Triple(4, -38.4161, -63.6167)
+    else -> Triple(12, -31.6333, -60.7000)
+  }
+  return "https://www.openstreetmap.org/#map=$zoom/$latitude/$longitude"
 }
-function attachTiles(){
-var loads=0,errors=0;if(tileLayer)map.removeLayer(tileLayer);
-tileLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'});
-tileLayer.on('tileload',function(){loads++;if(loads===1){frame.style.display='none';show(zones[scope].label+' · calles y cartografía cargadas.');setTimeout(function(){if(map)map.invalidateSize(true);},120);}});
-tileLayer.on('tileerror',function(){errors++;if(errors>=2&&loads===0){show('No responde el servicio de mosaicos. Activando mapa alternativo…');fallbackMap('osm');}});
-tileLayer.addTo(map);
-}
-function boot(){
-if(!window.L){fallbackMap('osm');return;}
-try{
-map=L.map('map',{zoomControl:true,preferCanvas:true}).setView(zones.Local.center,zones.Local.zoom);activityLayer=L.layerGroup().addTo(map);
-function pointsForScope(){
-var points=allActivityPoints.slice();
-if(scope==='Santa Fe')return points.filter(function(p){return String(p.province||'').toLowerCase().includes('santa fe');});
-if(scope==='Argentina')return points.filter(function(p){return String(p.country||'').toLowerCase().includes('argentina');});
-var totals=new Map();
-points.forEach(function(p){var name=String(p.locality||'').trim();if(name)totals.set(name,(totals.get(name)||0)+Number(p.count||0));});
-var topLocality=[...totals.entries()].sort(function(a,b){return b[1]-a[1];})[0];
-return topLocality?points.filter(function(p){return String(p.locality||'').trim()===topLocality[0];}):[];
-}
-function redrawActivity(){
-if(!map||!activityLayer)return;
-activityLayer.clearLayers();
-var visible=pointsForScope();
-visible.forEach(function(p){
-var lat=Number(p.latitude),lon=Number(p.longitude),count=Number(p.count);
-if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(count)||count<3)return;
-var marker=L.circleMarker([lat,lon],{radius:Math.min(20,7+Math.log(count)*2),color:'#00e5ff',weight:2,fillColor:'#00b9e8',fillOpacity:.68});
-marker.bindPopup('<b>Actividad agrupada OMNI</b><br>'+count+' cuentas en '+String(p.locality||'área local')+'<br>'+String(p.province||'')+' · '+String(p.country||''));
-marker.addTo(activityLayer);
-});
-if(activityLayer.getLayers().length){
-map.fitBounds(activityLayer.getBounds().pad(.28),{maxZoom:scope==='Local'?13:scope==='Santa Fe'?8:5});
-var localName=scope==='Local'&&visible.length?String(visible[0].locality||'Localidad activa'):'';
-var viewLabel=localName?'Vista local · '+localName:zones[scope].label;
-show(viewLabel+' · '+visible.length+' áreas visibles · '+visible.reduce(function(n,p){return n+Number(p.count||0);},0)+' cuentas agrupadas.');
-}else{
-var z=zones[scope];map.setView(z.center,z.zoom);show(z.label+' · mapa base disponible; todavía no hay grupos con el mínimo de 3 cuentas.');
-}
-setTimeout(function(){map.invalidateSize(true);},250);
-}
-window.__omniRenderPoints=function(points){allActivityPoints=Array.isArray(points)?points:[];redrawActivity();};
-window.__omniRenderScope=function(s){scope=zones[s]?s:'Local';if(map)redrawActivity();else fallbackMap('osm');};
-window.setActivityPoints(window.__omniPoints);
-window.setMapScope(window.__omniScope);
-attachTiles();setTimeout(function(){if(map)map.invalidateSize(true);},350);
-}catch(e){show('Error al iniciar el visor: '+String(e.message||e));fallbackMap('osm');}
-}
-window.onerror=function(m){show('Error del visor: '+String(m).slice(0,140));};
-frame.src=url('Local','osm');
-var script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';script.onload=boot;script.onerror=function(){show('No se pudo cargar Leaflet. Activando mapa alternativo…');fallbackMap('osm');};document.head.appendChild(script);
-})();
-</script></body></html>
-""".trimIndent()
+
 @Composable
 private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh: () -> Unit, onDismiss: () -> Unit) {
-  var scope by remember { mutableStateOf("Local") }
+  var selectedScope by remember { mutableStateOf("Local") }
+  var mapStatus by remember { mutableStateOf("Conectando con OpenStreetMap…") }
   var mapView by remember { mutableStateOf<WebView?>(null) }
-  LaunchedEffect(points.toString()) {
-    mapView?.evaluateJavascript("window.setActivityPoints && window.setActivityPoints(${points.toString()})", null)
-  }
+
   LaunchedEffect(Unit) {
     while (true) {
       delay(120_000L)
       onRefresh()
     }
   }
+
   Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
     Box(Modifier.fillMaxSize().background(Color(0xFF050C18)).padding(8.dp)) {
       Column(
@@ -645,19 +570,23 @@ private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh:
           Icon(Icons.Default.Map, null, tint = Mint, modifier = Modifier.size(24.dp))
           Spacer(Modifier.width(8.dp))
           Column(Modifier.weight(1f)) {
-            Text("Mapa de actividad OMNI", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("Cartografía interactiva · vista ampliada", color = Muted, fontSize = 10.sp)
+            Text("Mapa geográfico OMNI", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("OpenStreetMap · calles, ciudades y rutas", color = Muted, fontSize = 10.sp)
           }
-          IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Actualizar actividad geográfica", tint = Mint) }
+          IconButton(onClick = {
+            mapStatus = "Actualizando cartografía…"
+            mapView?.reload()
+          }) { Icon(Icons.Default.Refresh, "Actualizar mapa", tint = Mint) }
           IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Cerrar mapa", tint = Mint) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
           listOf("Local", "Santa Fe", "Argentina").forEach { level ->
             FilterChip(
-              selected = scope == level,
+              selected = selectedScope == level,
               onClick = {
-                scope = level
-                mapView?.evaluateJavascript("window.setMapScope && window.setMapScope('" + level + "')", null)
+                selectedScope = level
+                mapStatus = "Cargando vista $level…"
+                mapView?.loadUrl(activityMapUrl(level))
               },
               label = { Text(level, fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(
@@ -668,8 +597,13 @@ private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh:
           }
         }
         Text(
-          "${summary.optInt("consentedUsersFresh24h")} cuentas con ubicación compartida en las últimas 24 h · ${summary.optInt("visibleAreas")} áreas visibles · mínimo ${summary.optInt("privacyThreshold", 3)} cuentas por área",
-          color = Muted, fontSize = 10.sp, lineHeight = 14.sp
+          mapStatus,
+          color = if (mapStatus.startsWith("Mapa cargado")) Color(0xFF65E9B7) else Muted,
+          fontSize = 10.sp
+        )
+        Text(
+          "${summary.optInt("consentedUsersFresh24h")} cuentas compartieron ubicación en las últimas 24 h · ${summary.optInt("visibleAreas")} áreas agrupadas · mínimo ${summary.optInt("privacyThreshold", 3)} cuentas por área",
+          color = Muted, fontSize = 9.sp, lineHeight = 13.sp
         )
         AndroidView(
           modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(13.dp))
@@ -679,22 +613,52 @@ private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh:
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.loadsImagesAutomatically = true
+              settings.useWideViewPort = true
+              settings.loadWithOverviewMode = true
+              settings.setSupportZoom(true)
+              settings.builtInZoomControls = true
+              settings.displayZoomControls = false
+              settings.allowFileAccess = false
+              settings.allowContentAccess = false
+              setBackgroundColor(android.graphics.Color.rgb(7, 19, 33))
               webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                  super.onPageStarted(view, url, favicon)
+                  mapStatus = "Conectando con OpenStreetMap…"
+                }
                 override fun onPageFinished(view: WebView, url: String) {
                   super.onPageFinished(view, url)
-                  view.evaluateJavascript("window.setActivityPoints && window.setActivityPoints(${points.toString()})", null)
-                  view.evaluateJavascript("window.setMapScope && window.setMapScope('Local')", null)
+                  mapStatus = "Mapa cargado · ${selectedScope}"
+                }
+                override fun onReceivedError(
+                  view: WebView,
+                  request: android.webkit.WebResourceRequest,
+                  error: android.webkit.WebResourceError
+                ) {
+                  super.onReceivedError(view, request, error)
+                  if (request.isForMainFrame) {
+                    mapStatus = "No se pudo cargar el mapa. Verificá la conexión e intentá actualizar."
+                  }
+                }
+                override fun onReceivedHttpError(
+                  view: WebView,
+                  request: android.webkit.WebResourceRequest,
+                  errorResponse: android.webkit.WebResourceResponse
+                ) {
+                  super.onReceivedHttpError(view, request, errorResponse)
+                  if (request.isForMainFrame && errorResponse.statusCode >= 400) {
+                    mapStatus = "OpenStreetMap respondió HTTP ${errorResponse.statusCode}."
+                  }
                 }
               }
-              setBackgroundColor(android.graphics.Color.rgb(7, 19, 33))
-              loadDataWithBaseURL("https://omni-admin.local/", activityMapHtml(), "text/html", "UTF-8", null)
               mapView = this
+              loadUrl(activityMapUrl(selectedScope))
             }
           },
           update = { mapView = it }
         )
         Text(
-          "La cartografía es real y navegable. Los puntos de actividad requieren coordenadas autorizadas y agregadas; no se simulan ubicaciones.",
+          "La cartografía base se muestra independientemente de la cantidad de usuarios. La actividad privada solo aparece cuando existen grupos autorizados que cumplen el umbral de privacidad.",
           color = Muted, fontSize = 9.sp, lineHeight = 13.sp
         )
       }
