@@ -76,7 +76,7 @@ object GeoPresenceRepository {
             .put("latitude", location.latitude)
             .put("longitude", location.longitude)
             .put("accuracyMeters", location.accuracy.toDouble())
-            .put("locationTime", java.time.Instant.ofEpochMilli(location.time).toString())
+            .put("locationTimeMillis", location.time)
             .put("locality", locality.trim().take(80))
             .put("province", province.trim().take(80))
             .put("country", country.trim().take(80))
