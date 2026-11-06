@@ -5,6 +5,10 @@ import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceError
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -75,10 +79,33 @@ internal fun LiveMapScreen() {
                 android.util.Log.d("OMNI_LIVE_MAP", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
                 return true
               }
+              override fun onProgressChanged(view: WebView, newProgress: Int) {
+                android.util.Log.d("OMNI_LIVE_MAP", "WebView carga: $newProgress%")
+              }
             }
             webViewClient = object : WebViewClient() {
+              override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                  view.evaluateJavascript(
+                    "(function(){var s=document.getElementById('status');if(s&&s.textContent.indexOf('CARGANDO MOTOR')===0){s.textContent='EL MOTOR EXTERNO NO RESPONDE · revisando unpkg.com';s.style.color='#ffcf70';s.style.borderColor='#ffcf70';}})();",
+                    null
+                  )
+                }, 10000)
+              }
               override fun onPageFinished(view: WebView, url: String) {
-                view.evaluateJavascript("window.omniMap && window.omniMap.resize();", null)
+                view.evaluateJavascript(
+                  "(function(){var s=document.getElementById('status');if(!s)return;if(!window.maplibregl){s.textContent='ERROR: MOTOR MAPLIBRE NO DESCARGADO';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else if(!window.omniMap){s.textContent='ERROR: MOTOR CARGADO, PERO EL MAPA NO SE INICIALIZÓ';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else{window.omniMap.resize();}})();",
+                  null
+                )
+              }
+              override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                android.util.Log.e("OMNI_LIVE_MAP", "Web error ${error.errorCode}: ${error.description} URL=${request.url}")
+                if (request.url.toString().contains("unpkg.com") || request.isForMainFrame) {
+                  view.evaluateJavascript(
+                    "(function(){var s=document.getElementById('status');if(s){s.textContent='ERROR DE RED AL CARGAR EL MOTOR: ${error.description.toString().replace("'", "")}';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}})();",
+                    null
+                  )
+                }
               }
             }
             // Use the tile host as the document origin so WebView workers and same-host tile requests
