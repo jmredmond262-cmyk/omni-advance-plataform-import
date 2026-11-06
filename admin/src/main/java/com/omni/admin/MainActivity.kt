@@ -100,7 +100,6 @@ private fun OmniAdminRoot() {
   fun refresh() {
     val current = auth.currentUser ?: return
     scope.launch {
-      if (selected == "liveMap") { payload = JSONObject(); loading = false; error = ""; return@launch }
       loading = true
       error = ""
       try {
@@ -108,7 +107,7 @@ private fun OmniAdminRoot() {
         val tab = tabs.first { it.id == selected }
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
-          "dashboard" -> AdminApi.call(token, "dashboard")
+          "dashboard", "liveMap" -> AdminApi.call(token, "dashboard")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
@@ -364,7 +363,7 @@ private fun AdminHome(
         )
       }
       when (selected) {
-        "liveMap" -> LiveMapScreen()
+        "liveMap" -> LiveMapScreen(payload, loading, error, onRefresh)
         "dashboard" -> DashboardContent(payload, onSelect, onRefresh)
         "finance" -> FinanceContent(payload)
         "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray(), onSaveModule)
