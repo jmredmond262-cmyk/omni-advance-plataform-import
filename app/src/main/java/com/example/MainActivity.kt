@@ -290,7 +290,7 @@ fun OmniApp(viewModel: MainViewModel) {
         val coarse = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (fine || coarse) {
             viewModel.refreshLiveGpsAndPlaces(context)
-            if (GeoPresenceRepository.isSharingEnabled(context)) GeoPresenceRepository.refreshPresenceWhileActive(context)
+            if (GeoPresenceRepository.hasDecision(context) && GeoPresenceRepository.isSharingEnabled(context)) GeoPresenceRepository.refreshPresenceWhileActive(context)
             if (!GeoPresenceRepository.hasDecision(context)) showGeoShareConsent = true
         }
     }
