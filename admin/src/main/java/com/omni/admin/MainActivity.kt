@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -361,7 +362,7 @@ private fun AdminHome(
         )
       }
       when (selected) {
-        "dashboard" -> DashboardContent(payload, onSelect)
+        "dashboard" -> DashboardContent(payload, onSelect, onRefresh)
         "finance" -> FinanceContent(payload)
         "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray(), onSaveModule)
         "settings" -> ConfigContent(payload.optJSONObject("config") ?: JSONObject(), onSaveConfig)
@@ -373,7 +374,7 @@ private fun AdminHome(
 }
 
 @Composable
-private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
+private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, onRefresh: () -> Unit) {
   val counts = payload.optJSONObject("counts") ?: JSONObject()
   val analytics = payload.optJSONObject("analytics") ?: JSONObject()
   val diagnostics = payload.optJSONObject("diagnostics") ?: JSONObject()
@@ -494,7 +495,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
       }
     }
   }
-  if (showMap) ActivityMapDialog(points = payload.optJSONArray("geoActivity") ?: JSONArray(), summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject(), onDismiss = { showMap = false })
+  if (showMap) ActivityMapDialog(points = payload.optJSONArray("geoActivity") ?: JSONArray(), summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject(), onRefresh = onRefresh, onDismiss = { showMap = false })
 }
 
 @Composable
@@ -616,9 +617,18 @@ var script=document.createElement('script');script.src='https://cdn.jsdelivr.net
 </script></body></html>
 """.trimIndent()
 @Composable
-private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onDismiss: () -> Unit) {
+private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh: () -> Unit, onDismiss: () -> Unit) {
   var scope by remember { mutableStateOf("Local") }
   var mapView by remember { mutableStateOf<WebView?>(null) }
+  LaunchedEffect(points.toString()) {
+    mapView?.evaluateJavascript("window.setActivityPoints && window.setActivityPoints(${points.toString()})", null)
+  }
+  LaunchedEffect(Unit) {
+    while (true) {
+      delay(120_000L)
+      onRefresh()
+    }
+  }
   Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
     Box(Modifier.fillMaxSize().background(Color(0xFF050C18)).padding(8.dp)) {
       Column(
@@ -634,6 +644,7 @@ private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onDismiss:
             Text("Mapa de actividad OMNI", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Text("Cartografía interactiva · vista ampliada", color = Muted, fontSize = 10.sp)
           }
+          IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Actualizar actividad geográfica", tint = Mint) }
           IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Cerrar mapa", tint = Mint) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
