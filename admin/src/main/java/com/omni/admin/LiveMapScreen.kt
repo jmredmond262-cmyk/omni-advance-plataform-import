@@ -26,10 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -52,7 +48,6 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
   val points = payload.optJSONArray("geoActivity") ?: JSONArray()
   val pointsJson = points.toString()
   val activeUsers = summary.optInt("activeUsers", points.length())
-  var mapView by remember { mutableStateOf<WebView?>(null) }
 
   LaunchedEffect(Unit) {
     while (true) {
@@ -88,7 +83,6 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
         modifier = Modifier.fillMaxSize(),
         factory = { context ->
           WebView(context).apply {
-            mapView = this
             layoutParams = android.view.ViewGroup.LayoutParams(
               android.view.ViewGroup.LayoutParams.MATCH_PARENT,
               android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -276,6 +270,17 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
        }
      });
      window.omniPresenceMarkers.forEach(function(entry,uid){if(!incoming.has(uid)){entry.marker.remove();window.omniPresenceMarkers.delete(uid);}});
+     if(!window.omniHasFitPresence && points.length){
+       const valid=points.filter(function(p){return Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude));});
+       if(valid.length===1){
+         map.easeTo({center:[Number(valid[0].longitude),Number(valid[0].latitude)],zoom:14,duration:900});
+       }else if(valid.length>1){
+         const bounds=new maplibregl.LngLatBounds();
+         valid.forEach(function(p){bounds.extend([Number(p.longitude),Number(p.latitude)]);});
+         map.fitBounds(bounds,{padding:70,maxZoom:14,duration:900});
+       }
+       window.omniHasFitPresence=true;
+     }
    };
    // Wait for Compose/WebView to receive its measured height before resizing MapLibre.
    let resizeObserver=null;
