@@ -4,6 +4,7 @@ const FIRESTORE_ROOT = `https://firestore.googleapis.com/v1/projects/${PRIMARY_P
 const TOKEN_ISSUER = `https://securetoken.google.com/${ADMIN_AUTH_PROJECT}`;
 let serviceTokenCache = { token: "", expiresAt: 0 };
 let firebaseKeysCache = { keys: [], expiresAt: 0 };
+let dashboardCache = { data: null, expiresAt: 0 };
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
@@ -124,7 +125,8 @@ async function firestore(env, path, options = {}) {
   if (!response.ok) {
     const message = data.error?.message || "Error al consultar la base de datos OMNI.";
     if (response.status === 404) return { missing: true };
-    throw new Error(message);
+    const reason = data.error?.errors?.[0]?.reason || data.error?.status || "UNKNOWN";
+    throw new Error("Firestore HTTP " + response.status + " [" + reason + "]: " + message);
   }
   return data;
 }
@@ -148,16 +150,22 @@ async function recentDocuments(env, collection, limit = 8, offset = 0) {
   const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
-async function usageEventsLast7Days(env) {
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+async function queryRecentDocuments(env, collection, orderField, limit, cutoffField = "", cutoffValue = "") {
   const structuredQuery = {
-    from: [{ collectionId: "usageEvents" }],
-    where: { fieldFilter: { field: { fieldPath: "createdAt" }, op: "GREATER_THAN_OR_EQUAL", value: { timestampValue: cutoff } } },
-    orderBy: [{ field: { fieldPath: "createdAt" }, direction: "DESCENDING" }],
-    limit: 5000
+    from: [{ collectionId: collection }],
+    orderBy: [{ field: { fieldPath: orderField }, direction: "DESCENDING" }],
+    limit: Math.min(Math.max(Number(limit) || 100, 1), 1000)
   };
+  if (cutoffField && cutoffValue) {
+    structuredQuery.where = { fieldFilter: { field: { fieldPath: cutoffField }, op: "GREATER_THAN_OR_EQUAL", value: { timestampValue: cutoffValue } } };
+  }
   const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
+}
+async function usageEventsLast7Days(env) {
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // Muestra acotada para evitar lecturas masivas en cada apertura del panel.
+  return queryRecentDocuments(env, "usageEvents", "createdAt", 750, "createdAt", cutoff);
 }
 async function countDocuments(env, collection) {
   const query = {
@@ -349,6 +357,8 @@ function summarizeUsage(events) {
   };
 }
 async function dashboard(env) {
+  const nowMs = Date.now();
+  if (dashboardCache.data && dashboardCache.expiresAt > nowMs) return dashboardCache.data;
   // Cada fuente se consulta de forma independiente: un módulo incompleto no debe
   // bloquear el panel completo. Los fallos quedan identificados en diagnostics.
   const failures = [];
@@ -361,15 +371,17 @@ async function dashboard(env) {
     }
   }
   const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
-  const countResults = await Promise.all(collections.map(name =>
-    safe("count:" + name, () => countDocuments(env, name), 0)
-  ));
-  const [walletPage, operations, userProfiles, usageEvents, geoPresencePage] = await Promise.all([
-    safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 200), { items: [], nextPageToken: "" }),
+  // Ejecutar conteos de a uno evita ráfagas simultáneas contra Firestore.
+  const countResults = [];
+  for (const name of collections) {
+    countResults.push(await safe("count:" + name, () => countDocuments(env, name), 0));
+  }
+  const [walletPage, operations, userProfiles, usageEvents, geoRecords] = await Promise.all([
+    safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 100), { items: [], nextPageToken: "" }),
     safe("walletOperations:recent", () => recentDocuments(env, "walletOperations", 8), []),
-    safe("users:recent", () => recentDocuments(env, "users", 200), []),
+    safe("users:recent", () => recentDocuments(env, "users", 100), []),
     safe("usageEvents:last7days", () => usageEventsLast7Days(env), []),
-    safe("geoPresence:list", () => listAllDocuments(env, "geoPresence", 10000), { items: [], complete: false, unavailable: true })
+    safe("geoPresence:recent", () => queryRecentDocuments(env, "geoPresence", "updatedAt", 200), null)
   ]);
   const wallets = walletPage.items || [];
   const resolvedCounts = Object.fromEntries(collections.map((name, index) => [
@@ -392,8 +404,8 @@ async function dashboard(env) {
   }
   const usageTrend = dayKeys.map(day => ({ date: day.slice(8, 10) + "/" + day.slice(5, 7), count: usageByDay[day] }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoPresencePage.items || [], userProfiles);
-  return {
+  const geoActivity = aggregateGeoPresence(geoRecords || [], userProfiles);
+  const result = {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
     analytics,
@@ -409,8 +421,8 @@ async function dashboard(env) {
       visibleMarkers: geoActivity.points.length,
       freshnessMinutes: geoActivity.freshnessMinutes,
       coordinatePrecision: "GPS sin redondeo",
-      sampleComplete: geoPresencePage.complete === true,
-      sourceAvailable: geoPresencePage.unavailable !== true
+      sampleComplete: false,
+      sourceAvailable: Array.isArray(geoRecords)
     },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
@@ -419,9 +431,14 @@ async function dashboard(env) {
       latestUsageEventAt: usageEvents[0]?.createdAt || null,
       userProfilesVisible: userProfiles.length,
       usageQueryWindowDays: 7,
-      sourceFailures: failures
+      sourceFailures: failures,
+      cacheSeconds: 45,
+      geoSampleLimit: 200,
+      usageSampleLimit: 750
     }
   };
+  dashboardCache = { data: result, expiresAt: Date.now() + 45000 };
+  return result;
 }
 async function listAllDocuments(env, collection, maxItems = 1000) {
   const items = [];
