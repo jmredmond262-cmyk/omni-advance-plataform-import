@@ -307,6 +307,7 @@ fun OmniApp(viewModel: MainViewModel) {
         } else {
             // Actualizar GPS también cuando hay una ubicación guardada: la caché reciente hace esta consulta rápida.
             viewModel.refreshLiveGpsAndPlaces(context)
+            if (GeoPresenceRepository.isSharingEnabled(context)) GeoPresenceRepository.refreshPresenceWhileActive(context)
             if (!GeoPresenceRepository.hasDecision(context)) showGeoShareConsent = true
         }
     }
@@ -331,6 +332,7 @@ fun OmniApp(viewModel: MainViewModel) {
                     shareGeoPresence = true
                     showGeoShareConsent = false
                     viewModel.refreshLiveGpsAndPlaces(context)
+                    GeoPresenceRepository.refreshPresenceWhileActive(context)
                 }) { Text("Autorizar") }
             },
             dismissButton = {
