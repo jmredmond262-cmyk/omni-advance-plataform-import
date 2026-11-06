@@ -70,7 +70,7 @@ async function dashboard() {
     db.collection("users").limit(5000).get()
   ]);
   const balance = wallets.docs.reduce((sum, doc) => sum + (Number(doc.get("balance")) || 0), 0);
-  const events = usage.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  const events: Array<Record<string, unknown>> = usage.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   const valueOf = (event: Record<string, unknown>, keys: string[]) =>
     keys.map((key) => event[key]).find((value) => value !== undefined && value !== null);
   const eventName = (event: Record<string, unknown>) => String(valueOf(event, ["eventType", "type", "event", "name", "action"]) ?? "TIPO_DE_EVENTO_NO_INFORMADO");
