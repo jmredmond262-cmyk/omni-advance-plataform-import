@@ -151,9 +151,9 @@ private val MAP_HTML = """
 <style>
 html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:100%;min-height:100%;overflow:hidden;background:#06101f}
 #map{position:fixed;top:0;right:0;bottom:0;left:0;display:block;width:100vw;height:100vh;min-width:100%;min-height:100%;overflow:hidden;background:#06101f;isolation:isolate}
-#map .maplibregl-canvas-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:1!important}
-#map .maplibregl-canvas{position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;opacity:1!important;visibility:visible!important;z-index:1!important}
-#map .maplibregl-control-container{position:absolute;inset:0;z-index:3}
+#map .maplibregl-canvas-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:1!important;pointer-events:auto!important;touch-action:none!important;-webkit-user-select:none!important;user-select:none!important}
+#map .maplibregl-canvas{position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;opacity:1!important;visibility:visible!important;z-index:1!important;pointer-events:auto!important;touch-action:none!important}
+#map .maplibregl-control-container{position:absolute;inset:0;z-index:3;pointer-events:none!important}\n#map .maplibregl-ctrl-top-right,#map .maplibregl-ctrl-top-left,#map .maplibregl-ctrl-bottom-right,#map .maplibregl-ctrl-bottom-left,#map .maplibregl-ctrl-group{pointer-events:auto!important}
 .maplibregl-ctrl-group{background:#0b2034!important;border:1px solid #00bcd4!important;box-shadow:0 0 12px #00bcd455!important}
 .maplibregl-ctrl button span{filter:invert(1) sepia(1) saturate(5) hue-rotate(140deg)}
 .maplibregl-ctrl-attrib{background:#071426dd!important;color:#8faec4!important}
