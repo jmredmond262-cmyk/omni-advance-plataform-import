@@ -290,6 +290,7 @@ fun OmniApp(viewModel: MainViewModel) {
         val coarse = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (fine || coarse) {
             viewModel.refreshLiveGpsAndPlaces(context)
+            if (GeoPresenceRepository.isSharingEnabled(context)) GeoPresenceRepository.refreshPresenceWhileActive(context)
             if (!GeoPresenceRepository.hasDecision(context)) showGeoShareConsent = true
         }
     }
@@ -320,7 +321,7 @@ fun OmniApp(viewModel: MainViewModel) {
             title = { Text("Compartir ubicación GPS precisa", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "¿Autorizás a OMNI a compartir tus coordenadas GPS precisas con OMNI Admin mientras usás la aplicación? Se mostrará tu posición individual en el mapa administrativo, junto con el margen de precisión del GPS. Podés desactivarlo cuando quieras desde Configurar ubicación.",
+                    "¿Autorizás a OMNI a compartir tus coordenadas GPS precisas con OMNI Admin mientras usás la aplicación? Se mostrará tu posición individual en el mapa administrativo, junto con el margen de precisión del GPS. Para esto, Android debe permitir Ubicación precisa. Podés desactivarlo cuando quieras desde Configurar ubicación.",
                     fontSize = 13.sp
                 )
             },
@@ -425,7 +426,7 @@ fun OmniApp(viewModel: MainViewModel) {
                             onCheckedChange = { enabled ->
                                 shareGeoPresence = enabled
                                 GeoPresenceRepository.setSharingEnabled(context, enabled)
-                                if (enabled) viewModel.refreshLiveGpsAndPlaces(context)
+                                if (enabled) { viewModel.refreshLiveGpsAndPlaces(context); GeoPresenceRepository.refreshPresenceWhileActive(context) }
                             }
                         )
                     }
