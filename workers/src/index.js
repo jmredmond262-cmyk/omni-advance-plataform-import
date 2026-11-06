@@ -349,26 +349,31 @@ function summarizeUsage(events) {
   };
 }
 async function dashboard(env) {
-  // Geolocalización es un complemento del panel: nunca debe impedir que carguen
-  // las demás secciones administrativas si la colección geoPresence falla.
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
-  const counts = await Promise.all(collections.map(name => countDocuments(env, name)));
-  const [walletPage, operations, userProfiles, usageEvents] = await Promise.all([
-    listDocumentsPage(env, "walletAccounts", 200),
-    recentDocuments(env, "walletOperations", 8),
-    recentDocuments(env, "users", 200),
-    usageEventsLast7Days(env)
-  ]);
-  let geoPresencePage;
-  try {
-    geoPresencePage = await listAllDocuments(env, "geoPresence", 10000);
-  } catch (error) {
-    console.error("OMNI dashboard geoPresence read failed", error);
-    geoPresencePage = { items: [], complete: false, unavailable: true };
+  // Cada fuente se consulta de forma independiente: un módulo incompleto no debe
+  // bloquear el panel completo. Los fallos quedan identificados en diagnostics.
+  const failures = [];
+  async function safe(label, task, fallback) {
+    try { return await task(); }
+    catch (error) {
+      console.error("OMNI dashboard source failed: " + label, error);
+      failures.push({ source: label, message: String(error?.message || error).slice(0, 240) });
+      return fallback;
+    }
   }
-  const wallets = walletPage.items;
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
+  const countResults = await Promise.all(collections.map(name =>
+    safe("count:" + name, () => countDocuments(env, name), 0)
+  ));
+  const [walletPage, operations, userProfiles, usageEvents, geoPresencePage] = await Promise.all([
+    safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 200), { items: [], nextPageToken: "" }),
+    safe("walletOperations:recent", () => recentDocuments(env, "walletOperations", 8), []),
+    safe("users:recent", () => recentDocuments(env, "users", 200), []),
+    safe("usageEvents:last7days", () => usageEventsLast7Days(env), []),
+    safe("geoPresence:list", () => listAllDocuments(env, "geoPresence", 10000), { items: [], complete: false, unavailable: true })
+  ]);
+  const wallets = walletPage.items || [];
   const resolvedCounts = Object.fromEntries(collections.map((name, index) => [
-    name, name === "users" ? Math.max(counts[index], userProfiles.length) : counts[index]
+    name, name === "users" ? Math.max(countResults[index], userProfiles.length) : countResults[index]
   ]));
   const recentUsers = [...userProfiles]
     .sort((a, b) => String(b.createdAt || b.lastSeenAt || b.updatedAt || "").localeCompare(String(a.createdAt || a.lastSeenAt || a.updatedAt || "")))
@@ -385,12 +390,9 @@ async function dashboard(env) {
     const day = String(event.createdAt || "").slice(0, 10);
     if (Object.prototype.hasOwnProperty.call(usageByDay, day)) usageByDay[day] += 1;
   }
-  const usageTrend = dayKeys.map(day => ({
-    date: day.slice(8, 10) + "/" + day.slice(5, 7),
-    count: usageByDay[day]
-  }));
+  const usageTrend = dayKeys.map(day => ({ date: day.slice(8, 10) + "/" + day.slice(5, 7), count: usageByDay[day] }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoPresencePage.items, userProfiles);
+  const geoActivity = aggregateGeoPresence(geoPresencePage.items || [], userProfiles);
   return {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
@@ -407,7 +409,7 @@ async function dashboard(env) {
       visibleMarkers: geoActivity.points.length,
       freshnessMinutes: geoActivity.freshnessMinutes,
       coordinatePrecision: "GPS sin redondeo",
-      sampleComplete: geoPresencePage.complete,
+      sampleComplete: geoPresencePage.complete === true,
       sourceAvailable: geoPresencePage.unavailable !== true
     },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
@@ -416,7 +418,8 @@ async function dashboard(env) {
       diagnosticEventSeen: usageEvents.some(event => event.event === "DIAGNOSTIC_TEST"),
       latestUsageEventAt: usageEvents[0]?.createdAt || null,
       userProfilesVisible: userProfiles.length,
-      usageQueryWindowDays: 7
+      usageQueryWindowDays: 7,
+      sourceFailures: failures
     }
   };
 }
