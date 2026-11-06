@@ -14,7 +14,7 @@ android {
     targetSdk = 36
     // GitHub Actions run numbers increase monotonically, allowing in-place Android updates.
     versionCode = (System.getenv("OMNI_ADMIN_VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "4").toInt()
-    versionName = "1.4.1"
+    versionName = "1.4.3"
   }
 
   signingConfigs {
@@ -54,4 +54,6 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.firebase.auth)
   implementation(libs.kotlinx.coroutines.play.services)
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation("org.maplibre.gl:android-sdk:13.7.1")
 }
