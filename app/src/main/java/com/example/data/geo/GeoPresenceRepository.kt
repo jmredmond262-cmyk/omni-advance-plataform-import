@@ -4,6 +4,8 @@ import android.content.Context
 import android.location.Location
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.example.data.api.RealLocationHelper
+import com.example.data.api.RealPlacesApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -79,6 +81,29 @@ object GeoPresenceRepository {
             .put("country", country.trim().take(80))
             .put("accuracyBand", accuracyBand)
         sendToSecureApi(payload)
+    }
+
+    /**
+     * Refresca la presencia mientras OMNI está visible. El ciclo se detiene al pasar la app
+     * a segundo plano y vuelve a exigir consentimiento y permiso GPS.
+     */
+    fun refreshPresenceWhileActive(context: Context) {
+        if (!isSharingEnabled(context) || !RealLocationHelper.hasLocationPermission(context)) return
+        ioScope.launch {
+            try {
+                val location = RealLocationHelper.getCurrentLocation(context) ?: return@launch
+                val details = RealPlacesApi.reverseGeocodeDetails(location.latitude, location.longitude)
+                publishApproximateLocation(
+                    context = context,
+                    location = location,
+                    locality = details.city,
+                    province = details.province,
+                    country = details.country
+                )
+            } catch (error: Exception) {
+                Log.w(TAG, "No se pudo refrescar la presencia activa: ${error.message}")
+            }
+        }
     }
 
     private fun sendToSecureApi(payload: JSONObject) {
