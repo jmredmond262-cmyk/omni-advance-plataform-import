@@ -412,8 +412,8 @@ async function dashboard(env) {
     usageTrend,
     walletBalanceSample: wallets.reduce((sum, item) => sum + (Number(item.balance) || 0), 0),
     walletSampleSize: wallets.length,
-    usageSampleLimit: 5000,
-    usageSampleComplete: usageEvents.length < 5000,
+    usageSampleLimit: 750,
+    usageSampleComplete: usageEvents.length < 750,
     recentUsers, recentOperations: operations,
     geoActivity: geoActivity.points,
     geoActivitySummary: {
