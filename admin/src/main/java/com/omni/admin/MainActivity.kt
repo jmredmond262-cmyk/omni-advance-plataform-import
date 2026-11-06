@@ -381,54 +381,45 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
   val recentOperations = jsonArrayToList(payload.optJSONArray("recentOperations"))
   var showMap by remember { mutableStateOf(false) }
   val shortcuts = listOf(
-    Triple("Usuarios", "users", Icons.Default.PeopleAlt),
-    Triple("OMNI Pay", "wallets", Icons.Default.AccountBalanceWallet),
-    Triple("Comercios", "stores", Icons.Default.Storefront),
-    Triple("Pedidos", "orders", Icons.Default.ShoppingBag),
-    Triple("Eventos", "events", Icons.Default.Event),
-    Triple("Momentos", "moments", Icons.Default.Cake),
-    Triple("Bolsa de trabajo", "conexPosts", Icons.Default.Work),
-    Triple("Perfiles", "conexProfiles", Icons.Default.Badge),
-    Triple("Opiniones", "feedback", Icons.Default.Forum),
-    Triple("Estadísticas", "activity", Icons.Default.QueryStats),
-    Triple("Movimientos", "operations", Icons.Default.SwapHoriz),
-    Triple("Auditoría", "audit", Icons.Default.FactCheck),
-    Triple("Módulos", "modules", Icons.Default.Extension),
-    Triple("Finanzas DEMO", "finance", Icons.Default.Savings),
-    Triple("Accesos", "invitations", Icons.Default.VpnKey),
-    Triple("Configuración", "settings", Icons.Default.Settings)
+    Triple("Usuarios", "users", Icons.Default.PeopleAlt), Triple("OMNI Pay", "wallets", Icons.Default.AccountBalanceWallet),
+    Triple("Comercios", "stores", Icons.Default.Storefront), Triple("Pedidos", "orders", Icons.Default.ShoppingBag),
+    Triple("Eventos", "events", Icons.Default.Event), Triple("Momentos", "moments", Icons.Default.Cake),
+    Triple("Bolsa de trabajo", "conexPosts", Icons.Default.Work), Triple("Perfiles", "conexProfiles", Icons.Default.Badge),
+    Triple("Opiniones", "feedback", Icons.Default.Forum), Triple("Estadísticas", "activity", Icons.Default.QueryStats),
+    Triple("Movimientos", "operations", Icons.Default.SwapHoriz), Triple("Auditoría", "audit", Icons.Default.FactCheck),
+    Triple("Módulos", "modules", Icons.Default.Extension), Triple("Finanzas DEMO", "finance", Icons.Default.Savings),
+    Triple("Accesos", "invitations", Icons.Default.VpnKey), Triple("Configuración", "settings", Icons.Default.Settings)
   )
   val accents = listOf(Color(0xFF00DFFC), Color(0xFF28DFA2), Color(0xFF9B78FF), Color(0xFFFFB547), Color(0xFFFF5C9A))
+  val systemReady = diagnostics.optBoolean("diagnosticEventSeen")
   LazyColumn(
-    Modifier.fillMaxSize().background(
-      Brush.verticalGradient(listOf(Color(0xFF0A1428), Navy, Color(0xFF050A15)))
-    ).padding(horizontal = 13.dp),
-    contentPadding = PaddingValues(top = 14.dp, bottom = 26.dp),
-    verticalArrangement = Arrangement.spacedBy(13.dp)
+    Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF071426), Color(0xFF050B17), Color(0xFF030711)))).padding(horizontal = 14.dp),
+    contentPadding = PaddingValues(top = 15.dp, bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
   ) {
     item {
-      Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+      Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(Color(0xFF102B49), Color(0xFF0A172B), Color(0xFF17152F)))).border(1.dp, Color(0xFF167A9A), RoundedCornerShape(22.dp)).padding(17.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Text("CENTRO DE CONTROL", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.8.sp)
-          Spacer(Modifier.weight(1f))
-          Row(
-            Modifier.clip(RoundedCornerShape(30.dp))
-              .background(if (diagnostics.optBoolean("diagnosticEventSeen")) Color(0xFF0B342F) else Color(0xFF382A12))
-              .border(1.dp, if (diagnostics.optBoolean("diagnosticEventSeen")) Color(0xFF1B9E79) else Color(0xFF9B7026), RoundedCornerShape(30.dp))
-              .padding(horizontal = 9.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Box(Modifier.size(6.dp).background(if (diagnostics.optBoolean("diagnosticEventSeen")) Color(0xFF32E7A0) else Color(0xFFFFB547), RoundedCornerShape(50)))
-            Spacer(Modifier.width(6.dp))
-            Text(if (diagnostics.optBoolean("diagnosticEventSeen")) "SISTEMA ACTIVO" else "EN OBSERVACIÓN", color = White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("OMNI / COMMAND", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Text("Centro de operaciones", color = White, fontSize = 23.sp, fontWeight = FontWeight.Black)
+            Text("Visión general del ecosistema", color = Color(0xFF9CB1CA), fontSize = 10.sp)
+          }
+          Box(Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(Brush.linearGradient(listOf(Color(0xFF00DFFC), Color(0xFF315DEB), Color(0xFF8656E8)))).border(1.dp, Color(0xFF7BEFFF), RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Public, null, tint = White, modifier = Modifier.size(27.dp))
           }
         }
-        Text("Panel ejecutivo", color = White, fontSize = 25.sp, fontWeight = FontWeight.Black, letterSpacing = -.4.sp)
-        Text("Resumen operativo del ecosistema OMNI", color = Color(0xFF8EA3BF), fontSize = 11.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Box(Modifier.size(7.dp).background(if (systemReady) Color(0xFF32E7A0) else Color(0xFFFFB547), RoundedCornerShape(50)))
+          Spacer(Modifier.width(7.dp))
+          Text(if (systemReady) "SISTEMA CONECTADO" else "DIAGNÓSTICO PENDIENTE", color = if (systemReady) Color(0xFF65E9B7) else Color(0xFFFFC66D), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+          Spacer(Modifier.weight(1f))
+          Text("PANEL PRIVADO", color = Color(0xFF7188A6), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+        }
       }
     }
     item {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("INDICADORES PRINCIPALES", color = White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp); Spacer(Modifier.weight(1f)); Text("DATOS REGISTRADOS", color = Color(0xFF7188A6), fontSize = 8.sp, fontWeight = FontWeight.Bold) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           ExecutiveMetric("USUARIOS", counts.optInt("users").toString(), Icons.Default.PeopleAlt, Color(0xFF00DFFC), Modifier.weight(1f))
           ExecutiveMetric("CUENTAS OMNI PAY", counts.optInt("walletAccounts").toString(), Icons.Default.AccountBalanceWallet, Color(0xFF28DFA2), Modifier.weight(1f))
@@ -440,39 +431,36 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
       }
     }
     item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("MÓDULOS DEL ECOSISTEMA", color = White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = .7.sp)
-        Spacer(Modifier.weight(1f))
-        Text("ACCESO DIRECTO", color = Color(0xFF7188A6), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+      Card(Modifier.fillMaxWidth().clickable { showMap = true }.border(1.dp, Color(0xFF00DFFC), RoundedCornerShape(20.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF091A2D)), shape = RoundedCornerShape(20.dp)) {
+        Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF103D55), Color(0xFF0A1B30), Color(0xFF11152D)))).padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("GEOACTIVITY", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.8.sp); Spacer(Modifier.weight(1f))
+            Text("VISOR GEOGRÁFICO", color = Color(0xFF65E9B7), fontSize = 7.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF073B35)).border(1.dp, Color(0xFF1B9E79), RoundedCornerShape(20.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
+          }
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(54.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF073D52)).border(1.dp, Mint.copy(alpha = .75f), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Public, null, tint = Mint, modifier = Modifier.size(30.dp)) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Text("Actividad geográfica OMNI", color = White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+              Text("Local · Santa Fe · Argentina", color = Color(0xFF9CB1CA), fontSize = 9.sp)
+              Text("Abrir mapa y panel territorial", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
+            Icon(Icons.Default.ArrowForward, null, tint = Mint, modifier = Modifier.size(22.dp))
+          }
+        }
       }
+    }
+    item {
+      Row(verticalAlignment = Alignment.CenterVertically) { Text("MÓDULOS DEL ECOSISTEMA", color = White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = .9.sp); Spacer(Modifier.weight(1f)); Text("16 ACCESOS", color = Color(0xFF7188A6), fontSize = 8.sp, fontWeight = FontWeight.Bold) }
     }
     items(shortcuts.chunked(2)) { rowItems ->
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         rowItems.forEach { shortcut ->
-          val index = shortcuts.indexOf(shortcut)
-          val accent = accents[index % accents.size]
-          Card(
-            Modifier.weight(1f).height(88.dp).clickable { onSelect(shortcut.second) }
-              .border(1.dp, accent.copy(alpha = .48f), RoundedCornerShape(15.dp)),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0B172B)),
-            shape = RoundedCornerShape(15.dp)
-          ) {
-            Row(
-              Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent.copy(alpha = .14f), Color(0xFF0A1426))))
-                .padding(horizontal = 11.dp, vertical = 10.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-              Box(
-                Modifier.size(39.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(alpha = .13f))
-                  .border(1.dp, accent.copy(alpha = .55f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-              ) { Icon(shortcut.third, null, tint = accent, modifier = Modifier.size(21.dp)) }
-              Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(shortcut.first, color = White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = 14.sp)
-                Text("Abrir módulo", color = Color(0xFF8298B4), fontSize = 8.sp)
-              }
-              Icon(Icons.Default.ChevronRight, null, tint = accent.copy(alpha = .85f), modifier = Modifier.size(17.dp))
+          val index = shortcuts.indexOf(shortcut); val accent = accents[index % accents.size]
+          Card(Modifier.weight(1f).height(78.dp).clickable { onSelect(shortcut.second) }.border(1.dp, accent.copy(alpha = .55f), RoundedCornerShape(15.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF0A1528)), shape = RoundedCornerShape(15.dp)) {
+            Row(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent.copy(alpha = .13f), Color(0xFF091426)))).padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+              Box(Modifier.size(35.dp).clip(RoundedCornerShape(11.dp)).background(accent.copy(alpha = .13f)).border(1.dp, accent.copy(alpha = .6f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) { Icon(shortcut.third, null, tint = accent, modifier = Modifier.size(19.dp)) }
+              Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { Text(shortcut.first, color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = 12.sp); Text("INGRESAR", color = Color(0xFF7188A6), fontSize = 7.sp, fontWeight = FontWeight.Bold, letterSpacing = .5.sp) }
+              Icon(Icons.Default.ChevronRight, null, tint = accent, modifier = Modifier.size(15.dp))
             }
           }
         }
@@ -480,63 +468,17 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
       }
     }
     item {
-      Card(
-        Modifier.fillMaxWidth().clickable { showMap = true }
-          .border(1.dp, Color(0xFF00BBD8).copy(alpha = .75f), RoundedCornerShape(17.dp)),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1B30)),
-        shape = RoundedCornerShape(17.dp)
-      ) {
-        Row(
-          Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Color(0xFF10334A), Color(0xFF0B1B30), Color(0xFF11172E))))
-            .padding(14.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Box(
-            Modifier.size(47.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF073D52))
-              .border(1.dp, Mint.copy(alpha = .7f), RoundedCornerShape(14.dp)),
-            contentAlignment = Alignment.Center
-          ) { Icon(Icons.Default.Public, null, tint = Mint, modifier = Modifier.size(26.dp)) }
-          Spacer(Modifier.width(11.dp))
-          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("GEOACTIVITY", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
-            Text("Mapa de actividad OMNI", color = White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text("Visor geográfico · Local / Santa Fe / Argentina", color = Color(0xFF91A7C1), fontSize = 9.sp)
-          }
-          Icon(Icons.Default.ArrowForward, null, tint = Mint, modifier = Modifier.size(21.dp))
-        }
-      }
-    }
-    item {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("ACTIVIDAD RECIENTE", color = White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = .7.sp)
-        Spacer(Modifier.weight(1f))
-        Text("REGISTROS DEL SISTEMA", color = Color(0xFF7188A6), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-      }
-    }
-    item {
-      Card(
-        Modifier.fillMaxWidth().border(1.dp, Color(0xFF263C5A), RoundedCornerShape(16.dp)),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF0A1426)),
-        shape = RoundedCornerShape(16.dp)
-      ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-          val recent = (recentActivity + recentOperations).take(6)
-          if (recent.isEmpty()) {
-            Text("Todavía no hay actividad reciente disponible.", color = Color(0xFF91A7C1), fontSize = 11.sp)
-          } else {
-            recent.forEachIndexed { index, record ->
+      Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("MONITOREO DE ACTIVIDAD", color = White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = .9.sp); Spacer(Modifier.weight(1f)); Text("ÚLTIMOS REGISTROS", color = Color(0xFF7188A6), fontSize = 8.sp, fontWeight = FontWeight.Bold) }
+        Card(Modifier.fillMaxWidth().border(1.dp, Color(0xFF263C5A), RoundedCornerShape(17.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF091426)), shape = RoundedCornerShape(17.dp)) {
+          Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            val recent = (recentActivity + recentOperations).take(6)
+            if (recent.isEmpty()) Text("Todavía no hay actividad reciente disponible.", color = Color(0xFF91A7C1), fontSize = 11.sp)
+            else recent.forEachIndexed { index, record ->
               Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                Box(
-                  Modifier.size(31.dp).clip(RoundedCornerShape(10.dp)).background(accents[index % accents.size].copy(alpha = .13f)),
-                  contentAlignment = Alignment.Center
-                ) {
-                  Icon(if (index % 2 == 0) Icons.Default.Bolt else Icons.Default.ReceiptLong, null, tint = accents[index % accents.size], modifier = Modifier.size(17.dp))
-                }
+                Box(Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).background(accents[index % accents.size].copy(alpha = .13f)), contentAlignment = Alignment.Center) { Icon(if (index % 2 == 0) Icons.Default.Bolt else Icons.Default.ReceiptLong, null, tint = accents[index % accents.size], modifier = Modifier.size(16.dp)) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                  Text(
-                    firstPresentValue(record, "event", "eventName", "kind", "type", "action").ifBlank { "Tipo de evento no informado" }.let { friendlyEnum(it) },
-                    color = White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1
-                  )
+                  Text(firstPresentValue(record, "event", "eventName", "kind", "type", "action").ifBlank { "Tipo de evento no informado" }.let { friendlyEnum(it) }, color = White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                   Text(firstPresentValue(record, "userLabel", "storeName", "email", "module").ifBlank { "Módulo o usuario no informado" }, color = Color(0xFF879DB8), fontSize = 9.sp, maxLines = 1)
                 }
                 Text(firstPresentValue(record, "createdAt", "timestamp").take(16), color = Color(0xFF7188A6), fontSize = 8.sp, maxLines = 1)
@@ -545,12 +487,10 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
             }
           }
         }
-      }
-    }
-    item {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        CompactDashboardStat("Sesiones · 7 días", analytics.optInt("sessions7d").toString(), Icons.Default.QueryStats, Modifier.weight(1f))
-        CompactDashboardStat("Vistas de pantalla", analytics.optInt("screenViews7d").toString(), Icons.Default.Visibility, Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          CompactDashboardStat("Sesiones · 7 días", analytics.optInt("sessions7d").toString(), Icons.Default.QueryStats, Modifier.weight(1f))
+          CompactDashboardStat("Vistas de pantalla", analytics.optInt("screenViews7d").toString(), Icons.Default.Visibility, Modifier.weight(1f))
+        }
       }
     }
   }
