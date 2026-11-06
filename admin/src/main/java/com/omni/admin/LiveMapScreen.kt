@@ -25,6 +25,11 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -33,31 +38,47 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.delay
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val MapNavy = Color(0xFF06101F)
 private val MapCyan = Color(0xFF00E5FF)
 private val MapMuted = Color(0xFF91A7C1)
 
 @Composable
-internal fun LiveMapScreen() {
+internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String, onRefresh: () -> Unit) {
+  val summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject()
+  val points = payload.optJSONArray("geoActivity") ?: JSONArray()
+  val pointsJson = points.toString()
+  val activeUsers = summary.optInt("activeUsers", points.length())
+  var mapView by remember { mutableStateOf<WebView?>(null) }
+
+  LaunchedEffect(Unit) {
+    while (true) {
+      delay(30_000L)
+      onRefresh()
+    }
+  }
+
   Column(
     Modifier.fillMaxSize().background(MapNavy).padding(10.dp),
-    verticalArrangement = Arrangement.spacedBy(9.dp)
+    verticalArrangement = Arrangement.spacedBy(8.dp)
   ) {
     Row(
       Modifier.fillMaxWidth()
         .background(Brush.horizontalGradient(listOf(Color(0xFF102B43), Color(0xFF0A172A))))
         .border(1.dp, Color(0xFF12617A), RoundedCornerShape(14.dp))
-        .padding(horizontal = 13.dp, vertical = 11.dp),
+        .padding(horizontal = 13.dp, vertical = 10.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
       Icon(Icons.Default.Public, contentDescription = null, tint = MapCyan)
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text("OMNI LIVE MAP", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
-        Text("Cartografía interactiva · Vista inicial Santa Fe", color = MapMuted, fontSize = 9.sp)
+        Text("Posiciones GPS individuales · actualización automática", color = MapMuted, fontSize = 9.sp)
       }
-      Text("BASE VECTORIAL", color = Color(0xFF65E9B7), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+      Text("$activeUsers EN LÍNEA", color = Color(0xFF65E9B7), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
     }
     Box(
       Modifier.weight(1f).fillMaxWidth()
@@ -67,6 +88,7 @@ internal fun LiveMapScreen() {
         modifier = Modifier.fillMaxSize(),
         factory = { context ->
           WebView(context).apply {
+            mapView = this
             layoutParams = android.view.ViewGroup.LayoutParams(
               android.view.ViewGroup.LayoutParams.MATCH_PARENT,
               android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -76,7 +98,6 @@ internal fun LiveMapScreen() {
               val width = right - left
               val height = bottom - top
               if (width > 0 && height > 0 && (width != oldRight - oldLeft || height != oldBottom - oldTop)) {
-                android.util.Log.d("OMNI_LIVE_MAP", "WebView layout real: " + width + "x" + height)
                 view.post {
                   (view as? WebView)?.evaluateJavascript("if(window.omniForceResize){window.omniForceResize('android-layout');}", null)
                 }
@@ -109,7 +130,7 @@ internal fun LiveMapScreen() {
               }
               override fun onPageFinished(view: WebView, url: String) {
                 view.evaluateJavascript(
-                  "(function(){var s=document.getElementById('status');if(!s)return;if(!window.maplibregl){s.textContent='ERROR: MOTOR MAPLIBRE NO DESCARGADO';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else if(!window.omniMap){if(s.textContent.indexOf('CARGANDO')===0||s.textContent.indexOf('MOTOR ACTIVO')===0){s.textContent='ERROR: EL SCRIPT NO COMPLETÓ LA INICIALIZACIÓN. '+(window.omniInitError||'Revisar consola JavaScript/WebGL');s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}}else{window.omniMap.resize();setTimeout(function(){window.omniMap.resize();window.omniMap.triggerRepaint();},350);setTimeout(function(){window.omniMap.resize();window.omniMap.triggerRepaint();},1200);}})();",
+                  "(function(){var s=document.getElementById('status');if(!s)return;if(!window.maplibregl){s.textContent='ERROR: MOTOR MAPLIBRE NO DESCARGADO';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else if(!window.omniMap){if(s.textContent.indexOf('CARGANDO')===0||s.textContent.indexOf('MOTOR ACTIVO')===0){s.textContent='ERROR: EL SCRIPT NO COMPLETÓ LA INICIALIZACIÓN. '+(window.omniInitError||'Revisar consola JavaScript/WebGL');s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}}else{window.omniMap.resize();window.omniSetPresence && window.omniSetPresence($pointsJson);setTimeout(function(){window.omniMap.resize();window.omniMap.triggerRepaint();},350);setTimeout(function(){window.omniMap.resize();window.omniMap.triggerRepaint();},1200);}})();",
                   null
                 )
               }
@@ -123,10 +144,11 @@ internal fun LiveMapScreen() {
                 }
               }
             }
-            // Use the tile host as the document origin so WebView workers and same-host tile requests
-            // run under the cartography provider origin rather than a fabricated local hostname.
             loadDataWithBaseURL("https://tiles.openfreemap.org/", MAP_HTML, "text/html", "UTF-8", null)
           }
+        },
+        update = { view ->
+          view.evaluateJavascript("if(window.omniSetPresence){window.omniSetPresence($pointsJson);}", null)
         }
       )
     }
@@ -136,7 +158,14 @@ internal fun LiveMapScreen() {
       horizontalArrangement = Arrangement.spacedBy(7.dp)
     ) {
       Icon(Icons.Default.MyLocation, contentDescription = null, tint = MapCyan)
-      Text("Mapa navegable. El seguimiento de dispositivos se incorporará con la telemetría de OMNI.", color = MapMuted, fontSize = 9.sp)
+      Column(Modifier.weight(1f)) {
+        Text(
+          if (error.isNotBlank()) error else if (loading) "Actualizando posiciones…" else "$activeUsers usuarios con ubicación GPS vigente · precisión informada por dispositivo",
+          color = if (error.isNotBlank()) Color(0xFFFF9B9B) else MapMuted,
+          fontSize = 9.sp
+        )
+        Text("Solo cuentas que autorizaron compartir ubicación precisa mientras OMNI está abierta.", color = MapMuted, fontSize = 8.sp)
+      }
     }
   }
 }
@@ -158,7 +187,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
 .maplibregl-ctrl button span{filter:invert(1) sepia(1) saturate(5) hue-rotate(140deg)}
 .maplibregl-ctrl-attrib{background:#071426dd!important;color:#8faec4!important}
 .maplibregl-ctrl-attrib a{color:#00e5ff!important}
-#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
+.omni-user-marker{width:20px;height:20px;border-radius:50%;background:#00e5ff;border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 18px #00e5ff;position:relative;box-sizing:border-box}.omni-user-marker:after{content:'';position:absolute;inset:-7px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
 </style>
 </head>
 <body>
@@ -203,12 +232,51 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      zoom:12,
      pitch:25,
      bearing:-12,
+     interactive:true,
+     dragPan:true,
+     dragRotate:false,
+     touchZoomRotate:true,
+     touchPitch:false,
+     scrollZoom:true,
+     doubleClickZoom:true,
      attributionControl:true,
      fadeDuration:0,
      preserveDrawingBuffer:true,
      maxTileCacheSize:128
    });
    window.omniMap=map;
+   window.omniPresenceMarkers=new Map();
+   window.omniEscapeHtml=function(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});};
+   window.omniSetPresence=function(points){
+     points=Array.isArray(points)?points:[];
+     if(!map.loaded()){window.omniPendingPresence=points;return;}
+     const incoming=new Set();
+     points.forEach(function(point){
+       const uid=String(point.uid||'');
+       const lat=Number(point.latitude),lon=Number(point.longitude);
+       if(!uid||!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)return;
+       incoming.add(uid);
+       const label=window.omniEscapeHtml(point.userLabel||'Cuenta OMNI');
+       const accuracy=Number(point.accuracyMeters);
+       const locality=window.omniEscapeHtml(point.locality||'Localidad no informada');
+       const updated=window.omniEscapeHtml(point.updatedAt||'');
+       const timeText=updated?new Date(updated).toLocaleString('es-AR'):'Sin hora informada';
+       const popupHtml='<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● EN LÍNEA</span></div>';
+       let entry=window.omniPresenceMarkers.get(uid);
+       if(entry){
+         entry.marker.setLngLat([lon,lat]);
+         entry.popup.setHTML(popupHtml);
+       }else{
+         const element=document.createElement('div');
+         element.className='omni-user-marker';
+         element.setAttribute('aria-label',point.userLabel||'Usuario OMNI');
+         const popup=new maplibregl.Popup({offset:16,closeButton:true,closeOnClick:false}).setHTML(popupHtml);
+         const marker=new maplibregl.Marker({element:element,anchor:'center'}).setLngLat([lon,lat]).setPopup(popup).addTo(map);
+         window.omniPresenceMarkers.set(uid,{marker:marker,popup:popup});
+       }
+     });
+     window.omniPresenceMarkers.forEach(function(entry,uid){if(!incoming.has(uid)){entry.marker.remove();window.omniPresenceMarkers.delete(uid);}});
+   };
    // Wait for Compose/WebView to receive its measured height before resizing MapLibre.
    let resizeObserver=null;
    let resizePoll=null;
@@ -251,6 +319,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
    if(status.textContent.indexOf('ERROR')!==0) show('ESTILO RECIBIDO · CARGANDO CALLES Y TESELAS…',false);
  });
  map.on('load',function(){
+   if(window.omniPendingPresence)window.omniSetPresence(window.omniPendingPresence);
    window.omniForceResize('map-load');
    setTimeout(function(){window.omniForceResize('map-load-250ms');},250);
    setTimeout(function(){window.omniForceResize('map-load-1000ms');},1000);
