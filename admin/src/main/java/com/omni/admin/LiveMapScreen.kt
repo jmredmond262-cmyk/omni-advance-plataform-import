@@ -163,7 +163,18 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
  });
  const show=(message,failed)=>{status.textContent=message;status.style.color=failed?'#ff9b9b':'#65e9b7';status.style.borderColor=failed?'#ff6b6b':'#00dfff';};
  if(!window.maplibregl){show('ERROR: no se pudo descargar MapLibre GL JS desde unpkg.com',true);return;}
- if(!maplibregl.supported()){show('ERROR: WebView no dispone de WebGL compatible para dibujar el mapa',true);return;}
+ // MapLibre GL JS builds do not all expose the legacy supported() helper.
+ // Never call it unless the loaded build actually exports it; let Map report GPU errors.
+ if(typeof maplibregl.Map!=='function'){
+   show('ERROR: la librería cargó, pero no expone maplibregl.Map. Versión/API incompatible.',true);return;
+ }
+ if(typeof maplibregl.supported==='function'){
+   try{if(!maplibregl.supported()){show('ERROR: WebView no dispone de WebGL compatible para dibujar el mapa',true);return;}}
+   catch(checkError){console.warn('MapLibre supported() check failed; constructor will perform GPU validation:',checkError);}
+ }
+ if(typeof maplibregl.NavigationControl!=='function'||typeof maplibregl.ScaleControl!=='function'){
+   show('ERROR: faltan controles requeridos en la distribución de MapLibre.',true);return;
+ }
  show('MOTOR ACTIVO · DESCARGANDO CARTOGRAFÍA…',false);
  let map;
  try{
@@ -181,7 +192,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
    window.omniMap=map;
    map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');
    map.addControl(new maplibregl.ScaleControl({maxWidth:100,unit:'metric'}),'bottom-left');
- }catch(e){show('ERROR AL INICIAR EL MAPA: '+(e.message||e),true);return;}
+ }catch(e){window.omniInitError=(e&&e.message)?e.message:String(e);show('ERROR AL INICIAR EL MAPA: '+window.omniInitError,true);console.error('OMNI MAP CONSTRUCTOR ERROR:',e);return;}
  let firstError='';
  map.on('error',function(e){
    const message=(e&&e.error&&e.error.message)?e.error.message:'fallo de red o tesela';
@@ -190,7 +201,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
    show('ERROR DE CARTOGRAFÍA: '+message,true);
  });
  map.on('styledata',function(){
-   if(status.textContent.indexOf('ERROR')!==0) show('ESTILO RECIBIDO · CARGANDO CALLES Y TESelas…',false);
+   if(status.textContent.indexOf('ERROR')!==0) show('ESTILO RECIBIDO · CARGANDO CALLES Y TESELAS…',false);
  });
  map.on('load',function(){
    show('ESTILO CARGADO · ESPERANDO DIBUJO DEL MAPA…',false);
@@ -214,10 +225,12 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
  });
  setTimeout(function(){
    if(status.textContent.indexOf('ERROR')===0 || status.textContent==='MAPA VISIBLE · OMNI') return;
-   const loaded=map.areTilesLoaded();
-   if(loaded) show('MAPA VISIBLE · OMNI',false);
-   else show('SIN TESelas VISIBLES. Revisar conexión al servicio de mapas o WebGL.',true);
- },18000);
+   try{
+     const loaded=map.areTilesLoaded();
+     if(loaded && map.isStyleLoaded()) show('MAPA VISIBLE · OMNI',false);
+     else show('TIEMPO AGOTADO: el estilo o las teselas no terminaron de cargar. Revisar red, worker y WebGL.',true);
+   }catch(timeoutError){show('ERROR AL COMPROBAR LA CARGA: '+(timeoutError.message||timeoutError),true);}
+ },25000);
  window.addEventListener('resize',function(){map.resize();});
 })();
 </script>
