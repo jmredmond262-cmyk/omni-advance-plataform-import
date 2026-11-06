@@ -58,7 +58,6 @@ object UsageAnalyticsRepository {
         screenStartedAt = 0L
         sessionStartedAt = System.currentTimeMillis()
         record(uid, "app", "SESSION_START")
-        record(uid, "diagnostics", "DIAGNOSTIC_TEST")
         if (lastScreen.isNotBlank()) trackScreen(uid, lastScreen)
     }
 
