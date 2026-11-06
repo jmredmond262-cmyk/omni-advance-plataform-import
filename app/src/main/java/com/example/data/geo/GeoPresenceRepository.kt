@@ -29,10 +29,11 @@ object GeoPresenceRepository {
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private fun decisionKey(userId: String) = "decision_$userId"
     private fun enabledKey(userId: String) = "enabled_$userId"
+    private fun consentVersionKey(userId: String) = "consent_version_$userId"
 
     fun hasDecision(context: Context): Boolean {
         val userId = uid()
-        return userId.isNotBlank() && prefs(context).contains(decisionKey(userId))
+        return userId.isNotBlank() && prefs(context).getInt(consentVersionKey(userId), 0) >= 2
     }
 
     fun isSharingEnabled(context: Context): Boolean {
@@ -45,6 +46,7 @@ object GeoPresenceRepository {
         if (userId.isBlank()) return
         prefs(context).edit()
             .putBoolean(decisionKey(userId), true)
+            .putInt(consentVersionKey(userId), 2)
             .putBoolean(enabledKey(userId), enabled)
             .apply()
         if (!enabled) {
