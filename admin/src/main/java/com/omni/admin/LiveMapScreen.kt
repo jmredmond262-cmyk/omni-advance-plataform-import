@@ -181,7 +181,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
 .maplibregl-ctrl button span{filter:invert(1) sepia(1) saturate(5) hue-rotate(140deg)}
 .maplibregl-ctrl-attrib{background:#071426dd!important;color:#8faec4!important}
 .maplibregl-ctrl-attrib a{color:#00e5ff!important}
-.omni-user-marker{width:20px;height:20px;border-radius:50%;background:#00e5ff;border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 18px #00e5ff;position:relative;box-sizing:border-box}.omni-user-marker:after{content:'';position:absolute;inset:-7px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
+.omni-user-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffffff 0 10%,#8cffff 18%,#00e5ff 52%,#007caa 100%);border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 12px #00e5ff,0 0 25px #00dfff;position:relative;box-sizing:border-box;cursor:pointer}.omni-user-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}.omni-cluster-marker{width:38px;height:38px;border-radius:50%;border:2px solid #d9ffff;background:radial-gradient(circle at 35% 28%,#36faff 0,#00aeca 45%,#064c70 100%);color:#fff;font:900 13px Arial;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 7px #00e5ff35,0 0 16px #00e5ff,0 0 32px #00cfff;cursor:pointer;position:relative;text-shadow:0 0 7px #002b42;outline:none;padding:0}.omni-cluster-marker:after{content:'';position:absolute;inset:-9px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 2s ease-out infinite;pointer-events:none}.omni-cluster-marker:active{transform:scale(.94)}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
 </style>
 </head>
 <body>
@@ -240,39 +240,100 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
    });
    window.omniMap=map;
    window.omniPresenceMarkers=new Map();
+   window.omniClusterMarkers=[];
+   window.omniPresenceData=[];
+   window.omniSpiderfyKey='';
    window.omniEscapeHtml=function(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});};
-   window.omniSetPresence=function(points){
-     points=Array.isArray(points)?points:[];
-     if(!map.loaded()){window.omniPendingPresence=points;return;}
-     const incoming=new Set();
-     points.forEach(function(point){
-       const uid=String(point.uid||'');
-       const lat=Number(point.latitude),lon=Number(point.longitude);
-       if(!uid||!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)return;
-       incoming.add(uid);
-       const label=window.omniEscapeHtml(point.userLabel||'Cuenta OMNI');
-       const accuracy=Number(point.accuracyMeters);
-       const locality=window.omniEscapeHtml(point.locality||'Localidad no informada');
-       const updated=window.omniEscapeHtml(point.updatedAt||'');
-       const timeText=updated?new Date(updated).toLocaleString('es-AR'):'Sin hora informada';
-       const coordinates=lat.toFixed(6)+', '+lon.toFixed(6);
-       const popupHtml='<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+coordinates+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● EN LÍNEA</span></div>';
-       let entry=window.omniPresenceMarkers.get(uid);
-       if(entry){
-         entry.marker.setLngLat([lon,lat]);
-         entry.popup.setHTML(popupHtml);
-       }else{
-         const element=document.createElement('div');
-         element.className='omni-user-marker';
-         element.setAttribute('aria-label',point.userLabel||'Usuario OMNI');
-         const popup=new maplibregl.Popup({offset:16,closeButton:true,closeOnClick:false}).setHTML(popupHtml);
-         const marker=new maplibregl.Marker({element:element,anchor:'center'}).setLngLat([lon,lat]).setPopup(popup).addTo(map);
-         window.omniPresenceMarkers.set(uid,{marker:marker,popup:popup});
+   window.omniClearRenderedMarkers=function(){
+     window.omniPresenceMarkers.forEach(function(entry){entry.marker.remove();});
+     window.omniPresenceMarkers.clear();
+     window.omniClusterMarkers.forEach(function(marker){marker.remove();});
+     window.omniClusterMarkers=[];
+   };
+   window.omniPopupHtml=function(point){
+     const label=window.omniEscapeHtml(point.userLabel||'Cuenta OMNI');
+     const locality=window.omniEscapeHtml(point.locality||'Localidad no informada');
+     const updated=window.omniEscapeHtml(point.updatedAt||'');
+     const timeText=updated?new Date(updated).toLocaleString('es-AR'):'Sin hora informada';
+     const lat=Number(point.latitude),lon=Number(point.longitude),accuracy=Number(point.accuracyMeters);
+     return '<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+lat.toFixed(6)+', '+lon.toFixed(6)+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● EN LÍNEA</span></div>';
+   };
+   window.omniAddUserMarker=function(point,offset){
+     const uid=String(point.uid||'');
+     const element=document.createElement('div');
+     element.className='omni-user-marker';
+     element.setAttribute('aria-label',point.userLabel||'Usuario OMNI');
+     const popup=new maplibregl.Popup({offset:18,closeButton:true,closeOnClick:false}).setHTML(window.omniPopupHtml(point));
+     const marker=new maplibregl.Marker({element:element,anchor:'center',offset:offset||[0,0]})
+       .setLngLat([Number(point.longitude),Number(point.latitude)]).setPopup(popup).addTo(map);
+     window.omniPresenceMarkers.set(uid,{marker:marker,popup:popup});
+   };
+   window.omniRenderPresence=function(){
+     if(!map.loaded())return;
+     window.omniClearRenderedMarkers();
+     const valid=window.omniPresenceData.filter(function(p){
+       const lat=Number(p.latitude),lon=Number(p.longitude);
+       return String(p.uid||'')&&Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
+     });
+     const projected=valid.map(function(point){return {point:point,pixel:map.project([Number(point.longitude),Number(point.latitude)])};});
+     const groups=[];
+     const radius=48;
+     projected.forEach(function(item){
+       let target=null,best=radius;
+       groups.forEach(function(group){
+         const dx=item.pixel.x-group.cx,dy=item.pixel.y-group.cy;
+         const distance=Math.sqrt(dx*dx+dy*dy);
+         if(distance<best){best=distance;target=group;}
+       });
+       if(!target){groups.push({items:[item],cx:item.pixel.x,cy:item.pixel.y});}
+       else{
+         target.items.push(item);
+         target.cx=target.items.reduce(function(sum,x){return sum+x.pixel.x;},0)/target.items.length;
+         target.cy=target.items.reduce(function(sum,x){return sum+x.pixel.y;},0)/target.items.length;
        }
      });
-     window.omniPresenceMarkers.forEach(function(entry,uid){if(!incoming.has(uid)){entry.marker.remove();window.omniPresenceMarkers.delete(uid);}});
-     if(!window.omniHasFitPresence && points.length){
-       const valid=points.filter(function(p){return Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude));});
+     groups.forEach(function(group,index){
+       if(group.items.length===1){
+         window.omniAddUserMarker(group.items[0].point,[0,0]);
+         return;
+       }
+       const clusterKey=group.items.map(function(x){return String(x.point.uid);}).sort().join('|');
+       if(window.omniSpiderfyKey===clusterKey && map.getZoom()>=16.5){
+         const count=group.items.length,ringRadius=Math.max(27,Math.min(54,18+count*2));
+         group.items.forEach(function(item,i){
+           const angle=(Math.PI*2*i/count)-Math.PI/2;
+           const offset=[Math.cos(angle)*ringRadius,Math.sin(angle)*ringRadius];
+           window.omniAddUserMarker(item.point,offset);
+         });
+         return;
+       }
+       const center=group.items.reduce(function(sum,item){return [sum[0]+Number(item.point.longitude),sum[1]+Number(item.point.latitude)];},[0,0]);
+       center[0]/=group.items.length;center[1]/=group.items.length;
+       const element=document.createElement('button');
+       element.type='button';element.className='omni-cluster-marker';
+       element.textContent=String(group.items.length);
+       element.setAttribute('aria-label',group.items.length+' usuarios agrupados');
+       element.title=group.items.length+' usuarios detectados · acercar para separar';
+       const clusterMarker=new maplibregl.Marker({element:element,anchor:'center'}).setLngLat(center).addTo(map);
+       element.addEventListener('click',function(event){
+         event.preventDefault();event.stopPropagation();
+         if(map.getZoom()<16.5){
+           map.easeTo({center:center,zoom:Math.min(18,map.getZoom()+2.5),duration:650});
+         }else{
+           window.omniSpiderfyKey=clusterKey;
+           window.omniRenderPresence();
+         }
+       });
+       window.omniClusterMarkers.push(clusterMarker);
+     });
+   };
+   window.omniSetPresence=function(points){
+     points=Array.isArray(points)?points:[];
+     window.omniPresenceData=points.slice();
+     if(!map.loaded())return;
+     window.omniRenderPresence();
+     if(!window.omniHasFitPresence && window.omniPresenceData.length){
+       const valid=window.omniPresenceData.filter(function(p){return Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude));});
        if(valid.length===1){
          map.easeTo({center:[Number(valid[0].longitude),Number(valid[0].latitude)],zoom:14,duration:900});
        }else if(valid.length>1){
@@ -283,6 +344,8 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
        window.omniHasFitPresence=true;
      }
    };
+   map.on('moveend',function(){window.omniSpiderfyKey='';window.omniRenderPresence();});
+   map.on('zoomend',function(){window.omniSpiderfyKey='';window.omniRenderPresence();});
    // Wait for Compose/WebView to receive its measured height before resizing MapLibre.
    let resizeObserver=null;
    let resizePoll=null;
