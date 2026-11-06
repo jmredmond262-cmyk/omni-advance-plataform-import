@@ -67,6 +67,7 @@ internal fun LiveMapScreen() {
         modifier = Modifier.fillMaxSize(),
         factory = { context ->
           WebView(context).apply {
+            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
             setBackgroundColor(AndroidColor.rgb(6, 16, 31))
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -135,7 +136,10 @@ private val MAP_HTML = """
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <style>
 html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#06101f}
-#map{position:absolute;inset:0;width:100%;height:100%;background:#06101f}
+#map{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#06101f;isolation:isolate}
+#map .maplibregl-canvas-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:1!important}
+#map .maplibregl-canvas{position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;opacity:1!important;visibility:visible!important;z-index:1!important}
+#map .maplibregl-control-container{position:absolute;inset:0;z-index:3}
 .maplibregl-ctrl-group{background:#0b2034!important;border:1px solid #00bcd4!important;box-shadow:0 0 12px #00bcd455!important}
 .maplibregl-ctrl button span{filter:invert(1) sepia(1) saturate(5) hue-rotate(140deg)}
 .maplibregl-ctrl-attrib{background:#071426dd!important;color:#8faec4!important}
@@ -187,6 +191,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
      bearing:-12,
      attributionControl:true,
      fadeDuration:0,
+     preserveDrawingBuffer:true,
      maxTileCacheSize:128
    });
    window.omniMap=map;
@@ -226,6 +231,9 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
      const rect=canvas.getBoundingClientRect();
      const features=map.queryRenderedFeatures();
      const style=map.getStyle();
+     const gl=map.painter&&map.painter.context&&map.painter.context.gl;
+     const canvasStyle=window.getComputedStyle(canvas);
+     const glLost=gl?gl.isContextLost():null;
      const sourceCount=Object.keys(style.sources||{}).length;
      const layerCount=(style.layers||[]).length;
      if(rect.width<2||rect.height<2||canvas.width<2||canvas.height<2){
@@ -237,11 +245,11 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
      }else{
        show('DIBUJO CONFIRMADO · '+features.length+' ELEMENTOS · '+Math.round(rect.width)+'×'+Math.round(rect.height),false);
      }
-     console.log('OMNI MAP RENDER CHECK',JSON.stringify({width:rect.width,height:rect.height,canvasWidth:canvas.width,canvasHeight:canvas.height,features:features.length,sources:sourceCount,layers:layerCount,styleLoaded:map.isStyleLoaded(),webgl:!!(map.painter&&map.painter.context&&map.painter.context.gl)}));
+     console.log('OMNI MAP RENDER CHECK',JSON.stringify({width:rect.width,height:rect.height,canvasWidth:canvas.width,canvasHeight:canvas.height,features:features.length,sources:sourceCount,layers:layerCount,styleLoaded:map.isStyleLoaded(),webgl:!!gl,webglContextLost:glLost,canvasDisplay:canvasStyle.display,canvasVisibility:canvasStyle.visibility,canvasOpacity:canvasStyle.opacity,canvasZIndex:canvasStyle.zIndex,canvasRect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}}));
    }catch(checkError){show('ERROR DE DIAGNÓSTICO VISUAL: '+(checkError.message||checkError),true);}
  });
  setTimeout(function(){
-   if(status.textContent.indexOf('ERROR')===0 || status.textContent==='MAPA VISIBLE · OMNI') return;
+   if(status.textContent.indexOf('ERROR')===0 || status.textContent.indexOf('DIBUJO CONFIRMADO')===0) return;
    try{
      const loaded=map.areTilesLoaded();
      if(loaded && map.isStyleLoaded()) show('ESTILO LISTO · ESPERANDO DIBUJO DE ELEMENTOS',false);
