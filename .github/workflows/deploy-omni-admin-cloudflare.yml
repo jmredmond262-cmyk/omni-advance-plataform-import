@@ -37,6 +37,18 @@ jobs:
           test -n "$FIREBASE_SERVICE_ACCOUNT" || { echo "::error::Falta OMNI_PRIMARY_FIREBASE_SERVICE_ACCOUNT_BASE64"; exit 1; }
           echo "Credenciales requeridas presentes."
 
+      - name: Configure Firebase Admin credentials
+        env:
+          SERVICE_ACCOUNT_BASE64: ${{ secrets.OMNI_PRIMARY_FIREBASE_SERVICE_ACCOUNT_BASE64 }}
+        run: |
+          printf '%s' "$SERVICE_ACCOUNT_BASE64" | base64 --decode > "$RUNNER_TEMP/omni-primary-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/omni-primary-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Install Firebase CLI and publish Firestore rules
+        run: |
+          npm install --global firebase-tools
+          firebase deploy --only firestore:rules --project omni-57f69 --non-interactive
+
       - name: Install Wrangler
         run: npm install --global wrangler@4
 
