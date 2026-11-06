@@ -13,11 +13,10 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlin.math.round
 
 /**
  * Comparte presencia geográfica solo con autorización expresa.
- * La ubicación se redondea a una celda aproximada de ~1 km antes de salir del dispositivo.
+ * Comparte coordenadas GPS precisas únicamente con autorización expresa y permiso de ubicación precisa.
  * No registra direcciones ni realiza seguimiento en segundo plano.
  */
 object GeoPresenceRepository {
@@ -53,7 +52,7 @@ object GeoPresenceRepository {
         }
     }
 
-    fun publishApproximateLocation(
+    fun publishPreciseLocation(
         context: Context,
         location: Location?,
         locality: String,
@@ -62,24 +61,25 @@ object GeoPresenceRepository {
     ) {
         val userId = uid()
         if (userId.isBlank() || !isSharingEnabled(context) || location == null) return
-        if (!location.latitude.isFinite() || !location.longitude.isFinite()) return
-        val latitude = round(location.latitude * 100.0) / 100.0
-        val longitude = round(location.longitude * 100.0) / 100.0
-        val accuracyBand = when {
-            location.accuracy <= 100f -> "hasta 100 m"
-            location.accuracy <= 500f -> "100 a 500 m"
-            location.accuracy <= 1000f -> "500 m a 1 km"
-            else -> "más de 1 km"
+        val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!fineGranted) {
+            Log.i(TAG, "No se comparte ubicación: falta permiso GPS preciso.")
+            return
         }
+        if (!location.latitude.isFinite() || !location.longitude.isFinite() ||
+            !location.accuracy.isFinite() || location.accuracy <= 0f) return
         val payload = JSONObject()
             .put("enabled", true)
             .put("consent", true)
-            .put("latitude", latitude)
-            .put("longitude", longitude)
+            .put("latitude", location.latitude)
+            .put("longitude", location.longitude)
+            .put("accuracyMeters", location.accuracy.toDouble())
+            .put("locationTime", java.time.Instant.ofEpochMilli(location.time).toString())
             .put("locality", locality.trim().take(80))
             .put("province", province.trim().take(80))
             .put("country", country.trim().take(80))
-            .put("accuracyBand", accuracyBand)
         sendToSecureApi(payload)
     }
 
@@ -93,7 +93,7 @@ object GeoPresenceRepository {
             try {
                 val location = RealLocationHelper.getCurrentLocation(context) ?: return@launch
                 val details = RealPlacesApi.reverseGeocodeDetails(location.latitude, location.longitude)
-                publishApproximateLocation(
+                publishPreciseLocation(
                     context = context,
                     location = location,
                     locality = details.city,
