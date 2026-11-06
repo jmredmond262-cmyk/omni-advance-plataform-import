@@ -4,9 +4,13 @@ import android.content.Context
 import android.location.Location
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.math.round
 
 /**
@@ -17,6 +21,8 @@ import kotlin.math.round
 object GeoPresenceRepository {
     private const val TAG = "OmniGeoPresence"
     private const val PREFS = "omni_geo_privacy"
+    private const val API_URL = "https://omni-admin-api.jmredmond262.workers.dev/geo-presence"
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private fun uid() = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -41,9 +47,7 @@ object GeoPresenceRepository {
             .putBoolean(enabledKey(userId), enabled)
             .apply()
         if (!enabled) {
-            FirebaseFirestore.getInstance().collection("geoPresence").document(userId)
-                .delete()
-                .addOnFailureListener { error -> Log.w(TAG, "No se pudo retirar la presencia: ${error.message}") }
+            sendToSecureApi(JSONObject().put("enabled", false))
         }
     }
 
@@ -65,19 +69,51 @@ object GeoPresenceRepository {
             location.accuracy <= 1000f -> "500 m a 1 km"
             else -> "más de 1 km"
         }
-        val data = hashMapOf<String, Any>(
-            "uid" to userId,
-            "latitude" to latitude,
-            "longitude" to longitude,
-            "locality" to locality.trim().take(80),
-            "province" to province.trim().take(80),
-            "country" to country.trim().take(80),
-            "accuracyBand" to accuracyBand,
-            "consent" to true,
-            "updatedAt" to FieldValue.serverTimestamp()
-        )
-        FirebaseFirestore.getInstance().collection("geoPresence").document(userId)
-            .set(data, SetOptions.merge())
-            .addOnFailureListener { error -> Log.w(TAG, "No se pudo publicar presencia aproximada: ${error.message}") }
+        val payload = JSONObject()
+            .put("enabled", true)
+            .put("consent", true)
+            .put("latitude", latitude)
+            .put("longitude", longitude)
+            .put("locality", locality.trim().take(80))
+            .put("province", province.trim().take(80))
+            .put("country", country.trim().take(80))
+            .put("accuracyBand", accuracyBand)
+        sendToSecureApi(payload)
+    }
+
+    private fun sendToSecureApi(payload: JSONObject) {
+        val user = FirebaseAuth.getInstance().currentUser ?: return
+        user.getIdToken(false)
+            .addOnSuccessListener { tokenResult ->
+                val idToken = tokenResult.token ?: return@addOnSuccessListener
+                ioScope.launch {
+                    var connection: HttpURLConnection? = null
+                    try {
+                        connection = (URL(API_URL).openConnection() as HttpURLConnection).apply {
+                            requestMethod = "POST"
+                            connectTimeout = 12000
+                            readTimeout = 12000
+                            doOutput = true
+                            setRequestProperty("Authorization", "Bearer $idToken")
+                            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        }
+                        connection.outputStream.use { output ->
+                            output.write(payload.toString().toByteArray(Charsets.UTF_8))
+                        }
+                        val status = connection.responseCode
+                        if (status !in 200..299) {
+                            val message = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                            Log.w(TAG, "La API no aceptó la presencia geográfica ($status): $message")
+                        }
+                    } catch (error: Exception) {
+                        Log.w(TAG, "No se pudo sincronizar la presencia geográfica: ${error.message}")
+                    } finally {
+                        connection?.disconnect()
+                    }
+                }
+            }
+            .addOnFailureListener { error ->
+                Log.w(TAG, "No se pudo validar la sesión para compartir ubicación: ${error.message}")
+            }
     }
 }
