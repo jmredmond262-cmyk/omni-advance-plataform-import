@@ -214,7 +214,7 @@ function aggregateGeoPresence(records, profiles) {
     if (!uid || !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
         Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
         !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000) continue;
-    const locationTime = Date.parse(record.locationTime || record.updatedAt || "");
+    const locationTime = Number(record.locationTimeMillis || Date.parse(record.locationTime || record.updatedAt || ""));
     if (!Number.isFinite(locationTime) || now - locationTime > 5 * 60 * 1000 || locationTime > now + 60 * 1000) continue;
     activeUsers += 1;
     points.push({
@@ -591,7 +591,7 @@ async function handleGeoPresenceRequest(request, env) {
   const latitude = Number(data.latitude);
   const longitude = Number(data.longitude);
   const accuracyMeters = Number(data.accuracyMeters);
-  const locationTime = Date.parse(String(data.locationTime || ""));
+  const locationTime = Number(data.locationTimeMillis);
   const now = Date.now();
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
       Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
@@ -605,6 +605,7 @@ async function handleGeoPresenceRequest(request, env) {
     longitude,
     accuracyMeters,
     locationTime: new Date(locationTime).toISOString(),
+    locationTimeMillis: locationTime,
     locality: String(data.locality || "").trim().slice(0, 80) || "Localidad no informada",
     province: String(data.province || "").trim().slice(0, 80) || "Provincia no informada",
     country: String(data.country || "").trim().slice(0, 80) || "País no informado",
