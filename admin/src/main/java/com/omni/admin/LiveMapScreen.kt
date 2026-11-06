@@ -42,12 +42,42 @@ private val MapNavy = Color(0xFF06101F)
 private val MapCyan = Color(0xFF00E5FF)
 private val MapMuted = Color(0xFF91A7C1)
 
+private fun demoGeoActivity(): JSONArray {
+  val updatedAt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+    timeZone = java.util.TimeZone.getTimeZone("UTC")
+  }.format(java.util.Date())
+  val samples = listOf(
+    Triple("DEMO-SF-001", -60.7000, -31.6333),
+    Triple("DEMO-SF-002", -60.6948, -31.6302),
+    Triple("DEMO-SF-003", -60.7061, -31.6374),
+    Triple("DEMO-SF-004", -60.6875, -31.6401),
+    Triple("DEMO-SF-005", -60.7132, -31.6258)
+  )
+  return JSONArray().apply {
+    samples.forEachIndexed { index, sample ->
+      put(JSONObject()
+        .put("uid", sample.first)
+        .put("userLabel", "Usuario de prueba ${index + 1}")
+        .put("latitude", sample.third)
+        .put("longitude", sample.second)
+        .put("accuracyMeters", 8 + index * 3)
+        .put("locality", "Santa Fe · marcador DEMO")
+        .put("province", "Santa Fe")
+        .put("country", "Argentina")
+        .put("updatedAt", updatedAt)
+        .put("locationTime", updatedAt)
+        .put("status", "demo")
+        .put("source", "DEMO"))
+    }
+  }
+}
+
 @Composable
 internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String, onRefresh: () -> Unit) {
-  val summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject()
-  val points = payload.optJSONArray("geoActivity") ?: JSONArray()
+  // Prueba aislada: estos puntos son locales y no se leen ni escriben en Firestore.
+  val points = remember { demoGeoActivity() }
   val pointsJson = points.toString()
-  val activeUsers = summary.optInt("activeUsers", points.length())
+  val activeUsers = points.length()
 
   LaunchedEffect(Unit) {
     while (true) {
@@ -70,10 +100,10 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
     ) {
       Icon(Icons.Default.Public, contentDescription = null, tint = MapCyan)
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("OMNI LIVE MAP", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
-        Text("Posiciones GPS individuales · actualización automática", color = MapMuted, fontSize = 9.sp)
+        Text("OMNI LIVE MAP · DEMO", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
+        Text("Marcadores simulados · sin consultas a OMNI principal", color = MapMuted, fontSize = 9.sp)
       }
-      Text("$activeUsers EN LÍNEA", color = Color(0xFF65E9B7), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+      Text("$activeUsers PUNTOS DEMO", color = Color(0xFFFFC46B), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
     }
     Box(
       Modifier.weight(1f).fillMaxWidth()
@@ -154,11 +184,11 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
       Icon(Icons.Default.MyLocation, contentDescription = null, tint = MapCyan)
       Column(Modifier.weight(1f)) {
         Text(
-          if (error.isNotBlank()) error else if (loading) "Actualizando posiciones…" else "$activeUsers usuarios con ubicación GPS vigente · precisión informada por dispositivo",
+          if (error.isNotBlank()) error else if (loading) "Actualizando posiciones…" else "$activeUsers posiciones de prueba ubicadas en coordenadas de Santa Fe",
           color = if (error.isNotBlank()) Color(0xFFFF9B9B) else MapMuted,
           fontSize = 9.sp
         )
-        Text("Solo cuentas que autorizaron compartir ubicación precisa mientras OMNI está abierta.", color = MapMuted, fontSize = 8.sp)
+        Text("SIMULACIÓN: no representa usuarios reales ni registra ubicaciones personales.", color = Color(0xFFFFC46B), fontSize = 8.sp)
       }
     }
   }
@@ -181,7 +211,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
 .maplibregl-ctrl button span{filter:invert(1) sepia(1) saturate(5) hue-rotate(140deg)}
 .maplibregl-ctrl-attrib{background:#071426dd!important;color:#8faec4!important}
 .maplibregl-ctrl-attrib a{color:#00e5ff!important}
-.omni-user-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffffff 0 10%,#8cffff 18%,#00e5ff 52%,#007caa 100%);border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 12px #00e5ff,0 0 25px #00dfff;position:relative;box-sizing:border-box;cursor:pointer}.omni-user-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}.omni-cluster-marker{width:38px;height:38px;border-radius:50%;border:2px solid #d9ffff;background:radial-gradient(circle at 35% 28%,#36faff 0,#00aeca 45%,#064c70 100%);color:#fff;font:900 13px Arial;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 7px #00e5ff35,0 0 16px #00e5ff,0 0 32px #00cfff;cursor:pointer;position:relative;text-shadow:0 0 7px #002b42;outline:none;padding:0}.omni-cluster-marker:after{content:'';position:absolute;inset:-9px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 2s ease-out infinite;pointer-events:none}.omni-cluster-marker:active{transform:scale(.94)}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
+.omni-demo-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff7df 0 10%,#ffe0a1 18%,#ffad33 52%,#b85d00 100%);border:2px solid #fff4d8;box-shadow:0 0 0 5px #ffad3335,0 0 12px #ffad33,0 0 25px #ff9b00;position:relative;box-sizing:border-box;cursor:pointer}.omni-demo-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #ffbd59;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}.omni-user-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffffff 0 10%,#8cffff 18%,#00e5ff 52%,#007caa 100%);border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 12px #00e5ff,0 0 25px #00dfff;position:relative;box-sizing:border-box;cursor:pointer}.omni-user-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}.omni-cluster-marker{width:38px;height:38px;border-radius:50%;border:2px solid #d9ffff;background:radial-gradient(circle at 35% 28%,#36faff 0,#00aeca 45%,#064c70 100%);color:#fff;font:900 13px Arial;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 7px #00e5ff35,0 0 16px #00e5ff,0 0 32px #00cfff;cursor:pointer;position:relative;text-shadow:0 0 7px #002b42;outline:none;padding:0}.omni-cluster-marker:after{content:'';position:absolute;inset:-9px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 2s ease-out infinite;pointer-events:none}.omni-cluster-marker:active{transform:scale(.94)}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
 </style>
 </head>
 <body>
@@ -254,14 +284,17 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      const label=window.omniEscapeHtml(point.userLabel||'Cuenta OMNI');
      const locality=window.omniEscapeHtml(point.locality||'Localidad no informada');
      const updated=window.omniEscapeHtml(point.updatedAt||'');
+     const isDemo=point.source==='DEMO';
+     const stateLabel=isDemo?'● MARCADOR DE PRUEBA':'● EN LÍNEA';
+     const stateColor=isDemo?'#ffc46b':'#65e9b7';
      const timeText=updated?new Date(updated).toLocaleString('es-AR'):'Sin hora informada';
      const lat=Number(point.latitude),lon=Number(point.longitude),accuracy=Number(point.accuracyMeters);
-     return '<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+lat.toFixed(6)+', '+lon.toFixed(6)+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● EN LÍNEA</span></div>';
+     return '<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+lat.toFixed(6)+', '+lon.toFixed(6)+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:'+stateColor+'">'+stateLabel+'</span></div>';
    };
    window.omniAddUserMarker=function(point,offset){
      const uid=String(point.uid||'');
      const element=document.createElement('div');
-     element.className='omni-user-marker';
+     element.className=point.source==='DEMO'?'omni-demo-marker':'omni-user-marker';
      element.setAttribute('aria-label',point.userLabel||'Usuario OMNI');
      const popup=new maplibregl.Popup({offset:18,closeButton:true,closeOnClick:false}).setHTML(window.omniPopupHtml(point));
      const marker=new maplibregl.Marker({element:element,anchor:'center',offset:offset||[0,0]})
