@@ -67,7 +67,21 @@ internal fun LiveMapScreen() {
         modifier = Modifier.fillMaxSize(),
         factory = { context ->
           WebView(context).apply {
+            layoutParams = android.view.ViewGroup.LayoutParams(
+              android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+              android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            )
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+            setOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+              val width = right - left
+              val height = bottom - top
+              if (width > 0 && height > 0 && (width != oldRight - oldLeft || height != oldBottom - oldTop)) {
+                android.util.Log.d("OMNI_LIVE_MAP", "WebView layout real: " + width + "x" + height)
+                view.post {
+                  (view as? WebView)?.evaluateJavascript("if(window.omniForceResize){window.omniForceResize('android-layout');}", null)
+                }
+              }
+            }
             setBackgroundColor(AndroidColor.rgb(6, 16, 31))
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -195,6 +209,34 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      maxTileCacheSize:128
    });
    window.omniMap=map;
+   // Wait for Compose/WebView to receive its measured height before resizing MapLibre.
+   let resizeObserver=null;
+   let resizePoll=null;
+   let resizePollCount=0;
+   window.omniForceResize=function(reason){
+     const host=document.getElementById('map');
+     if(!host||!window.omniMap)return;
+     const r=host.getBoundingClientRect();
+     const vw=document.documentElement.clientWidth;
+     const vh=document.documentElement.clientHeight;
+     console.log('OMNI RESIZE CHECK',JSON.stringify({reason:reason||'observer',hostWidth:r.width,hostHeight:r.height,viewportWidth:vw,viewportHeight:vh,innerWidth:window.innerWidth,innerHeight:window.innerHeight}));
+     if(r.width>1&&r.height>1&&vw>1&&vh>1){window.omniMap.resize();window.omniMap.triggerRepaint();}
+   };
+   if(typeof ResizeObserver==='function'){
+     resizeObserver=new ResizeObserver(function(entries){
+       for(const entry of entries){const r=entry.contentRect;if(r.width>1&&r.height>1)window.omniForceResize('ResizeObserver');}
+     });
+     [document.documentElement,document.body,document.getElementById('map')].forEach(function(el){if(el)resizeObserver.observe(el);});
+   }
+   window.addEventListener('resize',function(){window.omniForceResize('window-resize');});
+   if(window.visualViewport)window.visualViewport.addEventListener('resize',function(){window.omniForceResize('visual-viewport');});
+   // Bounded fallback: stop after 12 seconds or as soon as the canvas gets a real area.
+   resizePoll=setInterval(function(){
+     resizePollCount++;window.omniForceResize('bounded-poll-'+resizePollCount);
+     const c=window.omniMap.getCanvas();
+     if(c&&c.clientWidth>1&&c.clientHeight>1){clearInterval(resizePoll);resizePoll=null;show('ÁREA DE DIBUJO RECUPERADA · '+c.clientWidth+'×'+c.clientHeight,false);}
+     else if(resizePollCount>=120){clearInterval(resizePoll);resizePoll=null;console.error('OMNI RESIZE: timeout; WebView did not provide a positive map area');}
+   },100);
    map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');
    map.addControl(new maplibregl.ScaleControl({maxWidth:100,unit:'metric'}),'bottom-left');
  }catch(e){window.omniInitError=(e&&e.message)?e.message:String(e);show('ERROR AL INICIAR EL MAPA: '+window.omniInitError,true);console.error('OMNI MAP CONSTRUCTOR ERROR:',e);return;}
@@ -209,6 +251,9 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
    if(status.textContent.indexOf('ERROR')!==0) show('ESTILO RECIBIDO · CARGANDO CALLES Y TESELAS…',false);
  });
  map.on('load',function(){
+   window.omniForceResize('map-load');
+   setTimeout(function(){window.omniForceResize('map-load-250ms');},250);
+   setTimeout(function(){window.omniForceResize('map-load-1000ms');},1000);
    show('ESTILO CARGADO · ESPERANDO DIBUJO DEL MAPA…',false);
    try{
      const style=map.getStyle();
@@ -249,14 +294,15 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
    }catch(checkError){show('ERROR DE DIAGNÓSTICO VISUAL: '+(checkError.message||checkError),true);}
  });
  setTimeout(function(){
-   if(status.textContent.indexOf('ERROR')===0 || status.textContent.indexOf('DIBUJO CONFIRMADO')===0) return;
+   if(status.textContent.indexOf('ERROR')===0 || status.textContent.indexOf('DIBUJO CONFIRMADO')===0 || status.textContent.indexOf('MAPA SIN ÁREA')===0) return;
    try{
      const loaded=map.areTilesLoaded();
      if(loaded && map.isStyleLoaded()) show('ESTILO LISTO · ESPERANDO DIBUJO DE ELEMENTOS',false);
      else show('TIEMPO AGOTADO: el estilo o las teselas no terminaron de cargar. Revisar red, worker y WebGL.',true);
    }catch(timeoutError){show('ERROR AL COMPROBAR LA CARGA: '+(timeoutError.message||timeoutError),true);}
  },25000);
- window.addEventListener('resize',function(){map.resize();});
+ window.addEventListener('pageshow',function(){window.omniForceResize('pageshow');});
+ window.addEventListener('orientationchange',function(){setTimeout(function(){window.omniForceResize('orientationchange');},250);});
 })();
 </script>
 </body>
