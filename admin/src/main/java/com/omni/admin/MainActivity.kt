@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
 
 private data class AdminTab(val id: String, val label: String, val collection: String? = null)
 private val tabs = listOf(
-  AdminTab("dashboard", "Panel ejecutivo"), AdminTab("users", "Cuentas de usuario", "users"),
+  AdminTab("dashboard", "Panel ejecutivo"), AdminTab("liveMap", "Mapa en tiempo real"), AdminTab("users", "Cuentas de usuario", "users"),
   AdminTab("wallets", "Cuentas OMNI Pay", "walletAccounts"), AdminTab("operations", "Movimientos OMNI Pay", "walletOperations"), AdminTab("finance", "Control financiero DEMO"),
   AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
   AdminTab("feedback", "Opiniones y reportes", "appFeedback"), AdminTab("activity", "Actividad de uso", "usageEvents"), AdminTab("modules", "Módulos y funciones", "moduleRegistry"),
@@ -80,7 +80,8 @@ private val navGroups = listOf(
   AdminNavGroup("overview", "Panel", Icons.Default.Dashboard, listOf("dashboard")),
   AdminNavGroup("people", "Usuarios", Icons.Default.PeopleAlt, listOf("users", "feedback")),
   AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
-  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings"))
+  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
+  AdminNavGroup("geography", "Mapa", Icons.Default.Public, listOf("liveMap"))
 )
 
 @Composable
@@ -99,6 +100,7 @@ private fun OmniAdminRoot() {
   fun refresh() {
     val current = auth.currentUser ?: return
     scope.launch {
+      if (selected == "liveMap") { payload = JSONObject(); loading = false; error = ""; return@launch }
       loading = true
       error = ""
       try {
@@ -362,6 +364,7 @@ private fun AdminHome(
         )
       }
       when (selected) {
+        "liveMap" -> LiveMapScreen()
         "dashboard" -> DashboardContent(payload, onSelect, onRefresh)
         "finance" -> FinanceContent(payload)
         "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray(), onSaveModule)
@@ -380,7 +383,6 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
   val diagnostics = payload.optJSONObject("diagnostics") ?: JSONObject()
   val recentActivity = jsonArrayToList(payload.optJSONArray("recentUsageEvents"))
   val recentOperations = jsonArrayToList(payload.optJSONArray("recentOperations"))
-  var showMap by remember { mutableStateOf(false) }
   val shortcuts = listOf(
     Triple("Usuarios", "users", Icons.Default.PeopleAlt), Triple("OMNI Pay", "wallets", Icons.Default.AccountBalanceWallet),
     Triple("Comercios", "stores", Icons.Default.Storefront), Triple("Pedidos", "orders", Icons.Default.ShoppingBag),
@@ -432,7 +434,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
       }
     }
     item {
-      Card(Modifier.fillMaxWidth().clickable { showMap = true }.border(1.dp, Color(0xFF00DFFC), RoundedCornerShape(20.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF091A2D)), shape = RoundedCornerShape(20.dp)) {
+      Card(Modifier.fillMaxWidth().clickable { onSelect("liveMap") }.border(1.dp, Color(0xFF00DFFC), RoundedCornerShape(20.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF091A2D)), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF103D55), Color(0xFF0A1B30), Color(0xFF11152D)))).padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text("GEOACTIVITY", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.8.sp); Spacer(Modifier.weight(1f))
@@ -495,7 +497,6 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
       }
     }
   }
-  if (showMap) ActivityMapDialog(points = payload.optJSONArray("geoActivity") ?: JSONArray(), summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject(), onRefresh = onRefresh, onDismiss = { showMap = false })
 }
 
 @Composable
