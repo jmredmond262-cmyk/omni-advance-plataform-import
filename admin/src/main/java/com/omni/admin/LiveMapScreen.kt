@@ -94,7 +94,7 @@ internal fun LiveMapScreen() {
               }
               override fun onPageFinished(view: WebView, url: String) {
                 view.evaluateJavascript(
-                  "(function(){var s=document.getElementById('status');if(!s)return;if(!window.maplibregl){s.textContent='ERROR: MOTOR MAPLIBRE NO DESCARGADO';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else if(!window.omniMap){if(s.textContent.indexOf('CARGANDO')===0||s.textContent.indexOf('MOTOR ACTIVO')===0){s.textContent='ERROR: EL SCRIPT NO COMPLETÓ LA INICIALIZACIÓN. '+(window.omniInitError||'Revisar consola JavaScript/WebGL');s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}}else{window.omniMap.resize();}})();",
+                  "(function(){var s=document.getElementById('status');if(!s)return;if(!window.maplibregl){s.textContent='ERROR: MOTOR MAPLIBRE NO DESCARGADO';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else if(!window.omniMap){if(s.textContent.indexOf('CARGANDO')===0||s.textContent.indexOf('MOTOR ACTIVO')===0){s.textContent='ERROR: EL SCRIPT NO COMPLETÓ LA INICIALIZACIÓN. '+(window.omniInitError||'Revisar consola JavaScript/WebGL');s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}}else{window.omniMap.resize();setTimeout(function(){window.omniMap.resize();window.omniMap.triggerRepaint();},350);setTimeout(function(){window.omniMap.resize();window.omniMap.triggerRepaint();},1200);}})();",
                   null
                 )
               }
@@ -220,14 +220,31 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
    }catch(e){console.warn('OMNI neon road overlay unavailable: '+e.message);}
  });
  map.on('idle',function(){
-   if(firstError){show('MAPA PARCIAL · '+firstError,true);return;}
-   if(map.areTilesLoaded()) show('MAPA VISIBLE · OMNI',false);
+   if(firstError){show('ERROR DE TESSELAS: '+firstError,true);return;}
+   try{
+     const canvas=map.getCanvas();
+     const rect=canvas.getBoundingClientRect();
+     const features=map.queryRenderedFeatures();
+     const style=map.getStyle();
+     const sourceCount=Object.keys(style.sources||{}).length;
+     const layerCount=(style.layers||[]).length;
+     if(rect.width<2||rect.height<2||canvas.width<2||canvas.height<2){
+       show('MAPA SIN ÁREA DE DIBUJO · lienzo '+Math.round(rect.width)+'×'+Math.round(rect.height),true);
+     }else if(!map.isStyleLoaded()||sourceCount===0||layerCount===0){
+       show('ESTILO INCOMPLETO · fuentes '+sourceCount+' · capas '+layerCount,true);
+     }else if(features.length===0){
+       show('ESTILO CARGADO, PERO 0 ELEMENTOS DIBUJADOS · revisar teselas/WebGL',true);
+     }else{
+       show('DIBUJO CONFIRMADO · '+features.length+' ELEMENTOS · '+Math.round(rect.width)+'×'+Math.round(rect.height),false);
+     }
+     console.log('OMNI MAP RENDER CHECK',JSON.stringify({width:rect.width,height:rect.height,canvasWidth:canvas.width,canvasHeight:canvas.height,features:features.length,sources:sourceCount,layers:layerCount,styleLoaded:map.isStyleLoaded(),webgl:!!(map.painter&&map.painter.context&&map.painter.context.gl)}));
+   }catch(checkError){show('ERROR DE DIAGNÓSTICO VISUAL: '+(checkError.message||checkError),true);}
  });
  setTimeout(function(){
    if(status.textContent.indexOf('ERROR')===0 || status.textContent==='MAPA VISIBLE · OMNI') return;
    try{
      const loaded=map.areTilesLoaded();
-     if(loaded && map.isStyleLoaded()) show('MAPA VISIBLE · OMNI',false);
+     if(loaded && map.isStyleLoaded()) show('ESTILO LISTO · ESPERANDO DIBUJO DE ELEMENTOS',false);
      else show('TIEMPO AGOTADO: el estilo o las teselas no terminaron de cargar. Revisar red, worker y WebGL.',true);
    }catch(timeoutError){show('ERROR AL COMPROBAR LA CARGA: '+(timeoutError.message||timeoutError),true);}
  },25000);
