@@ -551,6 +551,9 @@ html,body,#map,#map-frame{height:100%;width:100%;margin:0;background:#071321}#ma
 <div class="map-status" id="status"><b>OMNI · CARTOGRAFÍA</b><br>Iniciando visor geográfico…</div><div id="fallback">No fue posible conectar con los proveedores cartográficos.<br>Revisá la conexión del dispositivo.</div>
 <script>
 (function(){
+window.__omniPoints=[];window.__omniScope='Local';
+window.setActivityPoints=function(points){window.__omniPoints=Array.isArray(points)?points:[];if(window.__omniRenderPoints)window.__omniRenderPoints(window.__omniPoints);};
+window.setMapScope=function(value){window.__omniScope=value||'Local';if(window.__omniRenderScope)window.__omniRenderScope(window.__omniScope);};
 var status=document.getElementById('status'),frame=document.getElementById('map-frame'),fallback=document.getElementById('fallback'),map=null,activityLayer=null,tileLayer=null,scope='Local',timer=null,frameLoaded=false,allActivityPoints=[];
 var zones={'Local':{center:[-31.6333,-60.7000],zoom:12,bbox:'-60.86,-31.73,-60.54,-31.52',marker:'-31.6333,-60.7000',label:'Área local · Santa Fe capital'},'Santa Fe':{center:[-30.7069,-60.9500],zoom:7,bbox:'-62.75,-34.05,-58.75,-28.00',marker:'-30.7069,-60.9500',label:'Provincia de Santa Fe'},'Argentina':{center:[-38.4161,-63.6167],zoom:4,bbox:'-73.60,-55.10,-53.60,-21.70',marker:'-38.4161,-63.6167',label:'República Argentina'}};
 function show(m){status.innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>'+m;}
@@ -600,8 +603,10 @@ var z=zones[scope];map.setView(z.center,z.zoom);show(z.label+' · mapa base disp
 }
 setTimeout(function(){map.invalidateSize(true);},250);
 }
-window.setActivityPoints=function(points){allActivityPoints=Array.isArray(points)?points:[];redrawActivity();};
-window.setMapScope=function(s){scope=zones[s]?s:'Local';if(map)redrawActivity();else if(frame.style.display==='block')fallbackMap('osm');};
+window.__omniRenderPoints=function(points){allActivityPoints=Array.isArray(points)?points:[];redrawActivity();};
+window.__omniRenderScope=function(s){scope=zones[s]?s:'Local';if(map)redrawActivity();else if(frame.style.display==='block')fallbackMap('osm');};
+window.setActivityPoints(window.__omniPoints);
+window.setMapScope(window.__omniScope);
 attachTiles();setTimeout(function(){if(map)map.invalidateSize(true);},350);
 }catch(e){show('Error al iniciar el visor: '+String(e.message||e));fallbackMap('osm');}
 }
