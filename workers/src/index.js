@@ -198,41 +198,40 @@ function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
-function aggregateGeoPresence(records) {
-  const buckets = new Map();
+function aggregateGeoPresence(records, profiles) {
+  const labels = userLabels(profiles);
   const now = Date.now();
-  let freshUsers = 0;
+  const points = [];
+  let activeUsers = 0;
   for (const record of records) {
     if (record.consent !== true) continue;
     const updatedAt = Date.parse(record.updatedAt || "");
-    if (!Number.isFinite(updatedAt) || now - updatedAt > 24 * 60 * 60 * 1000 || updatedAt > now + 5 * 60 * 1000) continue;
+    if (!Number.isFinite(updatedAt) || now - updatedAt > 3 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
     const uid = String(record.uid || record.id || "");
-    const lat = Number(record.latitude);
-    const lon = Number(record.longitude);
-    if (!uid || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
-    // Reject precise coordinates: this collection is reserved for the app's ~1 km privacy grid.
-    if (Math.abs(lat * 100 - Math.round(lat * 100)) > 0.00001 ||
-        Math.abs(lon * 100 - Math.round(lon * 100)) > 0.00001) continue;
-    freshUsers += 1;
-    const locality = String(record.locality || "Localidad no informada").trim().slice(0, 80);
-    const province = String(record.province || "Provincia no informada").trim().slice(0, 80);
-    const country = String(record.country || "País no informado").trim().slice(0, 80);
-    const key = lat.toFixed(2) + "," + lon.toFixed(2) + "|" + locality.toLowerCase() + "|" + province.toLowerCase();
-    const current = buckets.get(key) || {
-      latitude: lat, longitude: lon, locality, province, country, users: new Set()
-    };
-    current.users.add(uid);
-    buckets.set(key, current);
+    const latitude = Number(record.latitude);
+    const longitude = Number(record.longitude);
+    const accuracyMeters = Number(record.accuracyMeters);
+    if (!uid || !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+        Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
+        !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000) continue;
+    const locationTime = Date.parse(record.locationTime || record.updatedAt || "");
+    if (!Number.isFinite(locationTime) || now - locationTime > 5 * 60 * 1000 || locationTime > now + 60 * 1000) continue;
+    activeUsers += 1;
+    points.push({
+      uid,
+      userLabel: labels.get(uid) || ("Cuenta OMNI · " + uid.slice(0, 8)),
+      latitude,
+      longitude,
+      accuracyMeters: Math.round(accuracyMeters),
+      locality: String(record.locality || "Localidad no informada").trim().slice(0, 80),
+      province: String(record.province || "Provincia no informada").trim().slice(0, 80),
+      country: String(record.country || "País no informado").trim().slice(0, 80),
+      updatedAt: record.updatedAt,
+      locationTime: record.locationTime || record.updatedAt,
+      status: "online"
+    });
   }
-  // A map marker is emitted only when at least three distinct accounts share the same area.
-  const points = [...buckets.values()]
-    .filter(point => point.users.size >= 3)
-    .map(point => ({
-      latitude: point.latitude, longitude: point.longitude,
-      locality: point.locality, province: point.province, country: point.country,
-      count: point.users.size
-    }));
-  return { points, freshUsers, privacyThreshold: 3, freshnessHours: 24 };
+  return { points, activeUsers, freshnessMinutes: 3 };
 }
 
 function summarizeUsage(events) {
@@ -383,7 +382,7 @@ async function dashboard(env) {
     count: usageByDay[day]
   }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoPresencePage.items);
+  const geoActivity = aggregateGeoPresence(geoPresencePage.items, userProfiles);
   return {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
@@ -396,10 +395,10 @@ async function dashboard(env) {
     recentUsers, recentOperations: operations,
     geoActivity: geoActivity.points,
     geoActivitySummary: {
-      consentedUsersFresh24h: geoActivity.freshUsers,
-      visibleAreas: geoActivity.points.length,
-      privacyThreshold: geoActivity.privacyThreshold,
-      freshnessHours: geoActivity.freshnessHours,
+      activeUsers: geoActivity.activeUsers,
+      visibleMarkers: geoActivity.points.length,
+      freshnessMinutes: geoActivity.freshnessMinutes,
+      coordinatePrecision: "GPS sin redondeo",
       sampleComplete: geoPresencePage.complete
     },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
@@ -591,28 +590,28 @@ async function handleGeoPresenceRequest(request, env) {
   if (data.enabled !== true || data.consent !== true) throw new ApiError(400, "invalid-argument", "La ubicación requiere autorización expresa.");
   const latitude = Number(data.latitude);
   const longitude = Number(data.longitude);
-  const roundedLatitude = Math.round(latitude * 100) / 100;
-  const roundedLongitude = Math.round(longitude * 100) / 100;
+  const accuracyMeters = Number(data.accuracyMeters);
+  const locationTime = Date.parse(String(data.locationTime || ""));
+  const now = Date.now();
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
       Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
-      Math.abs(latitude - roundedLatitude) > 0.000001 ||
-      Math.abs(longitude - roundedLongitude) > 0.000001) {
-    throw new ApiError(400, "invalid-argument", "La ubicación debe estar redondeada a una celda aproximada de 1 km.");
+      !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000 ||
+      !Number.isFinite(locationTime) || now - locationTime > 2 * 60 * 1000 || locationTime > now + 60 * 1000) {
+    throw new ApiError(400, "invalid-argument", "Se requiere una posición GPS válida, reciente y con precisión informada.");
   }
-  const allowedAccuracy = ["hasta 100 m", "100 a 500 m", "500 m a 1 km", "más de 1 km"];
-  const accuracyBand = allowedAccuracy.includes(String(data.accuracyBand || "")) ? String(data.accuracyBand) : "más de 1 km";
   await writeDocument(env, "geoPresence", identity.uid, {
     uid: identity.uid,
-    latitude: roundedLatitude,
-    longitude: roundedLongitude,
+    latitude,
+    longitude,
+    accuracyMeters,
+    locationTime: new Date(locationTime).toISOString(),
     locality: String(data.locality || "").trim().slice(0, 80) || "Localidad no informada",
     province: String(data.province || "").trim().slice(0, 80) || "Provincia no informada",
     country: String(data.country || "").trim().slice(0, 80) || "País no informado",
-    accuracyBand,
     consent: true,
     updatedAt: new Date().toISOString()
   });
-  return json({ ok: true, result: { saved: true, precision: "approx-1km" } });
+  return json({ ok: true, result: { saved: true, precision: "gps-exact", accuracyMeters: Math.round(accuracyMeters) } });
 }
 
 export default {
