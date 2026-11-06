@@ -91,7 +91,9 @@ object RealPlacesApi {
     data class LocationDetails(
         val city: String,
         val neighborhood: String,
-        val fullAddress: String
+        val fullAddress: String,
+        val province: String = "",
+        val country: String = ""
     )
 
     val knownCities = mapOf(
@@ -203,14 +205,16 @@ object RealPlacesApi {
                     return@withContext LocationDetails(
                         city = finalCity,
                         neighborhood = if (suburb.isNotBlank()) suburb else finalCity,
-                        fullAddress = fullAddr
+                        fullAddress = fullAddr,
+                        province = state,
+                        country = address.optString("country", "")
                     )
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in reverseGeocodeDetails: ${e.message}")
         }
-        LocationDetails("Ubicación desconocida", "", "Ubicación no identificada")
+        LocationDetails("Ubicación desconocida", "", "Ubicación no identificada", "", "")
     }
 
     suspend fun reverseGeocode(latitude: Double, longitude: Double): String = withContext(Dispatchers.IO) {
