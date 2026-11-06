@@ -349,15 +349,23 @@ function summarizeUsage(events) {
   };
 }
 async function dashboard(env) {
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "geoPresence", "moduleRegistry", "adminAuditLogs"];
+  // Geolocalización es un complemento del panel: nunca debe impedir que carguen
+  // las demás secciones administrativas si la colección geoPresence falla.
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
   const counts = await Promise.all(collections.map(name => countDocuments(env, name)));
-  const [walletPage, operations, userProfiles, usageEvents, geoPresencePage] = await Promise.all([
+  const [walletPage, operations, userProfiles, usageEvents] = await Promise.all([
     listDocumentsPage(env, "walletAccounts", 200),
     recentDocuments(env, "walletOperations", 8),
     recentDocuments(env, "users", 200),
-    usageEventsLast7Days(env),
-    listAllDocuments(env, "geoPresence", 10000)
+    usageEventsLast7Days(env)
   ]);
+  let geoPresencePage;
+  try {
+    geoPresencePage = await listAllDocuments(env, "geoPresence", 10000);
+  } catch (error) {
+    console.error("OMNI dashboard geoPresence read failed", error);
+    geoPresencePage = { items: [], complete: false, unavailable: true };
+  }
   const wallets = walletPage.items;
   const resolvedCounts = Object.fromEntries(collections.map((name, index) => [
     name, name === "users" ? Math.max(counts[index], userProfiles.length) : counts[index]
@@ -399,7 +407,8 @@ async function dashboard(env) {
       visibleMarkers: geoActivity.points.length,
       freshnessMinutes: geoActivity.freshnessMinutes,
       coordinatePrecision: "GPS sin redondeo",
-      sampleComplete: geoPresencePage.complete
+      sampleComplete: geoPresencePage.complete,
+      sourceAvailable: geoPresencePage.unavailable !== true
     },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
