@@ -26,14 +26,14 @@ function encodeBase64Url(bytes) {
   for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
-async function verifyFirebaseToken(token) {
+async function verifyFirebaseToken(token, projectId = ADMIN_AUTH_PROJECT) {
   const parts = token.split(".");
   if (parts.length !== 3) throw new ApiError(401, "unauthenticated", "La sesión administrativa no es válida o venció. Ingresá nuevamente.");
   const header = decodeJwtPart(parts[0]);
   const claims = decodeJwtPart(parts[1]);
   const now = Math.floor(Date.now() / 1000);
-  if (header.alg !== "RS256" || !header.kid || claims.aud !== ADMIN_AUTH_PROJECT ||
-      claims.iss !== TOKEN_ISSUER || !claims.sub || claims.sub.length > 128 ||
+  if (header.alg !== "RS256" || !header.kid || claims.aud !== projectId ||
+      claims.iss !== `https://securetoken.google.com/${projectId}` || !claims.sub || claims.sub.length > 128 ||
       !Number.isFinite(claims.exp) || claims.exp <= now ||
       !Number.isFinite(claims.iat) || claims.iat > now + 300) {
     throw new ApiError(401, "unauthenticated", "La sesión administrativa no es válida o venció. Ingresá nuevamente.");
@@ -578,8 +578,54 @@ async function handleAction(env, actor, action, data) {
     default: throw new ApiError(400, "invalid-argument", "Acción administrativa desconocida.");
   }
 }
+async function handleGeoPresenceRequest(request, env) {
+  if (request.method !== "POST") return json({ ok: false, error: "method-not-allowed", message: "Usá POST." }, 405);
+  const authHeader = request.headers.get("Authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) throw new ApiError(401, "unauthenticated", "Falta la sesión de OMNI.");
+  const identity = await verifyFirebaseToken(authHeader.slice(7).trim(), PRIMARY_PROJECT);
+  const data = await request.json();
+  if (data.enabled === false) {
+    await firestore(env, "/geoPresence/" + encodeURIComponent(identity.uid), { method: "DELETE" });
+    return json({ ok: true, result: { deleted: true } });
+  }
+  if (data.enabled !== true || data.consent !== true) throw new ApiError(400, "invalid-argument", "La ubicación requiere autorización expresa.");
+  const latitude = Number(data.latitude);
+  const longitude = Number(data.longitude);
+  const roundedLatitude = Math.round(latitude * 100) / 100;
+  const roundedLongitude = Math.round(longitude * 100) / 100;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+      Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
+      Math.abs(latitude - roundedLatitude) > 0.000001 ||
+      Math.abs(longitude - roundedLongitude) > 0.000001) {
+    throw new ApiError(400, "invalid-argument", "La ubicación debe estar redondeada a una celda aproximada de 1 km.");
+  }
+  const allowedAccuracy = ["hasta 100 m", "100 a 500 m", "500 m a 1 km", "más de 1 km"];
+  const accuracyBand = allowedAccuracy.includes(String(data.accuracyBand || "")) ? String(data.accuracyBand) : "más de 1 km";
+  await writeDocument(env, "geoPresence", identity.uid, {
+    uid: identity.uid,
+    latitude: roundedLatitude,
+    longitude: roundedLongitude,
+    locality: String(data.locality || "").trim().slice(0, 80) || "Localidad no informada",
+    province: String(data.province || "").trim().slice(0, 80) || "Provincia no informada",
+    country: String(data.country || "").trim().slice(0, 80) || "País no informado",
+    accuracyBand,
+    consent: true,
+    updatedAt: new Date().toISOString()
+  });
+  return json({ ok: true, result: { saved: true, precision: "approx-1km" } });
+}
+
 export default {
   async fetch(request, env) {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.pathname === "/geo-presence") {
+      try { return await handleGeoPresenceRequest(request, env); }
+      catch (error) {
+        if (error instanceof ApiError) return json({ ok: false, error: error.code, message: error.message }, error.status);
+        console.error("OMNI geo-presence API error", error);
+        return json({ ok: false, error: "internal", message: "No se pudo actualizar la presencia geográfica." }, 500);
+      }
+    }
     if (request.method !== "POST") return json({ ok: false, error: "method-not-allowed", message: "Usá POST." }, 405);
     try {
       const authHeader = request.headers.get("Authorization") || "";
