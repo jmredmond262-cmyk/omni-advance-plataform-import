@@ -309,13 +309,17 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      window.omniPresenceMarkers.set(uid,{marker:marker,popup:popup});
    };
    window.omniRenderPresence=function(){
-     if(!map.loaded())return;
+     if(!map)return;
      window.omniClearRenderedMarkers();
      const valid=window.omniPresenceData.filter(function(p){
        const lat=Number(p.latitude),lon=Number(p.longitude);
        return String(p.uid||'')&&Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
      });
-     const projected=valid.map(function(point){return {point:point,pixel:map.project([Number(point.longitude),Number(point.latitude)])};});
+     // Los puntos DEMO se dibujan individualmente: no se agrupan en un único círculo.
+     const demoPoints=valid.filter(function(point){return point.source==='DEMO';});
+     demoPoints.forEach(function(point){window.omniAddUserMarker(point,[0,0]);});
+     const livePoints=valid.filter(function(point){return point.source!=='DEMO';});
+     const projected=livePoints.map(function(point){return {point:point,pixel:map.project([Number(point.longitude),Number(point.latitude)])};});
      const groups=[];
      const radius=48;
      projected.forEach(function(item){
@@ -370,7 +374,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
    window.omniSetPresence=function(points){
      points=Array.isArray(points)?points:[];
      window.omniPresenceData=points.slice();
-     if(!map.loaded())return;
+     if(!map)return;
      window.omniRenderPresence();
      if(!window.omniHasFitPresence && window.omniPresenceData.length){
        const valid=window.omniPresenceData.filter(function(p){return Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude));});
