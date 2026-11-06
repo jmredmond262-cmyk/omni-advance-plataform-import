@@ -1,11 +1,6 @@
 name: Deploy OMNI Admin API to Cloudflare
 
 on:
-  push:
-    branches: [feature/omni-admin-live-map-1.4.3-correct-base]
-    paths:
-      - 'workers/**'
-      - '.github/workflows/deploy-omni-admin-cloudflare.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,7 +14,7 @@ jobs:
       - name: Checkout OMNI Admin branch
         uses: actions/checkout@v4
         with:
-          ref: feature/omni-admin-live-map-1.4.3-correct-base
+          ref: omni-advance-1.4
 
       - name: Configure Node
         uses: actions/setup-node@v4
