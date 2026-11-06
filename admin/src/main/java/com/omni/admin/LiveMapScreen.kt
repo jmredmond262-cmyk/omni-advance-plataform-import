@@ -9,6 +9,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceError
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -79,12 +80,7 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
   val pointsJson = points.toString()
   val activeUsers = points.length()
 
-  LaunchedEffect(Unit) {
-    while (true) {
-      delay(30_000L)
-      onRefresh()
-    }
-  }
+  // La demostración es local: no necesita refrescos de red ni consultas periódicas.
 
   Column(
     Modifier.fillMaxSize().background(MapNavy).padding(10.dp),
@@ -118,6 +114,16 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
               android.view.ViewGroup.LayoutParams.MATCH_PARENT
             )
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+            // Evita que un contenedor Android padre intercepte el gesto de arrastre del mapa.
+            setOnTouchListener { view, event ->
+              when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
+                  view.parent?.requestDisallowInterceptTouchEvent(true)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                  view.parent?.requestDisallowInterceptTouchEvent(false)
+              }
+              false
+            }
             addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
               val width = right - left
               val height = bottom - top
