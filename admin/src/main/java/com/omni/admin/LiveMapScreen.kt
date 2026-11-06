@@ -255,7 +255,8 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
        const locality=window.omniEscapeHtml(point.locality||'Localidad no informada');
        const updated=window.omniEscapeHtml(point.updatedAt||'');
        const timeText=updated?new Date(updated).toLocaleString('es-AR'):'Sin hora informada';
-       const popupHtml='<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● EN LÍNEA</span></div>';
+       const coordinates=lat.toFixed(6)+', '+lon.toFixed(6);
+       const popupHtml='<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+coordinates+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● EN LÍNEA</span></div>';
        let entry=window.omniPresenceMarkers.get(uid);
        if(entry){
          entry.marker.setLngLat([lon,lat]);
