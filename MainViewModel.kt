@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.SampleData
 import com.example.data.ArgentinaAttractions
 import com.example.data.api.RealLocationHelper
+import com.example.data.geo.GeoPresenceRepository
 import com.example.data.api.RealLocationResult
 import com.example.data.api.RealPlacesApi
 import com.example.data.api.GooglePlacesApi
@@ -682,6 +683,16 @@ class MainViewModel : ViewModel() {
             if (localStores.isNotEmpty()) {
                 _stores.value = localStores
             }
+
+            // Publicar solo una celda geográfica aproximada cuando el usuario lo autorizó.
+            // Nunca se envían la dirección ni las coordenadas GPS exactas.
+            GeoPresenceRepository.publishApproximateLocation(
+                context = context,
+                location = loc,
+                locality = city,
+                province = details.province,
+                country = details.country
+            )
 
             // Actualizar viaje con origen real
             searchTrip(address, _tripDestination.value)
