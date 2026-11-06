@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
 
 private data class AdminTab(val id: String, val label: String, val collection: String? = null)
 private val tabs = listOf(
-  AdminTab("dashboard", "Resumen"), AdminTab("users", "Usuarios", "users"),
+  AdminTab("dashboard", "Resumen"), AdminTab("liveMap", "Mapa en tiempo real"), AdminTab("users", "Usuarios", "users"),
   AdminTab("wallets", "Billeteras", "walletAccounts"), AdminTab("operations", "Operaciones", "walletOperations"), AdminTab("finance", "Finanzas"),
   AdminTab("stores", "Comercios", "merchantProfiles"), AdminTab("orders", "Pedidos", "storeOrders"), AdminTab("events", "Eventos", "omniEvents"), AdminTab("moments", "Momentos", "omniMoments"), AdminTab("conexPosts", "Publicaciones CONEX", "jobPosts"), AdminTab("conexProfiles", "Perfiles CONEX", "omniProfessionalProfiles"),
   AdminTab("feedback", "Comentarios", "appFeedback"), AdminTab("activity", "Actividad", "usageEvents"), AdminTab("modules", "Módulos", "moduleRegistry"),
@@ -72,6 +72,7 @@ private val tabs = listOf(
 private data class AdminNavGroup(val id: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val tabIds: List<String>)
 private val navGroups = listOf(
   AdminNavGroup("overview", "Inicio", Icons.Default.Dashboard, listOf("dashboard")),
+  AdminNavGroup("monitoring", "Mapa", Icons.Default.Map, listOf("liveMap")),
   AdminNavGroup("people", "Personas", Icons.Default.PeopleAlt, listOf("users", "feedback")),
   AdminNavGroup("commerce", "Comercio", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
   AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings"))
@@ -91,6 +92,7 @@ private fun OmniAdminRoot() {
   val scope = rememberCoroutineScope()
 
   fun refresh() {
+    if (selected == "liveMap") { payload = JSONObject(); error = ""; loading = false; return }
     val current = auth.currentUser ?: return
     scope.launch {
       loading = true
@@ -333,6 +335,7 @@ private fun AdminHome(
         fontSize = 13.sp
       )
       when (selected) {
+        "liveMap" -> LiveMapScreen()
         "dashboard" -> DashboardContent(payload, onSelect)
         "finance" -> FinanceContent(payload)
         "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray(), onSaveModule)
