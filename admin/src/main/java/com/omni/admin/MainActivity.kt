@@ -107,7 +107,10 @@ private fun OmniAdminRoot() {
         val tab = tabs.first { it.id == selected }
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
-          "dashboard", "liveMap" -> AdminApi.call(token, "dashboard")
+          // El mapa DEMO usa coordenadas locales: no consulta el dashboard ni Firestore.
+          "liveMap" -> JSONObject().put("geoActivity", JSONArray())
+            .put("geoActivitySummary", JSONObject().put("activeUsers", 0))
+          "dashboard" -> AdminApi.call(token, "dashboard")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
