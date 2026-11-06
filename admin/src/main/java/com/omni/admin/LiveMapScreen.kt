@@ -1,6 +1,7 @@
 package com.omni.admin
 
 import android.graphics.Color as AndroidColor
+import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -52,7 +53,7 @@ internal fun LiveMapScreen() {
         Text("OMNI LIVE MAP", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
         Text("Cartografía interactiva · Vista inicial Santa Fe", color = MapMuted, fontSize = 9.sp)
       }
-      Text("BASE ACTIVA", color = Color(0xFF65E9B7), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+      Text("BASE VECTORIAL", color = Color(0xFF65E9B7), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
     }
     Box(
       Modifier.weight(1f).fillMaxWidth()
@@ -67,9 +68,22 @@ internal fun LiveMapScreen() {
             settings.domStorageEnabled = true
             settings.loadWithOverviewMode = true
             settings.useWideViewPort = true
-            webChromeClient = WebChromeClient()
-            webViewClient = WebViewClient()
-            loadDataWithBaseURL("https://omni-map.local/", MAP_HTML, "text/html", "UTF-8", null)
+            settings.loadsImagesAutomatically = true
+            settings.blockNetworkLoads = false
+            webChromeClient = object : WebChromeClient() {
+              override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                android.util.Log.d("OMNI_LIVE_MAP", "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
+                return true
+              }
+            }
+            webViewClient = object : WebViewClient() {
+              override fun onPageFinished(view: WebView, url: String) {
+                view.evaluateJavascript("window.omniMap && window.omniMap.resize();", null)
+              }
+            }
+            // Use the tile host as the document origin so WebView workers and same-host tile requests
+            // run under the cartography provider origin rather than a fabricated local hostname.
+            loadDataWithBaseURL("https://tiles.openfreemap.org/", MAP_HTML, "text/html", "UTF-8", null)
           }
         }
       )
@@ -89,50 +103,82 @@ private val MAP_HTML = """
 <!doctype html>
 <html>
 <head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <style>
-html,body,#map{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#06101f}
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#06101f}
+#map{position:absolute;inset:0;width:100%;height:100%;background:#06101f}
 .maplibregl-ctrl-group{background:#0b2034!important;border:1px solid #00bcd4!important;box-shadow:0 0 12px #00bcd455!important}
 .maplibregl-ctrl button span{filter:invert(1) sepia(1) saturate(5) hue-rotate(140deg)}
 .maplibregl-ctrl-attrib{background:#071426dd!important;color:#8faec4!important}
 .maplibregl-ctrl-attrib a{color:#00e5ff!important}
-#status{position:absolute;left:10px;top:10px;z-index:2;padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526e8;color:#65e9b7;font:700 10px Arial;letter-spacing:1px;box-shadow:0 0 14px #00dfff44}
+#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
 </style>
 </head>
 <body>
-<div id="map"></div><div id="status">CARGANDO CARTOGRAFÍA…</div>
+<div id="map"></div><div id="status">CARGANDO MOTOR CARTOGRÁFICO…</div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 (function(){
  const status=document.getElementById('status');
- if(!window.maplibregl){status.textContent='NO SE PUDO CARGAR MAPLIBRE';return;}
- const map=new maplibregl.Map({
-   container:'map',
-   style:'https://tiles.openfreemap.org/styles/dark',
-   center:[-60.7000,-31.6333],
-   zoom:12,
-   pitch:32,
-   bearing:-12,
-   attributionControl:true
- });
- map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');
- map.addControl(new maplibregl.ScaleControl({maxWidth:100,unit:'metric'}),'bottom-left');
- map.on('load',function(){
-   try {
-     const layers=map.getStyle().layers||[];
-     const before=(layers.find(l=>l.type==='symbol')||{}).id;
-     const filter=['in',['get','class'],['literal',['motorway','trunk','primary','secondary','tertiary']]];
-     map.addLayer({id:'omni-road-glow',type:'line',source:'openmaptiles','source-layer':'transportation',filter:filter,
-       paint:{'line-color':'#00dfff','line-width':['interpolate',['linear'],['zoom'],8,1.5,14,5,18,10],'line-opacity':0.32,'line-blur':3}},before);
-     map.addLayer({id:'omni-road-core',type:'line',source:'openmaptiles','source-layer':'transportation',filter:filter,
-       paint:{'line-color':'#28dfff','line-width':['interpolate',['linear'],['zoom'],8,0.35,14,1.2,18,2.2],'line-opacity':0.88}},before);
-   } catch(e) {}
-   status.textContent='MAPA CONECTADO · OMNI';
- });
+ const show=(message,failed)=>{status.textContent=message;status.style.color=failed?'#ff9b9b':'#65e9b7';status.style.borderColor=failed?'#ff6b6b':'#00dfff';};
+ if(!window.maplibregl){show('ERROR: no se pudo descargar MapLibre GL JS desde unpkg.com',true);return;}
+ if(!maplibregl.supported()){show('ERROR: WebView no dispone de WebGL compatible para dibujar el mapa',true);return;}
+ show('MOTOR ACTIVO · DESCARGANDO CARTOGRAFÍA…',false);
+ let map;
+ try{
+   map=new maplibregl.Map({
+     container:'map',
+     style:'https://tiles.openfreemap.org/styles/dark',
+     center:[-60.7000,-31.6333],
+     zoom:12,
+     pitch:25,
+     bearing:-12,
+     attributionControl:true,
+     fadeDuration:0,
+     maxTileCacheSize:128
+   });
+   window.omniMap=map;
+   map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');
+   map.addControl(new maplibregl.ScaleControl({maxWidth:100,unit:'metric'}),'bottom-left');
+ }catch(e){show('ERROR AL INICIAR EL MAPA: '+(e.message||e),true);return;}
+ let firstError='';
  map.on('error',function(e){
-   if(status.textContent==='CARGANDO CARTOGRAFÍA…') status.textContent='CONECTANDO CON EL SERVICIO DE MAPAS…';
+   const message=(e&&e.error&&e.error.message)?e.error.message:'fallo de red o tesela';
+   if(!firstError) firstError=message;
+   console.error('OMNI MAP ERROR: '+message);
+   show('ERROR DE CARTOGRAFÍA: '+message,true);
  });
+ map.on('styledata',function(){
+   if(status.textContent.indexOf('ERROR')!==0) show('ESTILO RECIBIDO · CARGANDO CALLES Y TESelas…',false);
+ });
+ map.on('load',function(){
+   show('ESTILO CARGADO · ESPERANDO DIBUJO DEL MAPA…',false);
+   try{
+     const style=map.getStyle();
+     const sourceId=Object.keys(style.sources||{}).find(id=>style.sources[id].type==='vector');
+     const hasTransport=(style.layers||[]).some(layer=>layer['source-layer']==='transportation');
+     if(sourceId && hasTransport){
+       const before=(style.layers.find(layer=>layer.type==='symbol')||{}).id;
+       const filter=['in',['get','class'],['literal',['motorway','trunk','primary','secondary','tertiary']]];
+       map.addLayer({id:'omni-road-glow',type:'line',source:sourceId,'source-layer':'transportation',filter,
+         paint:{'line-color':'#00dfff','line-width':['interpolate',['linear'],['zoom'],8,1.5,14,5,18,10],'line-opacity':0.28,'line-blur':2.5}},before);
+       map.addLayer({id:'omni-road-core',type:'line',source:sourceId,'source-layer':'transportation',filter,
+         paint:{'line-color':'#28dfff','line-width':['interpolate',['linear'],['zoom'],8,0.35,14,1.2,18,2.2],'line-opacity':0.72}},before);
+     }
+   }catch(e){console.warn('OMNI neon road overlay unavailable: '+e.message);}
+ });
+ map.on('idle',function(){
+   if(firstError){show('MAPA PARCIAL · '+firstError,true);return;}
+   if(map.areTilesLoaded()) show('MAPA VISIBLE · OMNI',false);
+ });
+ setTimeout(function(){
+   if(status.textContent.indexOf('ERROR')===0 || status.textContent==='MAPA VISIBLE · OMNI') return;
+   const loaded=map.areTilesLoaded();
+   if(loaded) show('MAPA VISIBLE · OMNI',false);
+   else show('SIN TESelas VISIBLES. Revisar conexión al servicio de mapas o WebGL.',true);
+ },18000);
  window.addEventListener('resize',function(){map.resize();});
 })();
 </script>
