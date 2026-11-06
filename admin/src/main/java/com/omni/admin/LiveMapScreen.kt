@@ -388,7 +388,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
    if(status.textContent.indexOf('ERROR')!==0) show('ESTILO RECIBIDO · CARGANDO CALLES Y TESELAS…',false);
  });
  map.on('load',function(){
-   if(window.omniPendingPresence)window.omniSetPresence(window.omniPendingPresence);
+   if(window.omniPresenceData)window.omniSetPresence(window.omniPresenceData);
    window.omniForceResize('map-load');
    setTimeout(function(){window.omniForceResize('map-load-250ms');},250);
    setTimeout(function(){window.omniForceResize('map-load-1000ms');},1000);
