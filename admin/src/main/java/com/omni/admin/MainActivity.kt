@@ -494,7 +494,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit) {
       }
     }
   }
-  if (showMap) ActivityMapDialog(points = payload.optJSONArray("geoActivity") ?: JSONArray(), onDismiss = { showMap = false })
+  if (showMap) ActivityMapDialog(points = payload.optJSONArray("geoActivity") ?: JSONArray(), summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject(), onDismiss = { showMap = false })
 }
 
 @Composable
@@ -538,6 +538,7 @@ private fun CompactDashboardStat(label: String, value: String, icon: androidx.co
 private fun activityMapHtml(): String = """
 <!doctype html><html lang="es"><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <style>
 html,body,#map,#map-frame{height:100%;width:100%;margin:0;background:#071321}#map{position:relative;overflow:hidden}
 #map-frame{display:none;border:0}.leaflet-container{background:#071321;font-family:Arial,sans-serif}
@@ -550,7 +551,7 @@ html,body,#map,#map-frame{height:100%;width:100%;margin:0;background:#071321}#ma
 <div class="map-status" id="status"><b>OMNI · CARTOGRAFÍA</b><br>Iniciando visor geográfico…</div><div id="fallback">No fue posible conectar con los proveedores cartográficos.<br>Revisá la conexión del dispositivo.</div>
 <script>
 (function(){
-var status=document.getElementById('status'),frame=document.getElementById('map-frame'),fallback=document.getElementById('fallback'),map=null,activityLayer=null,tileLayer=null,scope='Local',timer=null,frameLoaded=false;
+var status=document.getElementById('status'),frame=document.getElementById('map-frame'),fallback=document.getElementById('fallback'),map=null,activityLayer=null,tileLayer=null,scope='Local',timer=null,frameLoaded=false,allActivityPoints=[];
 var zones={'Local':{center:[-31.6333,-60.7000],zoom:12,bbox:'-60.86,-31.73,-60.54,-31.52',marker:'-31.6333,-60.7000',label:'Área local · Santa Fe capital'},'Santa Fe':{center:[-30.7069,-60.9500],zoom:7,bbox:'-62.75,-34.05,-58.75,-28.00',marker:'-30.7069,-60.9500',label:'Provincia de Santa Fe'},'Argentina':{center:[-38.4161,-63.6167],zoom:4,bbox:'-73.60,-55.10,-53.60,-21.70',marker:'-38.4161,-63.6167',label:'República Argentina'}};
 function show(m){status.innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>'+m;}
 function url(s,p){var z=zones[s]||zones.Local;return p==='google'?'https://maps.google.com/maps?q='+encodeURIComponent(z.marker)+'&z='+(s==='Argentina'?4:s==='Santa Fe'?7:13)+'&output=embed':'https://www.openstreetmap.org/export/embed.html?bbox='+encodeURIComponent(z.bbox)+'&layer=mapnik&marker='+encodeURIComponent(z.marker);}
@@ -571,8 +572,36 @@ function boot(){
 if(!window.L){fallbackMap('osm');return;}
 try{
 map=L.map('map',{zoomControl:true,preferCanvas:true}).setView(zones.Local.center,zones.Local.zoom);activityLayer=L.layerGroup().addTo(map);
-window.setActivityPoints=function(points){activityLayer.clearLayers();(Array.isArray(points)?points:[]).forEach(function(p){var lat=Number(p.latitude),lon=Number(p.longitude),count=Number(p.count);if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(count)||count<3)return;L.circleMarker([lat,lon],{radius:Math.min(18,7+Math.log(count)*2),color:'#00e5ff',weight:2,fillColor:'#00b9e8',fillOpacity:.62}).bindPopup('<b>Actividad agregada OMNI</b><br>'+count+' eventos agrupados').addTo(activityLayer);});};
-window.setMapScope=function(s){scope=zones[s]?s:'Local';var z=zones[scope];if(map){map.flyTo(z.center,z.zoom,{duration:.5});setTimeout(function(){map.invalidateSize(true);},250);}else if(frame.style.display==='block')fallbackMap('osm');show(z.label+' · '+(activityLayer&&activityLayer.getLayers().length?activityLayer.getLayers().length+' áreas agregadas':'mapa base disponible; sin áreas agregadas todavía')+'.');};
+function pointsForScope(){
+var points=allActivityPoints.slice();
+if(scope==='Santa Fe')return points.filter(function(p){return String(p.province||'').toLowerCase().includes('santa fe');});
+if(scope==='Argentina')return points.filter(function(p){return String(p.country||'').toLowerCase().includes('argentina');});
+var totals=new Map();
+points.forEach(function(p){var name=String(p.locality||'').trim();if(name)totals.set(name,(totals.get(name)||0)+Number(p.count||0));});
+var topLocality=[...totals.entries()].sort(function(a,b){return b[1]-a[1];})[0];
+return topLocality?points.filter(function(p){return String(p.locality||'').trim()===topLocality[0];}):[];
+}
+function redrawActivity(){
+if(!map||!activityLayer)return;
+activityLayer.clearLayers();
+var visible=pointsForScope();
+visible.forEach(function(p){
+var lat=Number(p.latitude),lon=Number(p.longitude),count=Number(p.count);
+if(!Number.isFinite(lat)||!Number.isFinite(lon)||!Number.isFinite(count)||count<3)return;
+var marker=L.circleMarker([lat,lon],{radius:Math.min(20,7+Math.log(count)*2),color:'#00e5ff',weight:2,fillColor:'#00b9e8',fillOpacity:.68});
+marker.bindPopup('<b>Actividad agrupada OMNI</b><br>'+count+' cuentas en '+String(p.locality||'área local')+'<br>'+String(p.province||'')+' · '+String(p.country||''));
+marker.addTo(activityLayer);
+});
+if(activityLayer.getLayers().length){
+map.fitBounds(activityLayer.getBounds().pad(.28),{maxZoom:scope==='Local'?13:scope==='Santa Fe'?8:5});
+show(zones[scope].label+' · '+visible.length+' áreas visibles · '+visible.reduce(function(n,p){return n+Number(p.count||0);},0)+' cuentas agrupadas.');
+}else{
+var z=zones[scope];map.setView(z.center,z.zoom);show(z.label+' · mapa base disponible; todavía no hay grupos con el mínimo de 3 cuentas.');
+}
+setTimeout(function(){map.invalidateSize(true);},250);
+}
+window.setActivityPoints=function(points){allActivityPoints=Array.isArray(points)?points:[];redrawActivity();};
+window.setMapScope=function(s){scope=zones[s]?s:'Local';if(map)redrawActivity();else if(frame.style.display==='block')fallbackMap('osm');};
 attachTiles();setTimeout(function(){if(map)map.invalidateSize(true);},350);
 }catch(e){show('Error al iniciar el visor: '+String(e.message||e));fallbackMap('osm');}
 }
@@ -582,7 +611,7 @@ var script=document.createElement('script');script.src='https://cdn.jsdelivr.net
 </script></body></html>
 """.trimIndent()
 @Composable
-private fun ActivityMapDialog(points: JSONArray, onDismiss: () -> Unit) {
+private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onDismiss: () -> Unit) {
   var scope by remember { mutableStateOf("Local") }
   var mapView by remember { mutableStateOf<WebView?>(null) }
   Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -618,6 +647,10 @@ private fun ActivityMapDialog(points: JSONArray, onDismiss: () -> Unit) {
             )
           }
         }
+        Text(
+          "${summary.optInt("consentedUsersFresh24h")} cuentas con ubicación compartida en las últimas 24 h · ${summary.optInt("visibleAreas")} áreas visibles · mínimo ${summary.optInt("privacyThreshold", 3)} cuentas por área",
+          color = Muted, fontSize = 10.sp, lineHeight = 14.sp
+        )
         AndroidView(
           modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(13.dp))
             .border(1.dp, Color(0xFF12658C), RoundedCornerShape(13.dp)),
