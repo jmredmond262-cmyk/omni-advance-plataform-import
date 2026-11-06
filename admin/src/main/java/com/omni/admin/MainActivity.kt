@@ -556,7 +556,7 @@ window.__omniPoints=[];window.__omniScope='Local';
 window.setActivityPoints=function(points){window.__omniPoints=Array.isArray(points)?points:[];if(window.__omniRenderPoints)window.__omniRenderPoints(window.__omniPoints);};
 window.setMapScope=function(value){window.__omniScope=value||'Local';if(window.__omniRenderScope)window.__omniRenderScope(window.__omniScope);};
 var status=document.getElementById('status'),frame=document.getElementById('map-frame'),fallback=document.getElementById('fallback'),map=null,activityLayer=null,tileLayer=null,scope='Local',timer=null,frameLoaded=false,allActivityPoints=[];
-var zones={'Local':{center:[-31.6333,-60.7000],zoom:12,bbox:'-60.86,-31.73,-60.54,-31.52',marker:'-31.6333,-60.7000',label:'Área local · Santa Fe capital'},'Santa Fe':{center:[-30.7069,-60.9500],zoom:7,bbox:'-62.75,-34.05,-58.75,-28.00',marker:'-30.7069,-60.9500',label:'Provincia de Santa Fe'},'Argentina':{center:[-38.4161,-63.6167],zoom:4,bbox:'-73.60,-55.10,-53.60,-21.70',marker:'-38.4161,-63.6167',label:'República Argentina'}};
+var zones={'Local':{center:[-31.6333,-60.7000],zoom:12,bbox:'-60.86,-31.73,-60.54,-31.52',marker:'-31.6333,-60.7000',label:'Vista local · Santa Fe'},'Santa Fe':{center:[-30.7069,-60.9500],zoom:7,bbox:'-62.75,-34.05,-58.75,-28.00',marker:'-30.7069,-60.9500',label:'Provincia de Santa Fe'},'Argentina':{center:[-38.4161,-63.6167],zoom:4,bbox:'-73.60,-55.10,-53.60,-21.70',marker:'-38.4161,-63.6167',label:'República Argentina'}};
 function show(m){status.innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>'+m;}
 function url(s,p){var z=zones[s]||zones.Local;return p==='google'?'https://maps.google.com/maps?q='+encodeURIComponent(z.marker)+'&z='+(s==='Argentina'?4:s==='Santa Fe'?7:13)+'&output=embed':'https://www.openstreetmap.org/export/embed.html?bbox='+encodeURIComponent(z.bbox)+'&layer=mapnik&marker='+encodeURIComponent(z.marker);}
 function fallbackMap(provider){
@@ -598,7 +598,9 @@ marker.addTo(activityLayer);
 });
 if(activityLayer.getLayers().length){
 map.fitBounds(activityLayer.getBounds().pad(.28),{maxZoom:scope==='Local'?13:scope==='Santa Fe'?8:5});
-show(zones[scope].label+' · '+visible.length+' áreas visibles · '+visible.reduce(function(n,p){return n+Number(p.count||0);},0)+' cuentas agrupadas.');
+var localName=scope==='Local'&&visible.length?String(visible[0].locality||'Localidad activa'):'';
+var viewLabel=localName?'Vista local · '+localName:zones[scope].label;
+show(viewLabel+' · '+visible.length+' áreas visibles · '+visible.reduce(function(n,p){return n+Number(p.count||0);},0)+' cuentas agrupadas.');
 }else{
 var z=zones[scope];map.setView(z.center,z.zoom);show(z.label+' · mapa base disponible; todavía no hay grupos con el mínimo de 3 cuentas.');
 }
