@@ -653,8 +653,13 @@ export default {
       return json({ ok: true, result });
     } catch (error) {
       if (error instanceof ApiError) return json({ ok: false, error: error.code, message: error.message }, error.status);
+      const diagnostic = String(error?.message || error || "Error interno sin detalle").slice(0, 300);
       console.error("OMNI Admin API error", error);
-      return json({ ok: false, error: "internal", message: "No se pudo completar la operación." }, 500);
+      return json({
+        ok: false,
+        error: "internal",
+        message: "Diagnóstico del servidor: " + diagnostic
+      }, 500);
     }
   }
 };
