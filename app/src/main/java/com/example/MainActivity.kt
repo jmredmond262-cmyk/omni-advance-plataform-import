@@ -19,6 +19,9 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalContext
 import com.example.data.api.RealLocationHelper
 import com.example.data.geo.GeoPresenceRepository
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -244,6 +247,7 @@ private fun AuthGate(activity: ComponentActivity, viewModel: MainViewModel) {
 @Composable
 fun OmniApp(viewModel: MainViewModel) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val currentScreen by viewModel.currentScreen.collectAsState()
     val orderCenterReturnScreen by viewModel.orderCenterReturnScreen.collectAsState()
     val isLiveMode by viewModel.isLiveRealTimeMode.collectAsState()
@@ -336,6 +340,16 @@ fun OmniApp(viewModel: MainViewModel) {
                 }) { Text("No compartir") }
             }
         )
+    }
+
+    // Sincronización periódica únicamente mientras OMNI está en primer plano.
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(5 * 60 * 1000L)
+                GeoPresenceRepository.refreshPresenceWhileActive(context)
+            }
+        }
     }
 
     // Manejo de navegación hacia atrás en subpantallas
