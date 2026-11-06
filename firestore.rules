@@ -384,6 +384,35 @@ service cloud.firestore {
       allow read, write: if isSystemAdmin();
     }
 
+    // Approximate presence is opt-in, owner-writable, and administrator-readable only.
+    // OMNI Principal rounds coordinates before writing; Admin receives only privacy-threshold aggregates.
+    match /geoPresence/{userId} {
+      allow read: if isSystemAdmin();
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.consent == true
+        && request.resource.data.latitude is number
+        && request.resource.data.latitude >= -90
+        && request.resource.data.latitude <= 90
+        && request.resource.data.longitude is number
+        && request.resource.data.longitude >= -180
+        && request.resource.data.longitude <= 180
+        && request.resource.data.locality is string
+        && request.resource.data.locality.size() <= 80
+        && request.resource.data.province is string
+        && request.resource.data.province.size() <= 80
+        && request.resource.data.country is string
+        && request.resource.data.country.size() <= 80
+        && request.resource.data.accuracyBand in ["hasta 100 m", "100 a 500 m", "500 m a 1 km", "más de 1 km"]
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.keys().hasOnly([
+          "uid", "latitude", "longitude", "locality", "province", "country",
+          "accuracyBand", "consent", "updatedAt"
+        ]);
+      allow delete: if signedIn() && request.auth.uid == userId;
+    }
+
     match /usageEvents/{eventId} {
       allow read: if isSystemAdmin();
       allow create: if signedIn()
