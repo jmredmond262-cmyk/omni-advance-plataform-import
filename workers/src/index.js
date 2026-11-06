@@ -198,29 +198,41 @@ function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
-function aggregateGeoActivity(events) {
+function aggregateGeoPresence(records) {
   const buckets = new Map();
-  let locatedEvents = 0;
-  for (const event of events) {
-    if (event.event === "DIAGNOSTIC_TEST") continue;
-    const data = event.data && typeof event.data === "object" ? event.data : {};
-    const location = event.location && typeof event.location === "object" ? event.location : {};
-    const nested = data.location && typeof data.location === "object" ? data.location : {};
-    const lat = Number(event.latitude ?? event.lat ?? location.latitude ?? location.lat ?? data.latitude ?? data.lat ?? nested.latitude ?? nested.lat);
-    const lon = Number(event.longitude ?? event.lng ?? event.lon ?? location.longitude ?? location.lng ?? data.longitude ?? data.lng ?? data.lon ?? nested.longitude ?? nested.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
-    locatedEvents += 1;
-    // Round to two decimals so the map never receives a person's precise coordinates.
-    const bucketLat = Math.round(lat * 100) / 100;
-    const bucketLon = Math.round(lon * 100) / 100;
-    const key = bucketLat.toFixed(2) + "," + bucketLon.toFixed(2);
-    const current = buckets.get(key) || { latitude: bucketLat, longitude: bucketLon, count: 0 };
-    current.count += 1;
+  const now = Date.now();
+  let freshUsers = 0;
+  for (const record of records) {
+    if (record.consent !== true) continue;
+    const updatedAt = Date.parse(record.updatedAt || "");
+    if (!Number.isFinite(updatedAt) || now - updatedAt > 24 * 60 * 60 * 1000 || updatedAt > now + 5 * 60 * 1000) continue;
+    const uid = String(record.uid || record.id || "");
+    const lat = Number(record.latitude);
+    const lon = Number(record.longitude);
+    if (!uid || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+    // Reject precise coordinates: this collection is reserved for the app's ~1 km privacy grid.
+    if (Math.abs(lat * 100 - Math.round(lat * 100)) > 0.00001 ||
+        Math.abs(lon * 100 - Math.round(lon * 100)) > 0.00001) continue;
+    freshUsers += 1;
+    const locality = String(record.locality || "Localidad no informada").trim().slice(0, 80);
+    const province = String(record.province || "Provincia no informada").trim().slice(0, 80);
+    const country = String(record.country || "País no informado").trim().slice(0, 80);
+    const key = lat.toFixed(2) + "," + lon.toFixed(2) + "|" + locality.toLowerCase() + "|" + province.toLowerCase();
+    const current = buckets.get(key) || {
+      latitude: lat, longitude: lon, locality, province, country, users: new Set()
+    };
+    current.users.add(uid);
     buckets.set(key, current);
   }
-  // Minimum threshold prevents a single activity from identifying an individual location.
-  const points = [...buckets.values()].filter(point => point.count >= 3);
-  return { points, locatedEvents, privacyThreshold: 3 };
+  // A map marker is emitted only when at least three distinct accounts share the same area.
+  const points = [...buckets.values()]
+    .filter(point => point.users.size >= 3)
+    .map(point => ({
+      latitude: point.latitude, longitude: point.longitude,
+      locality: point.locality, province: point.province, country: point.country,
+      count: point.users.size
+    }));
+  return { points, freshUsers, privacyThreshold: 3, freshnessHours: 24 };
 }
 
 function summarizeUsage(events) {
@@ -338,13 +350,14 @@ function summarizeUsage(events) {
   };
 }
 async function dashboard(env) {
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "geoPresence", "moduleRegistry", "adminAuditLogs"];
   const counts = await Promise.all(collections.map(name => countDocuments(env, name)));
-  const [walletPage, operations, userProfiles, usageEvents] = await Promise.all([
+  const [walletPage, operations, userProfiles, usageEvents, geoPresencePage] = await Promise.all([
     listDocumentsPage(env, "walletAccounts", 200),
     recentDocuments(env, "walletOperations", 8),
     recentDocuments(env, "users", 200),
-    usageEventsLast7Days(env)
+    usageEventsLast7Days(env),
+    listAllDocuments(env, "geoPresence", 10000)
   ]);
   const wallets = walletPage.items;
   const resolvedCounts = Object.fromEntries(collections.map((name, index) => [
@@ -370,7 +383,7 @@ async function dashboard(env) {
     count: usageByDay[day]
   }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoActivity(usageEvents);
+  const geoActivity = aggregateGeoPresence(geoPresencePage.items);
   return {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
@@ -382,7 +395,13 @@ async function dashboard(env) {
     usageSampleComplete: usageEvents.length < 5000,
     recentUsers, recentOperations: operations,
     geoActivity: geoActivity.points,
-    geoActivitySummary: { locatedEvents: geoActivity.locatedEvents, visibleAreas: geoActivity.points.length, privacyThreshold: geoActivity.privacyThreshold },
+    geoActivitySummary: {
+      consentedUsersFresh24h: geoActivity.freshUsers,
+      visibleAreas: geoActivity.points.length,
+      privacyThreshold: geoActivity.privacyThreshold,
+      freshnessHours: geoActivity.freshnessHours,
+      sampleComplete: geoPresencePage.complete
+    },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
       usageEventsVisibleLast7Days: usageEvents.length,
