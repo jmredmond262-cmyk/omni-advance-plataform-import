@@ -135,8 +135,8 @@ private val MAP_HTML = """
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <style>
-html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#06101f}
-#map{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#06101f;isolation:isolate}
+html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:100%;min-height:100%;overflow:hidden;background:#06101f}
+#map{position:fixed;top:0;right:0;bottom:0;left:0;display:block;width:100vw;height:100vh;min-width:100%;min-height:100%;overflow:hidden;background:#06101f;isolation:isolate}
 #map .maplibregl-canvas-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:1!important}
 #map .maplibregl-canvas{position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;opacity:1!important;visibility:visible!important;z-index:1!important}
 #map .maplibregl-control-container{position:absolute;inset:0;z-index:3}
