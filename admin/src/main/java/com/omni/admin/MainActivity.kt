@@ -542,7 +542,7 @@ private fun activityMapHtml(): String = """
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <style>
 html,body,#map,#map-frame{height:100%;width:100%;margin:0;background:#071321}#map{position:relative;overflow:hidden}
-#map-frame{display:none;border:0}.leaflet-container{background:#071321;font-family:Arial,sans-serif}
+#map-frame{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:#071321}.leaflet-container{background:#071321;font-family:Arial,sans-serif}
 .leaflet-control-attribution{background:rgba(5,12,24,.82)!important;color:#9eafc3!important}
 .leaflet-control-attribution a{color:#00dfff!important}.leaflet-bar a{background:#0d2035!important;color:#00e5ff!important;border-color:#24516b!important}
 .map-status{position:absolute;z-index:900;left:12px;right:12px;top:12px;padding:10px 12px;border:1px solid #1679a6;border-radius:10px;background:rgba(5,15,29,.94);color:#dceaf8;font:12px/1.4 Arial,sans-serif;box-shadow:0 4px 18px #0008;pointer-events:none}
@@ -561,14 +561,15 @@ function show(m){status.innerHTML='<b>OMNI · CARTOGRAFÍA</b><br>'+m;}
 function url(s,p){var z=zones[s]||zones.Local;return p==='google'?'https://maps.google.com/maps?q='+encodeURIComponent(z.marker)+'&z='+(s==='Argentina'?4:s==='Santa Fe'?7:13)+'&output=embed':'https://www.openstreetmap.org/export/embed.html?bbox='+encodeURIComponent(z.bbox)+'&layer=mapnik&marker='+encodeURIComponent(z.marker);}
 function fallbackMap(provider){
 if(timer)clearTimeout(timer);if(map){try{map.remove();}catch(e){}map=null;activityLayer=null;tileLayer=null;}
-frame.style.display='block';fallback.style.display='none';frameLoaded=false;show(zones[scope].label+' · abriendo cartografía alternativa…');
+var mapElement=document.getElementById('map');if(frame.parentNode!==mapElement)mapElement.appendChild(frame);
+frame.style.display='block';frame.style.position='absolute';frame.style.inset='0';frame.style.width='100%';frame.style.height='100%';frame.style.zIndex='2';fallback.style.display='none';frameLoaded=false;show(zones[scope].label+' · abriendo cartografía alternativa…');
 frame.onload=function(){frameLoaded=true;show(zones[scope].label+' · mapa base conectado.');};frame.src=url(scope,provider);
 timer=setTimeout(function(){if(!frameLoaded&&provider!=='google')fallbackMap('google');else if(!frameLoaded){show('No se recibió cartografía de los proveedores disponibles.');fallback.style.display='flex';}},10000);
 }
 function attachTiles(){
 var loads=0,errors=0;if(tileLayer)map.removeLayer(tileLayer);
 tileLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'});
-tileLayer.on('tileload',function(){loads++;if(loads===1)show(zones[scope].label+' · calles y cartografía cargadas.');});
+tileLayer.on('tileload',function(){loads++;if(loads===1){frame.style.display='none';show(zones[scope].label+' · calles y cartografía cargadas.');setTimeout(function(){if(map)map.invalidateSize(true);},120);}});
 tileLayer.on('tileerror',function(){errors++;if(errors>=2&&loads===0){show('No responde el servicio de mosaicos. Activando mapa alternativo…');fallbackMap('osm');}});
 tileLayer.addTo(map);
 }
@@ -607,13 +608,14 @@ var z=zones[scope];map.setView(z.center,z.zoom);show(z.label+' · mapa base disp
 setTimeout(function(){map.invalidateSize(true);},250);
 }
 window.__omniRenderPoints=function(points){allActivityPoints=Array.isArray(points)?points:[];redrawActivity();};
-window.__omniRenderScope=function(s){scope=zones[s]?s:'Local';if(map)redrawActivity();else if(frame.style.display==='block')fallbackMap('osm');};
+window.__omniRenderScope=function(s){scope=zones[s]?s:'Local';if(map)redrawActivity();else fallbackMap('osm');};
 window.setActivityPoints(window.__omniPoints);
 window.setMapScope(window.__omniScope);
 attachTiles();setTimeout(function(){if(map)map.invalidateSize(true);},350);
 }catch(e){show('Error al iniciar el visor: '+String(e.message||e));fallbackMap('osm');}
 }
 window.onerror=function(m){show('Error del visor: '+String(m).slice(0,140));};
+frame.src=url('Local','osm');
 var script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';script.onload=boot;script.onerror=function(){show('No se pudo cargar Leaflet. Activando mapa alternativo…');fallbackMap('osm');};document.head.appendChild(script);
 })();
 </script></body></html>
