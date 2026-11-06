@@ -18,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalContext
 import com.example.data.api.RealLocationHelper
+import com.example.data.geo.GeoPresenceRepository
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -273,6 +274,8 @@ fun OmniApp(viewModel: MainViewModel) {
     } ?: "—"
 
     var showLocationDialog by remember { mutableStateOf(false) }
+    var showGeoShareConsent by rememberSaveable { mutableStateOf(false) }
+    var shareGeoPresence by remember { mutableStateOf(GeoPresenceRepository.isSharingEnabled(context)) }
     var customCityInput by remember(displayLocality) { mutableStateOf(displayLocality) }
 
     // Solicitud automática del diálogo nativo de permisos GPS en el primer inicio
@@ -283,6 +286,7 @@ fun OmniApp(viewModel: MainViewModel) {
         val coarse = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (fine || coarse) {
             viewModel.refreshLiveGpsAndPlaces(context)
+            if (!GeoPresenceRepository.hasDecision(context)) showGeoShareConsent = true
         }
     }
 
@@ -298,7 +302,40 @@ fun OmniApp(viewModel: MainViewModel) {
         } else {
             // Actualizar GPS también cuando hay una ubicación guardada: la caché reciente hace esta consulta rápida.
             viewModel.refreshLiveGpsAndPlaces(context)
+            if (!GeoPresenceRepository.hasDecision(context)) showGeoShareConsent = true
         }
+    }
+
+    if (showGeoShareConsent) {
+        AlertDialog(
+            onDismissRequest = {
+                GeoPresenceRepository.setSharingEnabled(context, false)
+                shareGeoPresence = false
+                showGeoShareConsent = false
+            },
+            title = { Text("Compartir ubicación aproximada", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "¿Autorizás a OMNI a compartir una ubicación aproximada de tu zona con OMNI Admin? Se redondea a un área de aproximadamente 1 km y solo se muestra agrupada cuando hay al menos 3 cuentas. No se comparte tu dirección ni se realiza seguimiento en segundo plano. Podés desactivarlo cuando quieras desde Configurar ubicación.",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    GeoPresenceRepository.setSharingEnabled(context, true)
+                    shareGeoPresence = true
+                    showGeoShareConsent = false
+                    viewModel.refreshLiveGpsAndPlaces(context)
+                }) { Text("Autorizar") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    GeoPresenceRepository.setSharingEnabled(context, false)
+                    shareGeoPresence = false
+                    showGeoShareConsent = false
+                }) { Text("No compartir") }
+            }
+        )
     }
 
     // Manejo de navegación hacia atrás en subpantallas
@@ -363,6 +400,21 @@ fun OmniApp(viewModel: MainViewModel) {
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("Compartir ubicación aproximada", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Solo áreas agrupadas en OMNI Admin · podés revocarlo", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = shareGeoPresence,
+                            onCheckedChange = { enabled ->
+                                shareGeoPresence = enabled
+                                GeoPresenceRepository.setSharingEnabled(context, enabled)
+                                if (enabled) viewModel.refreshLiveGpsAndPlaces(context)
+                            }
+                        )
+                    }
 
                     OutlinedTextField(
                         value = customCityInput,
