@@ -538,11 +538,17 @@ private fun CompactDashboardStat(label: String, value: String, icon: androidx.co
 
 private fun activityMapUrl(scope: String): String {
   // Use the dedicated OSM embed page instead of the full website UI inside Android WebView.
-  val (west, south, east, north, latitude, longitude) = when (scope) {
+  val bounds = when (scope) {
     "Santa Fe" -> listOf(-62.50, -32.50, -59.40, -29.00, -30.7069, -60.9500)
     "Argentina" -> listOf(-73.50, -56.00, -53.50, -21.50, -38.4161, -63.6167)
     else -> listOf(-60.82, -31.80, -60.58, -31.47, -31.6333, -60.7000)
   }
+  val west = bounds[0]
+  val south = bounds[1]
+  val east = bounds[2]
+  val north = bounds[3]
+  val latitude = bounds[4]
+  val longitude = bounds[5]
   val bbox = "$west%2C$south%2C$east%2C$north"
   return "https://www.openstreetmap.org/export/embed.html?bbox=$bbox&layer=mapnik&marker=$latitude%2C$longitude"
 }
