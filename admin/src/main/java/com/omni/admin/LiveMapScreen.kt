@@ -94,7 +94,7 @@ internal fun LiveMapScreen() {
               }
               override fun onPageFinished(view: WebView, url: String) {
                 view.evaluateJavascript(
-                  "(function(){var s=document.getElementById('status');if(!s)return;if(!window.maplibregl){s.textContent='ERROR: MOTOR MAPLIBRE NO DESCARGADO';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else if(!window.omniMap){s.textContent='ERROR: MOTOR CARGADO, PERO EL MAPA NO SE INICIALIZÓ';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else{window.omniMap.resize();}})();",
+                  "(function(){var s=document.getElementById('status');if(!s)return;if(!window.maplibregl){s.textContent='ERROR: MOTOR MAPLIBRE NO DESCARGADO';s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}else if(!window.omniMap){if(s.textContent.indexOf('CARGANDO')===0||s.textContent.indexOf('MOTOR ACTIVO')===0){s.textContent='ERROR: EL SCRIPT NO COMPLETÓ LA INICIALIZACIÓN. '+(window.omniInitError||'Revisar consola JavaScript/WebGL');s.style.color='#ff9b9b';s.style.borderColor='#ff6b6b';}}else{window.omniMap.resize();}})();",
                   null
                 )
               }
@@ -149,6 +149,18 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
 <script>
 (function(){
  const status=document.getElementById('status');
+ window.omniInitError='';
+ window.onerror=function(message,source,line,column,error){
+   window.omniInitError=String(message||'Error JavaScript')+' @ '+String(line||'?')+':'+String(column||'?');
+   console.error('OMNI INIT JS ERROR: '+window.omniInitError);
+   show('ERROR JAVASCRIPT: '+window.omniInitError,true);
+   return false;
+ };
+ window.addEventListener('unhandledrejection',function(event){
+   window.omniInitError=String(event.reason&&event.reason.message?event.reason.message:event.reason||'Promesa rechazada');
+   console.error('OMNI INIT PROMISE ERROR: '+window.omniInitError);
+   show('ERROR DE INICIALIZACIÓN: '+window.omniInitError,true);
+ });
  const show=(message,failed)=>{status.textContent=message;status.style.color=failed?'#ff9b9b':'#65e9b7';status.style.borderColor=failed?'#ff6b6b':'#00dfff';};
  if(!window.maplibregl){show('ERROR: no se pudo descargar MapLibre GL JS desde unpkg.com',true);return;}
  if(!maplibregl.supported()){show('ERROR: WebView no dispone de WebGL compatible para dibujar el mapa',true);return;}
