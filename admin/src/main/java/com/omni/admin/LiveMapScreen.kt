@@ -72,7 +72,7 @@ internal fun LiveMapScreen() {
               android.view.ViewGroup.LayoutParams.MATCH_PARENT
             )
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
-            setOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
               val width = right - left
               val height = bottom - top
               if (width > 0 && height > 0 && (width != oldRight - oldLeft || height != oldBottom - oldTop)) {
