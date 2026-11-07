@@ -1,0 +1,100 @@
+name: OMNI FLOW · APK instalable
+
+on:
+  push:
+    branches:
+      - feat/omni-flow-daily-briefing
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify OMNI principal APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout FLOW branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Configure Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36.1" "build-tools;36.0.0"
+
+      - name: Configure OMNI Firebase
+        env:
+          FIREBASE_JSON_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          test -n "$FIREBASE_JSON_BASE64" || { echo "::error::Falta FIREBASE_GOOGLE_SERVICES_JSON_BASE64."; exit 1; }
+          printf '%s' "$FIREBASE_JSON_BASE64" | base64 --decode > app/google-services.json
+          python3 - <<'PY'
+          import json
+          with open("app/google-services.json", encoding="utf-8") as f:
+              data = json.load(f)
+          package = "com.aistudio.omnihub.qtzmvd"
+          clients = [c for c in data.get("client", [])
+                     if c.get("client_info", {}).get("android_client_info", {}).get("package_name") == package]
+          if not clients:
+              raise SystemExit(f"Firebase config no contiene el paquete {package}")
+          print("Configuración Firebase OMNI validada.")
+          PY
+
+      - name: Configure optional AI and Maps keys
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          printf 'GEMINI_API_KEY=%s\nGOOGLE_MAPS_API_KEY=%s\n' "${GEMINI_API_KEY:-NOT_CONFIGURED}" "${GOOGLE_MAPS_API_KEY:-}" > .env
+
+      - name: Restore and verify persistent OMNI signing identity
+        env:
+          OMNI_DEBUG_KEYSTORE_BASE64: ${{ secrets.OMNI_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$OMNI_DEBUG_KEYSTORE_BASE64" || { echo "::error::Falta OMNI_DEBUG_KEYSTORE_BASE64; se cancela para no cambiar la firma de la app instalada."; exit 1; }
+          printf '%s' "$OMNI_DEBUG_KEYSTORE_BASE64" | base64 --decode > debug.keystore
+          EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
+          ACTUAL_SHA256="$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | awk '/SHA256:/{print $2; exit}' | tr -d ':')"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La clave no coincide con la firma persistente autorizada."; exit 1; }
+          echo "Firma persistente OMNI validada."
+
+      - name: Set upgrade-safe version code
+        run: echo "OMNI_VERSION_CODE=$((1000000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+
+      - name: Build OMNI principal APK
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Verify package, version and signing certificate
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.aistudio.omnihub.qtzmvd' versionCode='$OMNI_VERSION_CODE' versionName='1.4.1'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" > /tmp/omni-certs.txt
+          APK_SHA256="$(awk -F': ' '/certificate SHA-256 digest:/{print $2; exit}' /tmp/omni-certs.txt | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          test "$APK_SHA256" = "486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B" || { cat /tmp/omni-certs.txt; exit 1; }
+          echo "APK OMNI verificada: paquete, versión y firma."
+
+      - name: Publish OMNI APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OMNI-Principal-FLOW-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 90
