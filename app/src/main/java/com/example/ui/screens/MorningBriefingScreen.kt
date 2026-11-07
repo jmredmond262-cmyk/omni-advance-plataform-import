@@ -85,6 +85,10 @@ fun MorningBriefingScreen(
 
     var nearbyConexCount by remember { mutableStateOf(0) }
     var nearbyEventCount by remember { mutableStateOf(0) }
+    var incomingApplicationCount by remember { mutableStateOf(0) }
+    var nearbyConexItems by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var nearbyEventItems by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var incomingApplicants by remember { mutableStateOf<List<String>>(emptyList()) }
     var dataLoaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(uid, city) {
@@ -100,19 +104,34 @@ fun MorningBriefingScreen(
         }
         runCatching {
             val jobs = db.collection("jobPosts").whereEqualTo("status", "ACTIVE").get().await()
-            nearbyConexCount = jobs.documents.count { job ->
+            val matchingJobs = jobs.documents.filter { job ->
                 val expiry = job.getTimestamp("expiresAt")?.toDate()?.time ?: Long.MAX_VALUE
                 expiry > System.currentTimeMillis() && job.getString("location").orEmpty().contains(locality, true)
+            }.sortedByDescending { it.getTimestamp("createdAt")?.toDate()?.time ?: 0L }
+            nearbyConexCount = matchingJobs.size
+            nearbyConexItems = matchingJobs.take(2).map { doc ->
+                doc.getString("title").orEmpty().ifBlank { "Publicación de CONEX" } to doc.getString("location").orEmpty()
             }
-        }.onFailure { nearbyConexCount = 0 }
+        }.onFailure { nearbyConexCount = 0; nearbyConexItems = emptyList() }
+        runCatching {
+            val applications = db.collection("jobApplications").whereEqualTo("postOwnerUid", uid).get().await()
+            val recentApplications = applications.documents.sortedByDescending { it.getTimestamp("createdAt")?.toDate()?.time ?: 0L }
+            incomingApplicationCount = recentApplications.size
+            incomingApplicants = recentApplications.take(2).map { it.getString("applicantName").orEmpty().ifBlank { "Nueva postulación" } }
+        }.onFailure { incomingApplicationCount = 0; incomingApplicants = emptyList() }
         runCatching {
             val events = db.collection("omniEvents").get().await()
             val parser = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "AR"))
-            nearbyEventCount = events.documents.count { event ->
-                val future = runCatching { parser.parse(event.getString("dateTime").orEmpty())?.time ?: 0L }.getOrDefault(0L)
-                future > System.currentTimeMillis() && event.getString("location").orEmpty().contains(locality, true)
-            }
-        }.onFailure { nearbyEventCount = 0 }
+            val matchingEvents = events.documents.mapNotNull { event ->
+                val dateTime = event.getString("dateTime").orEmpty()
+                val timestamp = runCatching { parser.parse(dateTime)?.time ?: 0L }.getOrDefault(0L)
+                if (timestamp > System.currentTimeMillis() && event.getString("location").orEmpty().contains(locality, true)) {
+                    (event.getString("title").orEmpty().ifBlank { "Evento cercano" } to dateTime) to timestamp
+                } else null
+            }.sortedBy { it.second }
+            nearbyEventCount = matchingEvents.size
+            nearbyEventItems = matchingEvents.take(2).map { it.first }
+        }.onFailure { nearbyEventCount = 0; nearbyEventItems = emptyList() }
         dataLoaded = true
     }
 
@@ -256,8 +275,9 @@ fun MorningBriefingScreen(
             ) {
                 if (nearbyConexCount > 0) {
                     Text("$nearbyConexCount", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Text("publicaciones activas cerca", color = FlowMuted, fontSize = 9.sp, lineHeight = 12.sp)
-                    Text("Ver publicaciones  ›", color = FlowCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(nearbyConexItems.firstOrNull()?.first ?: "Publicaciones activas cerca", color = FlowMuted, fontSize = 9.sp, lineHeight = 12.sp, maxLines = 2)
+                    if (incomingApplicationCount > 0) Text("$incomingApplicationCount solicitudes recibidas", color = Color(0xFFB99AFF), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Ver CONEX  ›", color = FlowCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 } else {
                     Text("Novedad de ejemplo", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     Text(demoConex, color = FlowMuted, fontSize = 9.sp, lineHeight = 13.sp, maxLines = 3)
@@ -273,7 +293,8 @@ fun MorningBriefingScreen(
             ) {
                 if (nearbyEventCount > 0) {
                     Text("$nearbyEventCount", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Text("eventos próximos en tu zona", color = FlowMuted, fontSize = 9.sp, lineHeight = 12.sp)
+                    Text(nearbyEventItems.firstOrNull()?.first ?: "Eventos próximos en tu zona", color = FlowMuted, fontSize = 9.sp, lineHeight = 12.sp, maxLines = 2)
+                    Text(nearbyEventItems.firstOrNull()?.second ?: "Ver agenda local", color = FlowMuted, fontSize = 8.sp)
                     Text("Ver eventos  ›", color = FlowCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 } else {
                     Text("Evento de ejemplo", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
