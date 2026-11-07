@@ -679,7 +679,9 @@ fun OrderCenterScreen(
                                 val qrFile = File(folder, if (order.isLocalDemo) "omni-pedido-demo-${order.id.take(10)}.png" else "omni-pedido-${order.id.take(10)}.png")
                                 FileOutputStream(qrFile).use { output -> check(qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) }
                                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", qrFile)
-                                UsageAnalyticsRepository.trackCurrentAction("orders", "ORDER_SHARED", mapOf("method" to "share_sheet"))
+                                if (!order.isLocalDemo) {
+                                    UsageAnalyticsRepository.trackCurrentAction("orders", "ORDER_SHARED", mapOf("method" to "share_sheet"))
+                                }
                                 val share = Intent(Intent.ACTION_SEND).apply {
                                     type = "image/png"
                                     putExtra(Intent.EXTRA_STREAM, uri)
