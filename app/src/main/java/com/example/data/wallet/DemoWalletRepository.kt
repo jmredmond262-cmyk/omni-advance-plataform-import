@@ -261,7 +261,13 @@ class DemoWalletRepository(
                 "senderUid" to senderUid, "recipientUid" to recipientUid,
                 "amount" to amount, "createdAt" to FieldValue.serverTimestamp()
             )
-            if (orderId != null) operationData["orderId"] = orderId
+            if (orderId != null) {
+                operationData["orderId"] = orderId
+                operationData["correlationId"] = orderId
+                operationData["environment"] = "DEMO"
+                operationData["status"] = "APROBADA · DEMO"
+                operationData["title"] = "Pago de pedido OMNI"
+            }
             tx.set(operationRef, operationData)
             tx.set(senderRef.collection("transactions").document(operationId), transactionData(
                 operationId, senderType, if (orderId != null) "Pago de pedido OMNI" else if (isQr) "Pago con QR" else "Transferencia enviada",
@@ -274,6 +280,12 @@ class DemoWalletRepository(
             if (orderId != null) "PEDIDO PAGADO · OMNI PAY DEMO" else if (isQr) "PAGO QR APROBADO · DEMO" else "TRANSFERENCIA APROBADA · DEMO"
             }.addOnSuccessListener {
                 UsageAnalyticsRepository.trackWalletOperation(senderUid, if (orderId != null) "DEMO_ORDER_PAYMENT" else if (isQr) "DEMO_QR_PAYMENT" else "DEMO_TRANSFER")
+                if (orderId != null) {
+                    UsageAnalyticsRepository.trackEvent(senderUid, "orders", "ORDER_PAYMENT_COMPLETED", mapOf(
+                        "operationId" to operationId, "correlationId" to orderId,
+                        "stage" to "DEMO_WALLET_TRANSFER_CONFIRMED", "success" to true
+                    ))
+                }
                 done(Result.success(it))
             }.addOnFailureListener { done(Result.failure(it)) }
         }
