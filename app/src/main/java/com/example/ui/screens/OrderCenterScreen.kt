@@ -87,6 +87,7 @@ fun OrderCenterScreen(
     var merchantError by remember { mutableStateOf<String?>(null) }
     var orders by remember { mutableStateOf<List<OmniStoreOrder>>(emptyList()) }
     var paidOrderIds by remember(uid, merchantMode) { mutableStateOf<Set<String>>(emptySet()) }
+    var paymentListenerInitialized by remember(uid, merchantMode) { mutableStateOf(false) }
     val cartPreferences = remember { context.getSharedPreferences("omni_order_cart_drafts", 0) }
     fun readSavedCart(storeId: String): Map<String, Int> {
         val json = runCatching { JSONObject(cartPreferences.getString(storeId, "{}") ?: "{}") }.getOrNull() ?: JSONObject()
@@ -220,6 +221,20 @@ fun OrderCenterScreen(
                                 .filter { it.getString("kind") == "QR_PAYMENT" }
                                 .mapNotNull { it.getString("orderId") }
                                 .toSet()
+                            if (merchantMode && paymentListenerInitialized) {
+                                (confirmed - paidOrderIds).firstOrNull()?.let { incomingOrderId ->
+                                    db.collection("storeOrders").document(incomingOrderId).get()
+                                        .addOnSuccessListener { incomingDoc ->
+                                            decodeOrder(incomingDoc)?.let { incoming ->
+                                                val detailLines = incoming.items.joinToString("\\n") { line ->
+                                                    "${line.quantity} × ${line.name} · OM$ ${String.format("%,.2f", line.price * line.quantity)}"
+                                                }
+                                                feedback = "¡COBRO RECIBIDO · OMNI PAY DEMO!\\nComercio: ${incoming.storeName}\\nCliente: ${incoming.customerName}\\n${detailLines}\\nTotal acreditado: OM$ ${String.format("%,.2f", incoming.total)}\\nPedido: ${incoming.id}\\nLa operación quedó registrada en tu billetera ficticia."
+                                            }
+                                        }
+                                }
+                            }
+                            paymentListenerInitialized = true
                             paidOrderIds = confirmed
                             orders = orders.map { current ->
                                 if (current.id in confirmed) current.copy(paymentStatus = "PAGADA · DEMO") else current
