@@ -1,6 +1,12 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,7 +45,8 @@ import java.util.Locale
 
 private data class OmniMoment(
     val id: String, val occasion: String, val personName: String,
-    val date: String, val greeting: String, val note: String
+    val date: String, val greeting: String, val note: String,
+    val reminderEnabled: Boolean = false, val reminderHour: Int = 9, val reminderMinute: Int = 0
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,6 +69,15 @@ fun MomentsScreen(onBack: () -> Unit) {
     var date by remember { mutableStateOf("") }
     var greeting by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var reminderEnabled by remember { mutableStateOf(false) }
+    var reminderHour by remember { mutableStateOf("09") }
+    var reminderMinute by remember { mutableStateOf("00") }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        reminderEnabled = granted
+        if (!granted) feedback = "Para recibir recordatorios, habilitá las notificaciones de OMNI desde los ajustes del teléfono."
+    }
 
     DisposableEffect(uid) {
         var listener: ListenerRegistration? = null
@@ -79,8 +95,19 @@ fun MomentsScreen(onBack: () -> Unit) {
                             runCatching { OmniMoment(
                                 doc.id, doc.getString("occasion").orEmpty(),
                                 doc.getString("personName").orEmpty(), doc.getString("date").orEmpty(),
-                                doc.getString("greeting").orEmpty(), doc.getString("note").orEmpty()
+                                doc.getString("greeting").orEmpty(), doc.getString("note").orEmpty(),
+                                doc.getBoolean("reminderEnabled") ?: false,
+                                (doc.getLong("reminderHour") ?: 9L).toInt(),
+                                (doc.getLong("reminderMinute") ?: 0L).toInt()
                             ) }.getOrNull()
+                        }
+                        moments.forEach { moment ->
+                            if (moment.reminderEnabled) {
+                                MomentReminderScheduler.schedule(context, moment.id, moment.personName, moment.occasion,
+                                    moment.date, moment.reminderHour, moment.reminderMinute)
+                            } else {
+                                MomentReminderScheduler.cancel(context, moment.id)
+                            }
                         }
                         error = null
                     }
@@ -110,17 +137,31 @@ fun MomentsScreen(onBack: () -> Unit) {
             feedback = "Usá el formato de fecha dd/MM/aaaa."
             return
         }
+        val parsedHour = reminderHour.toIntOrNull()
+        val parsedMinute = reminderMinute.toIntOrNull()
+        if (reminderEnabled && (parsedHour == null || parsedHour !in 0..23 || parsedMinute == null || parsedMinute !in 0..59)) {
+            feedback = "Ingresá una hora válida en formato 24 horas (HH:MM)."
+            return
+        }
         busy = true
-        db.collection("omniMoments").add(mapOf(
+        val momentRef = db.collection("omniMoments").document()
+        momentRef.set(mapOf(
             "ownerUid" to uid, "occasion" to occasion,
             "personName" to personName.trim().take(100), "date" to date.trim(),
             "greeting" to greeting.trim().take(1000), "note" to note.trim().take(500),
+            "reminderEnabled" to reminderEnabled,
+            "reminderHour" to (parsedHour ?: 9), "reminderMinute" to (parsedMinute ?: 0),
             "status" to "ACTIVE", "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )).addOnSuccessListener {
+            if (reminderEnabled) {
+                MomentReminderScheduler.schedule(context, momentRef.id, personName.trim(), occasion, date.trim(),
+                    parsedHour ?: 9, parsedMinute ?: 0)
+            }
             busy = false; showEditor = false
             personName = ""; date = ""; greeting = ""; note = ""
-            feedback = "Fecha especial guardada en tu espacio privado de OMNI Momentos."
+            reminderEnabled = false; reminderHour = "09"; reminderMinute = "00"
+            feedback = if (reminderEnabled) "Fecha guardada y recordatorio programado en este dispositivo." else "Fecha especial guardada en tu espacio privado de OMNI Momentos."
         }.addOnFailureListener {
             busy = false; feedback = it.localizedMessage ?: "No se pudo guardar la fecha especial."
         }
@@ -195,7 +236,7 @@ fun MomentsScreen(onBack: () -> Unit) {
                                 }) { Icon(Icons.Default.Share, "Compartir saludo", tint = Color(0xFF57DDF5)) }
                                 IconButton(onClick = {
                                     db.collection("omniMoments").document(moment.id).delete()
-                                        .addOnSuccessListener { feedback = "Fecha especial eliminada." }
+                                        .addOnSuccessListener { MomentReminderScheduler.cancel(context, moment.id); feedback = "Fecha especial eliminada." }
                                         .addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo eliminar la fecha." }
                                 }) { Icon(Icons.Default.DeleteOutline, "Eliminar fecha", tint = Color(0xFFFF8F8F)) }
                             }
@@ -222,6 +263,25 @@ fun MomentsScreen(onBack: () -> Unit) {
                 OutlinedTextField(date, { date = it }, label = { Text("Fecha · dd/MM/aaaa") }, singleLine = true)
                 OutlinedTextField(greeting, { greeting = it }, label = { Text("Saludo o dedicatoria (opcional)") }, minLines = 2)
                 OutlinedTextField(note, { note = it }, label = { Text("Nota privada (opcional)") }, minLines = 2)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = reminderEnabled, onCheckedChange = { enabled ->
+                        if (!enabled) reminderEnabled = false
+                        else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else reminderEnabled = true
+                    })
+                    Column(Modifier.weight(1f)) {
+                        Text("Recordarme este momento", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Aviso local aunque OMNI esté cerrada", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                    }
+                }
+                if (reminderEnabled) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(reminderHour, { reminderHour = it.filter(Char::isDigit).take(2) }, label = { Text("Hora") }, singleLine = true, modifier = Modifier.weight(1f))
+                        Text(":", color = Color.White)
+                        OutlinedTextField(reminderMinute, { reminderMinute = it.filter(Char::isDigit).take(2) }, label = { Text("Minutos") }, singleLine = true, modifier = Modifier.weight(1f))
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = { saveMoment() }, enabled = !busy) { Text(if (busy) "Guardando…" else "Guardar fecha") } },
@@ -231,7 +291,7 @@ fun MomentsScreen(onBack: () -> Unit) {
         val detail = when (feature) {
             "Saludos y tarjetas" -> "Prepará dedicatorias y compartilas desde cada fecha guardada. La tarjeta visual personalizada se incorporará en la siguiente etapa."
             "Voz" -> "Los mensajes de voz requieren grabación, permiso de micrófono y almacenamiento seguro. No simulamos una grabación."
-            "Programar" -> "Los envíos programados y avisos con OMNI cerrada requieren un planificador persistente y pruebas en el dispositivo."
+            "Programar" -> "Los recordatorios locales de fechas especiales se programan en el dispositivo y se restauran al reiniciar. Los envíos automáticos de saludos todavía no están habilitados."
             "Regalos QR" -> "Los regalos QR se habilitarán como obsequios DEMO, sin mover dinero real."
             "Vouchers" -> "Los vales necesitarán código único, vencimiento y registro de canje para evitar usos duplicados."
             else -> "Los regalos grupales necesitarán participantes, aportes DEMO y seguimiento del objetivo compartido."
