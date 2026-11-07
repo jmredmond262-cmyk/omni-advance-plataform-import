@@ -32,6 +32,10 @@
                 android:resource="@xml/file_paths" />
         </provider>
         <receiver android:name=".ui.screens.RoutineReminderReceiver" android:exported="false" />
+        <receiver android:name=".ui.screens.MomentReminderReceiver" android:enabled="true" android:exported="false" />
+        <receiver android:name=".ui.screens.MomentReminderBootReceiver" android:enabled="true" android:exported="false">
+            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
+        </receiver>
         <receiver android:name=".ui.screens.FlowBriefingReceiver" android:enabled="true" android:exported="false" />
         <receiver android:name=".ui.screens.RoutineBootReceiver" android:enabled="true" android:exported="false">
             <intent-filter>
