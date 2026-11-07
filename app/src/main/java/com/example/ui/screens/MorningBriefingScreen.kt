@@ -273,10 +273,16 @@ fun MorningBriefingScreen(
                 icon = { Icon(Icons.Default.WorkOutline, null, tint = Color(0xFFB99AFF), modifier = Modifier.size(17.dp)) },
                 onClick = { viewModel.navigateTo(Screen.JobBoard) }
             ) {
-                if (nearbyConexCount > 0) {
-                    Text("$nearbyConexCount", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Text(nearbyConexItems.firstOrNull()?.first ?: "Publicaciones activas cerca", color = FlowMuted, fontSize = 9.sp, lineHeight = 12.sp, maxLines = 2)
-                    if (incomingApplicationCount > 0) Text("$incomingApplicationCount solicitudes recibidas", color = Color(0xFFB99AFF), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                if (nearbyConexCount > 0 || incomingApplicationCount > 0) {
+                    if (nearbyConexCount > 0) {
+                        Text("$nearbyConexCount", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                        Text(nearbyConexItems.firstOrNull()?.first ?: "Publicaciones activas cerca", color = FlowMuted, fontSize = 9.sp, lineHeight = 12.sp, maxLines = 2)
+                        nearbyConexItems.firstOrNull()?.second?.takeIf { it.isNotBlank() }?.let { Text(it, color = FlowMuted, fontSize = 8.sp) }
+                    }
+                    if (incomingApplicationCount > 0) {
+                        Text("$incomingApplicationCount solicitudes recibidas", color = Color(0xFFB99AFF), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                        incomingApplicants.firstOrNull()?.let { Text("Última: $it", color = FlowMuted, fontSize = 8.sp, maxLines = 1) }
+                    }
                     Text("Ver CONEX  ›", color = FlowCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 } else {
                     Text("Novedad de ejemplo", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
