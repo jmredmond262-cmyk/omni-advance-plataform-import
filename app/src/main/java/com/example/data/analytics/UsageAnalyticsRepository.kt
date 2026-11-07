@@ -58,7 +58,7 @@ object UsageAnalyticsRepository {
         screenStartedAt = 0L
         sessionStartedAt = System.currentTimeMillis()
         record(uid, "app", "SESSION_START")
-        record(uid, "diagnostics", "DIAGNOSTIC_TEST")
+        // La telemetría se valida con eventos reales; no generar una escritura de diagnóstico por sesión.
         if (lastScreen.isNotBlank()) trackScreen(uid, lastScreen)
     }
 
