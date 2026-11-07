@@ -223,6 +223,10 @@ private fun AuthGate(activity: ComponentActivity, viewModel: MainViewModel) {
                 phone = user.phoneNumber.orEmpty(),
                 photoUrl = user.photoUrl?.toString().orEmpty()
             )
+            if (activity.intent.getBooleanExtra("open_flow", false)) {
+                viewModel.navigateTo(Screen.MorningBriefing)
+                activity.intent.removeExtra("open_flow")
+            }
             // La cuenta DEMO se provisiona al iniciar sesión, no al abrir la billetera.
             demoWalletRepository.ensureWallet { result ->
                 result.onSuccess { account ->
