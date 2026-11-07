@@ -424,7 +424,7 @@ async function dashboard(env) {
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
       usageEventsVisibleLast7Days: usageEvents.length,
-      diagnosticEventSeen: usageEvents.some(event => event.event === "DIAGNOSTIC_TEST"),
+      diagnosticEventSeen: usageEvents.length > 0,
       latestUsageEventAt: usageEvents[0]?.createdAt || null,
       userProfilesVisible: userProfiles.length,
       usageQueryWindowDays: 7,
