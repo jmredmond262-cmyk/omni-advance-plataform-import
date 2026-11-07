@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Comparte presencia geográfica solo con autorización expresa.
@@ -24,12 +25,43 @@ object GeoPresenceRepository {
     private const val PREFS = "omni_geo_privacy"
     private const val API_URL = "https://omni-admin-api.jmredmond262.workers.dev/geo-presence"
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val refreshInProgress = AtomicBoolean(false)
+    private const val MIN_MOVEMENT_METERS = 35f
+    private const val HEARTBEAT_MILLIS = 2 * 60 * 1000L
 
     private fun uid() = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private fun decisionKey(userId: String) = "decision_$userId"
     private fun enabledKey(userId: String) = "enabled_$userId"
     private fun consentVersionKey(userId: String) = "consent_version_$userId"
+    private fun lastPublishTimeKey(userId: String) = "last_publish_time_$userId"
+    private fun lastLatitudeKey(userId: String) = "last_publish_lat_$userId"
+    private fun lastLongitudeKey(userId: String) = "last_publish_lon_$userId"
+
+    private fun shouldPublishLocation(context: Context, userId: String, location: Location): Boolean {
+        val storage = prefs(context)
+        val lastTime = storage.getLong(lastPublishTimeKey(userId), 0L)
+        if (lastTime <= 0L) return true
+        val elapsed = System.currentTimeMillis() - lastTime
+        val lastLat = storage.getFloat(lastLatitudeKey(userId), Float.NaN)
+        val lastLon = storage.getFloat(lastLongitudeKey(userId), Float.NaN)
+        if (lastLat.isFinite() && lastLon.isFinite()) {
+            val previous = Location("omni-last-published").apply {
+                latitude = lastLat.toDouble()
+                longitude = lastLon.toDouble()
+            }
+            if (previous.distanceTo(location) >= MIN_MOVEMENT_METERS) return true
+        }
+        return elapsed >= HEARTBEAT_MILLIS
+    }
+
+    private fun rememberPublishedLocation(context: Context, userId: String, location: Location) {
+        prefs(context).edit()
+            .putLong(lastPublishTimeKey(userId), System.currentTimeMillis())
+            .putFloat(lastLatitudeKey(userId), location.latitude.toFloat())
+            .putFloat(lastLongitudeKey(userId), location.longitude.toFloat())
+            .apply()
+    }
 
     fun hasDecision(context: Context): Boolean {
         val userId = uid()
@@ -44,13 +76,19 @@ object GeoPresenceRepository {
     fun setSharingEnabled(context: Context, enabled: Boolean) {
         val userId = uid()
         if (userId.isBlank()) return
+        val wasEnabled = prefs(context).getBoolean(enabledKey(userId), false)
         prefs(context).edit()
             .putBoolean(decisionKey(userId), true)
             .putInt(consentVersionKey(userId), 2)
             .putBoolean(enabledKey(userId), enabled)
             .apply()
         if (!enabled) {
-            sendToSecureApi(JSONObject().put("enabled", false))
+            prefs(context).edit()
+                .remove(lastPublishTimeKey(userId))
+                .remove(lastLatitudeKey(userId))
+                .remove(lastLongitudeKey(userId))
+                .apply()
+            if (wasEnabled) sendToSecureApi(JSONObject().put("enabled", false))
         }
     }
 
@@ -72,6 +110,7 @@ object GeoPresenceRepository {
         }
         if (!location.latitude.isFinite() || !location.longitude.isFinite() ||
             !location.accuracy.isFinite() || location.accuracy <= 0f) return
+        rememberPublishedLocation(context, userId, location)
         val payload = JSONObject()
             .put("enabled", true)
             .put("consent", true)
@@ -91,9 +130,15 @@ object GeoPresenceRepository {
      */
     fun refreshPresenceWhileActive(context: Context) {
         if (!isSharingEnabled(context) || !RealLocationHelper.hasLocationPermission(context)) return
+        if (!refreshInProgress.compareAndSet(false, true)) return
         ioScope.launch {
             try {
+                val userId = uid()
+                if (userId.isBlank()) return@launch
                 val location = RealLocationHelper.getCurrentLocation(context) ?: return@launch
+                // No geocodificar ni escribir en Firestore si el usuario no se movió
+                // y todavía no venció el heartbeat de presencia.
+                if (!shouldPublishLocation(context, userId, location)) return@launch
                 val details = RealPlacesApi.reverseGeocodeDetails(location.latitude, location.longitude)
                 publishPreciseLocation(
                     context = context,
@@ -104,6 +149,8 @@ object GeoPresenceRepository {
                 )
             } catch (error: Exception) {
                 Log.w(TAG, "No se pudo refrescar la presencia activa: ${error.message}")
+            } finally {
+                refreshInProgress.set(false)
             }
         }
     }

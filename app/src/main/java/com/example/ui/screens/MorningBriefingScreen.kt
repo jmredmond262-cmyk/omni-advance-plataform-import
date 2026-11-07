@@ -70,6 +70,35 @@ private val FlowCyan = Color(0xFF68E7FF)
 private val FlowMuted = Color(0xFF9EB4C9)
 private val FlowSurface = Color(0xB8172940)
 
+private data class FlowBriefingCacheEntry(
+    val uid: String,
+    val locality: String,
+    val fetchedAt: Long,
+    val conexCount: Int,
+    val eventCount: Int,
+    val applicationCount: Int,
+    val conexItems: List<Pair<String, String>>,
+    val eventItems: List<Pair<String, String>>,
+    val applicants: List<String>
+)
+
+private object FlowBriefingMemoryCache {
+    private const val TTL_MILLIS = 5 * 60 * 1000L
+    @Volatile private var entry: FlowBriefingCacheEntry? = null
+
+    fun get(uid: String, locality: String): FlowBriefingCacheEntry? {
+        val cached = entry ?: return null
+        return cached.takeIf {
+            it.uid == uid && it.locality.equals(locality, true) &&
+                System.currentTimeMillis() - it.fetchedAt < TTL_MILLIS
+        }
+    }
+
+    fun put(value: FlowBriefingCacheEntry) {
+        entry = value
+    }
+}
+
 @Composable
 fun MorningBriefingScreen(
     viewModel: MainViewModel,
@@ -96,14 +125,24 @@ fun MorningBriefingScreen(
             dataLoaded = true
             return@LaunchedEffect
         }
-        val db = FirebaseFirestore.getInstance()
         val locality = city.trim().takeUnless { it.isBlank() || it.equals("Detectando ubicación", true) }
         if (locality == null) {
             dataLoaded = true
             return@LaunchedEffect
         }
+        FlowBriefingMemoryCache.get(uid, locality)?.let { cached ->
+            nearbyConexCount = cached.conexCount
+            nearbyEventCount = cached.eventCount
+            incomingApplicationCount = cached.applicationCount
+            nearbyConexItems = cached.conexItems
+            nearbyEventItems = cached.eventItems
+            incomingApplicants = cached.applicants
+            dataLoaded = true
+            return@LaunchedEffect
+        }
+        val db = FirebaseFirestore.getInstance()
         runCatching {
-            val jobs = db.collection("jobPosts").whereEqualTo("status", "ACTIVE").limit(80).get().await()
+            val jobs = db.collection("jobPosts").whereEqualTo("status", "ACTIVE").limit(40).get().await()
             val matchingJobs = jobs.documents.filter { job ->
                 val expiry = job.getTimestamp("expiresAt")?.toDate()?.time ?: Long.MAX_VALUE
                 expiry > System.currentTimeMillis() && job.getString("location").orEmpty().contains(locality, true)
@@ -114,13 +153,13 @@ fun MorningBriefingScreen(
             }
         }.onFailure { nearbyConexCount = 0; nearbyConexItems = emptyList() }
         runCatching {
-            val applications = db.collection("jobApplications").whereEqualTo("postOwnerUid", uid).limit(50).get().await()
+            val applications = db.collection("jobApplications").whereEqualTo("postOwnerUid", uid).limit(30).get().await()
             val recentApplications = applications.documents.sortedByDescending { it.getTimestamp("createdAt")?.toDate()?.time ?: 0L }
             incomingApplicationCount = recentApplications.size
             incomingApplicants = recentApplications.take(2).map { it.getString("applicantName").orEmpty().ifBlank { "Nueva postulación" } }
         }.onFailure { incomingApplicationCount = 0; incomingApplicants = emptyList() }
         runCatching {
-            val events = db.collection("omniEvents").limit(100).get().await()
+            val events = db.collection("omniEvents").orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING).limit(40).get().await()
             val parser = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "AR"))
             val matchingEvents = events.documents.mapNotNull { event ->
                 val dateTime = event.getString("dateTime").orEmpty()
@@ -132,6 +171,19 @@ fun MorningBriefingScreen(
             nearbyEventCount = matchingEvents.size
             nearbyEventItems = matchingEvents.take(2).map { it.first }
         }.onFailure { nearbyEventCount = 0; nearbyEventItems = emptyList() }
+        FlowBriefingMemoryCache.put(
+            FlowBriefingCacheEntry(
+                uid = uid,
+                locality = locality,
+                fetchedAt = System.currentTimeMillis(),
+                conexCount = nearbyConexCount,
+                eventCount = nearbyEventCount,
+                applicationCount = incomingApplicationCount,
+                conexItems = nearbyConexItems,
+                eventItems = nearbyEventItems,
+                applicants = incomingApplicants
+            )
+        )
         dataLoaded = true
     }
 
