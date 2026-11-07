@@ -169,9 +169,34 @@ async function listCollection(name: string, limit = 100, pageToken = "") {
   const snapshot = await query.get();
   const hasMore = snapshot.docs.length > safeLimit;
   const page = snapshot.docs.slice(0, safeLimit);
+  const orderPayments = new Map<string, Record<string, unknown>>();
+  if (name === "storeOrders" && page.length > 0) {
+    const orderIds = page.map((doc) => doc.id);
+    for (let offset = 0; offset < orderIds.length; offset += 30) {
+      const chunk = orderIds.slice(offset, offset + 30);
+      const payments = await db.collection("walletOperations").where("orderId", "in", chunk).get();
+      for (const payment of payments.docs) {
+        const paymentData = payment.data() as Record<string, unknown>;
+        if (paymentData.kind === "QR_PAYMENT" && paymentData.environment === "DEMO") {
+          const orderId = String(paymentData.orderId ?? "");
+          if (orderId) orderPayments.set(orderId, { operationId: payment.id, createdAt: paymentData.createdAt });
+        }
+      }
+    }
+  }
   return {
     items: page.map((doc) => {
       const data = clean(doc.data()) as Record<string, unknown>;
+      if (name === "storeOrders") {
+        const payment = orderPayments.get(doc.id);
+        return {
+          id: doc.id, ...data,
+          paymentStatus: payment ? "PAGADA · DEMO" : "PENDIENTE",
+          paymentEnvironment: "DEMO",
+          paymentOperationId: payment?.operationId ?? null,
+          paymentCreatedAt: payment?.createdAt ?? null
+        };
+      }
       if (name === "omniMoments") {
         // Private greeting text, personal notes and names are never exposed in Admin listings.
         return {
