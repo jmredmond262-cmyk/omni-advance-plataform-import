@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -101,6 +102,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -577,31 +580,16 @@ fun OmniApp(viewModel: MainViewModel) {
                             modifier = Modifier.padding(end = 4.dp)
                         ) {
                             Surface(
-                                color = MaterialTheme.colorScheme.primaryContainer,
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f),
                                 shape = RoundedCornerShape(13.dp),
-                                modifier = Modifier.size(39.dp)
+                                modifier = Modifier.size(42.dp)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Canvas(Modifier.fillMaxSize().padding(8.dp)) {
-                                        val r = size.minDimension * 0.34f
-                                        drawCircle(
-                                            color = Color(0xFF70E8FF),
-                                            radius = r,
-                                            center = center,
-                                            style = Stroke(width = size.minDimension * 0.09f)
-                                        )
-                                        drawArc(
-                                            color = Color(0xFFB69AFF),
-                                            startAngle = 35f,
-                                            sweepAngle = 235f,
-                                            useCenter = false,
-                                            topLeft = Offset(center.x - r * 0.72f, center.y - r * 0.72f),
-                                            size = Size(r * 1.44f, r * 1.44f),
-                                            style = Stroke(width = size.minDimension * 0.09f, cap = StrokeCap.Round)
-                                        )
-                                        drawCircle(color = Color.White, radius = size.minDimension * 0.07f, center = center)
-                                    }
-                                }
+                                Image(
+                                    painter = painterResource(id = R.drawable.omni_splash_logo),
+                                    contentDescription = "Logo oficial de OMNI",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize().padding(3.dp)
+                                )
                             }
 
                             Spacer(modifier = Modifier.width(9.dp))
@@ -615,28 +603,14 @@ fun OmniApp(viewModel: MainViewModel) {
                                     },
                                 verticalArrangement = Arrangement.Center
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "OMNI",
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 19.sp,
-                                        letterSpacing = 1.4.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
-                                        shape = RoundedCornerShape(5.dp)
-                                    ) {
-                                        Text(
-                                            text = "BETA",
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
+                                Text(
+                                    text = "OMNI",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 19.sp,
+                                    letterSpacing = 2.1.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     val firstName = userProfile.fullName.trim().split(" ").firstOrNull().orEmpty().ifBlank { "Hola" }
                                     Text(
@@ -648,7 +622,7 @@ fun OmniApp(viewModel: MainViewModel) {
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "📍 $displayLocality",
+                                        text = "· $displayLocality",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,

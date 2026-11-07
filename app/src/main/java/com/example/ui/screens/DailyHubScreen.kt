@@ -259,6 +259,71 @@ fun DailyHubScreen(
         }
 
         // ==========================================
+        // Acceso destacado a OMNI FLOW: resumen dinámico del día.
+        item {
+            Card(
+                shape = RoundedCornerShape(17.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyberGlowCyan.copy(alpha = 0.58f)),
+                modifier = Modifier.fillMaxWidth()
+                    .clickable { viewModel.navigateTo(Screen.MorningBriefing) }
+                    .testTag("home_omni_flow_entry")
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF12364D), Color(0xFF172342), Color(0xFF111A31))
+                            )
+                        )
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(11.dp)
+                ) {
+                    Box(
+                        Modifier.size(40.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(
+                                Brush.linearGradient(listOf(Color(0xFF167FA2), Color(0xFF493B83)))
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            "OMNI FLOW",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 1.15.sp
+                        )
+                        Text(
+                            "Tu día, conectado: agenda, clima y oportunidades",
+                            color = Color(0xFFB5C7DA),
+                            fontSize = 10.sp,
+                            maxLines = 2
+                        )
+                    }
+                    Text(
+                        "ABRIR ›",
+                        color = CyberGlowCyan,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.45.sp
+                    )
+                }
+            }
+        }
+
         // 2. SERVICIOS PRINCIPALES
         // ==========================================
         item {

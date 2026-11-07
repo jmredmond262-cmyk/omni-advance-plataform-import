@@ -103,7 +103,7 @@ fun MorningBriefingScreen(
             return@LaunchedEffect
         }
         runCatching {
-            val jobs = db.collection("jobPosts").whereEqualTo("status", "ACTIVE").get().await()
+            val jobs = db.collection("jobPosts").whereEqualTo("status", "ACTIVE").limit(80).get().await()
             val matchingJobs = jobs.documents.filter { job ->
                 val expiry = job.getTimestamp("expiresAt")?.toDate()?.time ?: Long.MAX_VALUE
                 expiry > System.currentTimeMillis() && job.getString("location").orEmpty().contains(locality, true)
@@ -114,13 +114,13 @@ fun MorningBriefingScreen(
             }
         }.onFailure { nearbyConexCount = 0; nearbyConexItems = emptyList() }
         runCatching {
-            val applications = db.collection("jobApplications").whereEqualTo("postOwnerUid", uid).get().await()
+            val applications = db.collection("jobApplications").whereEqualTo("postOwnerUid", uid).limit(50).get().await()
             val recentApplications = applications.documents.sortedByDescending { it.getTimestamp("createdAt")?.toDate()?.time ?: 0L }
             incomingApplicationCount = recentApplications.size
             incomingApplicants = recentApplications.take(2).map { it.getString("applicantName").orEmpty().ifBlank { "Nueva postulación" } }
         }.onFailure { incomingApplicationCount = 0; incomingApplicants = emptyList() }
         runCatching {
-            val events = db.collection("omniEvents").get().await()
+            val events = db.collection("omniEvents").limit(100).get().await()
             val parser = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "AR"))
             val matchingEvents = events.documents.mapNotNull { event ->
                 val dateTime = event.getString("dateTime").orEmpty()
