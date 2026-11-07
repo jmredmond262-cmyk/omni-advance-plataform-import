@@ -236,7 +236,6 @@ class DemoWalletRepository(
             } else null
             val orderSnapshot = orderRef?.let { tx.get(it) }
             val sender = tx.get(senderRef)
-            val recipient = tx.get(recipientRef)
 
             val existingPayment = existingOrderPayments?.documents?.firstOrNull()
             if (existingPayment != null) {
@@ -258,7 +257,6 @@ class DemoWalletRepository(
                 }
             }
             check(sender.exists()) { "Tu billetera DEMO no está disponible." }
-            check(recipient.exists()) { "La billetera DEMO del comercio no está disponible." }
             val senderBalance = (sender.get("balance") as? Number)?.toDouble() ?: 0.0
             check(senderBalance >= amount) { "Saldo insuficiente para completar la operación." }
             val recipientAlias = "Cuenta OMNI Pay"
