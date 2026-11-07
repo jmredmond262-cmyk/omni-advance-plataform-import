@@ -256,6 +256,16 @@ class DemoWalletRepository(
                 "balance" to FieldValue.increment(amount), "lastOperationId" to operationId,
                 "updatedAt" to FieldValue.serverTimestamp()
             ))
+            val orderDetails = if (orderId != null && orderSnapshot != null) mapOf(
+                "orderId" to orderId,
+                "storeId" to (orderSnapshot.getString("storeId") ?: ""),
+                "storeName" to (orderSnapshot.getString("storeName") ?: "Comercio OMNI"),
+                "customerName" to (orderSnapshot.getString("customerName") ?: "Cliente OMNI"),
+                "items" to (orderSnapshot.get("items") as? List<*> ?: emptyList<Any>()),
+                "fulfillmentType" to (orderSnapshot.getString("fulfillmentType") ?: "RETIRO"),
+                "deliveryAddress" to (orderSnapshot.getString("deliveryAddress") ?: ""),
+                "paymentEnvironment" to "DEMO"
+            ) else emptyMap()
             val operationData = mutableMapOf<String, Any>(
                 "operationId" to operationId, "kind" to if (isQr) "QR_PAYMENT" else "TRANSFER",
                 "senderUid" to senderUid, "recipientUid" to recipientUid,
@@ -267,15 +277,16 @@ class DemoWalletRepository(
                 operationData["environment"] = "DEMO"
                 operationData["status"] = "APROBADA · DEMO"
                 operationData["title"] = "Pago de pedido OMNI"
+                operationData.putAll(orderDetails)
             }
             tx.set(operationRef, operationData)
             tx.set(senderRef.collection("transactions").document(operationId), transactionData(
                 operationId, senderType, if (orderId != null) "Pago de pedido OMNI" else if (isQr) "Pago con QR" else "Transferencia enviada",
-                recipientAlias, amount
+                recipientAlias, amount, orderDetails
             ))
             tx.set(recipientRef.collection("transactions").document(operationId), transactionData(
                 operationId, recipientType, if (orderId != null) "Cobro de pedido OMNI" else if (isQr) "Cobro con QR" else "Transferencia recibida",
-                senderAlias, amount
+                senderAlias, amount, orderDetails
             ))
             if (orderId != null) "PEDIDO PAGADO · OMNI PAY DEMO" else if (isQr) "PAGO QR APROBADO · DEMO" else "TRANSFERENCIA APROBADA · DEMO"
             }.addOnSuccessListener {
@@ -310,12 +321,13 @@ class DemoWalletRepository(
     }
 
     private fun transactionData(
-        operationId: String, type: TransactionType, title: String, peerName: String, amount: Double
+        operationId: String, type: TransactionType, title: String, peerName: String,
+        amount: Double, details: Map<String, Any> = emptyMap()
     ) = mapOf(
         "operationId" to operationId, "type" to type.name, "title" to title,
         "peerName" to peerName, "amount" to amount,
         "status" to "APROBADA · DEMO", "createdAt" to FieldValue.serverTimestamp()
-    )
+    ) + details
 
     private fun validAmount(amount: Double) = amount.isFinite() && amount > 0.0 && amount <= 50000.0
 
