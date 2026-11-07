@@ -222,24 +222,28 @@ class DemoWalletRepository(
         val orderRef = orderId?.let { firestore.collection("storeOrders").document(it) }
         val executeAtomicTransfer: () -> Unit = {
             firestore.runTransaction { tx ->
-            // Todas las lecturas se realizan antes de cualquier escritura. La operación estable
-            // orderpay_<id> se consulta dentro de la misma transacción para impedir dos débitos
-            // simultáneos si el usuario toca pagar dos veces o reintenta tras perder conexión.
-            val operation = tx.get(operationRef)
+            // La consulta de idempotencia se ejecuta dentro de la transacción y conserva
+            // el filtro senderUid exigido por las reglas actuales de Firestore.
+            // Así evitamos una consulta previa vulnerable a dos pagos simultáneos y no
+            // necesitamos leer por ID un documento inexistente (lectura no autorizada por las reglas).
+            val existingOrderPayments = if (orderId != null) {
+                tx.get(
+                    firestore.collection("walletOperations")
+                        .whereEqualTo("senderUid", senderUid)
+                        .whereEqualTo("orderId", orderId)
+                        .limit(1)
+                )
+            } else null
             val orderSnapshot = orderRef?.let { tx.get(it) }
             val sender = tx.get(senderRef)
             val recipient = tx.get(recipientRef)
 
-            if (operation.exists()) {
-                if (orderId != null) {
-                    check(operation.getString("senderUid") == senderUid &&
-                        operation.getString("recipientUid") == recipientUid &&
-                        operation.getString("orderId") == orderId &&
-                        kotlin.math.abs((operation.get("amount") as? Number)?.toDouble()?.minus(amount) ?: Double.POSITIVE_INFINITY) < 0.005
-                    ) { "El identificador del pago ya está asociado a otra operación." }
-                    return@runTransaction "PEDIDO YA PAGADO · DEMO"
-                }
-                check(false) { "El identificador de la operación ya existe." }
+            val existingPayment = existingOrderPayments?.documents?.firstOrNull()
+            if (existingPayment != null) {
+                check(existingPayment.getString("recipientUid") == recipientUid &&
+                    kotlin.math.abs((existingPayment.get("amount") as? Number)?.toDouble()?.minus(amount) ?: Double.POSITIVE_INFINITY) < 0.005
+                ) { "El identificador del pago ya está asociado a otra operación." }
+                return@runTransaction "PEDIDO YA PAGADO · DEMO"
             }
 
             if (orderId != null) {
