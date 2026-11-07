@@ -293,9 +293,12 @@ fun OrderCenterScreen(
         db.collection("merchantProfiles").document(store.id).get()
             .addOnSuccessListener { merchant ->
                 val merchantUid = merchant.getString("ownerUid").orEmpty()
-                if (!merchant.exists() || merchantUid.isBlank() || merchantUid == uid) {
+                if (merchantUid.isNotBlank() && merchantUid == uid) {
                     sending = false
-                    feedback = "Este comercio todavía no habilitó pedidos QR para clientes."
+                    feedback = "Estás usando la misma cuenta que administra este comercio. Para generar un pedido de prueba, ingresá a OMNI con otra cuenta de cliente. El comercio sí puede recibir pedidos QR; OMNI no permite compras a uno mismo."
+                } else if (!merchant.exists() || merchantUid.isBlank()) {
+                    sending = false
+                    feedback = "No se encontró un perfil comercial activo para este catálogo. El comercio debe ingresar a su Panel de Comercio con la cuenta titular para vincularlo antes de recibir pedidos."
                 } else {
                     val ref = db.collection("storeOrders").document()
                     val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
