@@ -24,6 +24,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -42,6 +43,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
@@ -577,12 +582,25 @@ fun OmniApp(viewModel: MainViewModel) {
                                 modifier = Modifier.size(39.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = "O",
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 25.sp
-                                    )
+                                    Canvas(Modifier.fillMaxSize().padding(8.dp)) {
+                                        val r = size.minDimension * 0.34f
+                                        drawCircle(
+                                            color = Color(0xFF70E8FF),
+                                            radius = r,
+                                            center = center,
+                                            style = Stroke(width = size.minDimension * 0.09f)
+                                        )
+                                        drawArc(
+                                            color = Color(0xFFB69AFF),
+                                            startAngle = 35f,
+                                            sweepAngle = 235f,
+                                            useCenter = false,
+                                            topLeft = Offset(center.x - r * 0.72f, center.y - r * 0.72f),
+                                            size = Size(r * 1.44f, r * 1.44f),
+                                            style = Stroke(width = size.minDimension * 0.09f, cap = StrokeCap.Round)
+                                        )
+                                        drawCircle(color = Color.White, radius = size.minDimension * 0.07f, center = center)
+                                    }
                                 }
                             }
 
