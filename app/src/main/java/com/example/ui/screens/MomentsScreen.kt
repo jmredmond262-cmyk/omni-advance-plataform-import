@@ -159,7 +159,7 @@ fun MomentsScreen(onBack: () -> Unit) {
                                 }) { Icon(Icons.Default.DeleteOutline, "Eliminar fecha", tint = Color(0xFFFF8F8F)) }
                             }
                             if (moment.greeting.isNotBlank()) Text(moment.greeting, color = Color(0xFFD2DCEC), fontSize = 11.sp)
-                            if (moment.note.isNotBlank()) Text("Nota privada: \${moment.note}", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                            if (moment.note.isNotBlank()) Text("Nota privada: ${moment.note}", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                         }
                     }
                 }
