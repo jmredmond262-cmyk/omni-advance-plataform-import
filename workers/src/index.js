@@ -542,6 +542,44 @@ async function handleAction(env, actor, action, data) {
       }
       const page = await listDocumentsPage(env, collection, data.limit, String(data.pageToken || ""));
       let items = page.items;
+      if (collection === "storeOrders" && items.length > 0) {
+        const paymentByOrder = new Map();
+        const orderIds = items.map(item => String(item.id || "")).filter(Boolean);
+        for (let offset = 0; offset < orderIds.length; offset += 30) {
+          const chunk = orderIds.slice(offset, offset + 30);
+          const structuredQuery = {
+            from: [{ collectionId: "walletOperations" }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: "orderId" },
+                op: "IN",
+                value: { arrayValue: { values: chunk.map(id => ({ stringValue: id })) } }
+              }
+            },
+            limit: 200
+          };
+          const rows = await firestore(env, ":runQuery", {
+            method: "POST", body: JSON.stringify({ structuredQuery })
+          });
+          for (const row of rows || []) {
+            if (!row.document) continue;
+            const payment = documentData(row.document);
+            const orderId = String(payment.orderId || "");
+            if (payment.kind === "QR_PAYMENT" && orderId) {
+              paymentByOrder.set(orderId, payment.id);
+            }
+          }
+        }
+        items = items.map(item => {
+          const paymentOperationId = paymentByOrder.get(String(item.id || ""));
+          return {
+            ...item,
+            paymentStatus: paymentOperationId ? "PAGADA · DEMO" : "PENDIENTE",
+            paymentEnvironment: "DEMO",
+            paymentOperationId: paymentOperationId || null
+          };
+        });
+      }
       if (collection === "walletAccounts") {
         const profiles = await listAllDocuments(env, "users", 1000);
         const labels = new Map(profiles.items.map(profile => [
