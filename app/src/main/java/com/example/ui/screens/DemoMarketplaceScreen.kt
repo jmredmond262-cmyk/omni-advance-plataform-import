@@ -73,7 +73,7 @@ fun DemoMarketplaceScreen(
                         modifier = Modifier.padding(start = 9.dp))
                 }
                 Text(
-                    "Elegí un comercio de muestra, agregá productos y confirmá para generar un QR ilustrativo. Esta demostración funciona sin conexión a Firebase y el código no puede utilizarse para retirar ni cobrar.",
+                    "Elegí un comercio de muestra, agregá productos y confirmá para generar un QR ilustrativo. El carrito y el QR se procesan localmente; no se consulta ni registra un pedido en Firebase.",
                     color = DemoMuted, fontSize = 12.sp
                 )
                 Text(
