@@ -240,7 +240,7 @@ fun MorningBriefingScreen(
                 if (tasks.isEmpty()) "Todavía no hay actividades registradas para hoy." else "Tu lista está actualizada. Podés revisar y organizar tus tareas.",
                 color = FlowMuted, fontSize = 10.sp, lineHeight = 14.sp
             )
-            TextButton(onClick = { viewModel.navigateTo(Screen.Tasks) }) {
+            TextButton(onClick = { viewModel.navigateTo(Screen.SmartList) }) {
                 Text("Abrir mis tareas  ›", color = FlowCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
         }
