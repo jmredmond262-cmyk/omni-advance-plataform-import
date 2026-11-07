@@ -14,7 +14,7 @@ jobs:
       - name: Checkout OMNI Admin branch
         uses: actions/checkout@v4
         with:
-          ref: omni-advance-1.4
+          ref: ${{ github.ref }}
 
       - name: Configure Node
         uses: actions/setup-node@v4

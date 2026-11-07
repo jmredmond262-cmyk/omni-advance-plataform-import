@@ -903,7 +903,7 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "walletOperations" -> listOf("amount", "status", "createdAt")
     "walletTransactions" -> listOf("amount", "status", "peerName", "createdAt")
     "merchantProfiles" -> listOf("description", "category", "address", "status", "createdAt")
-    "storeOrders" -> listOf("total", "paymentStatus", "fulfillmentType", "createdAt")
+    "storeOrders" -> listOf("total", "paymentStatus", "paymentFlow", "paymentEnvironment", "fulfillmentType", "createdAt")
     "appFeedback" -> listOf("message", "createdAt")
     "usageEvents" -> listOf("userLabel", "module", "appVersion", "createdAt")
     "omniEvents" -> listOf("description", "category", "status", "startAt", "createdAt")
