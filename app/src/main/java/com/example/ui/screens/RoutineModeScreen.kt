@@ -54,7 +54,8 @@ private data class OmniRoutine(
     val minute: Int,
     val days: Set<Int>,
     val mode: String = "SOUND",
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val isWakeUp: Boolean = false
 )
 
 private object RoutineStore {
@@ -73,7 +74,8 @@ private object RoutineStore {
                 minute = item.optInt("minute"),
                 days = item.optString("days").split(",").mapNotNull { it.toIntOrNull() }.toSet(),
                 mode = item.optString("mode", "SOUND"),
-                enabled = item.optBoolean("enabled", true)
+                enabled = item.optBoolean("enabled", true),
+                isWakeUp = item.optBoolean("isWakeUp", false)
             )
         }
     }.getOrDefault(emptyList())
@@ -85,11 +87,87 @@ private object RoutineStore {
                 put("id", item.id); put("title", item.title); put("message", item.message)
                 put("hour", item.hour); put("minute", item.minute)
                 put("days", item.days.sorted().joinToString(","))
-                put("mode", item.mode); put("enabled", item.enabled)
+                put("mode", item.mode); put("enabled", item.enabled); put("isWakeUp", item.isWakeUp)
             })
         }
         context.getSharedPreferences(PREFS, 0).edit().putString(KEY, array.toString()).apply()
         items.forEach { RoutineAlarmScheduler.schedule(context, it) }
+        FlowBriefingScheduler.schedule(context, items)
+    }
+}
+
+private object FlowBriefingScheduler {
+    private const val REQUEST_CODE = 7301
+
+    fun schedule(context: Context, routines: List<OmniRoutine>) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, FlowBriefingReceiver::class.java)
+        val pending = PendingIntent.getBroadcast(
+            context, REQUEST_CODE, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(pending)
+
+        val now = Calendar.getInstance()
+        val nextBriefing = routines.asSequence()
+            .filter { it.enabled && it.isWakeUp && it.days.isNotEmpty() }
+            .mapNotNull { routine ->
+                (0..7).firstNotNullOfOrNull { offset ->
+                    val wake = Calendar.getInstance().apply {
+                        add(Calendar.DAY_OF_YEAR, offset)
+                        set(Calendar.HOUR_OF_DAY, routine.hour)
+                        set(Calendar.MINUTE, routine.minute)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    if (wake.get(Calendar.DAY_OF_WEEK) in routine.days && wake.timeInMillis > now.timeInMillis) {
+                        wake.timeInMillis - 30 * 60 * 1000L
+                    } else null
+                }
+            }
+            .filter { it > now.timeInMillis }
+            .minOrNull()
+
+        if (nextBriefing != null) {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextBriefing, pending)
+        }
+    }
+}
+
+class FlowBriefingReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "omni_flow_briefing_silent"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(channelId) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(channelId, "OMNI FLOW · Resumen diario", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Aviso silencioso cuando el resumen diario está preparado"
+                    enableVibration(false)
+                    setSound(null, null)
+                    setShowBadge(true)
+                }
+            )
+        }
+        val openFlow = Intent(context, com.example.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra("open_flow", true)
+        val contentIntent = PendingIntent.getActivity(
+            context, 7302, openFlow,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("OMNI FLOW · Tu día está preparado")
+            .setContentText("Consultá el clima, tus tareas y las novedades cercanas.")
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true)
+            .setSilent(true)
+            .setVibrate(longArrayOf())
+            .setSound(null)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        manager.notify(7303, notification)
+        FlowBriefingScheduler.schedule(context, RoutineStore.load(context))
     }
 }
 
@@ -119,7 +197,9 @@ private object RoutineAlarmScheduler {
 class RoutineBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            RoutineStore.load(context).forEach { RoutineAlarmScheduler.schedule(context, it) }
+            val routines = RoutineStore.load(context)
+            routines.forEach { RoutineAlarmScheduler.schedule(context, it) }
+            FlowBriefingScheduler.schedule(context, routines)
         }
     }
 }
@@ -280,6 +360,7 @@ fun RoutineModeScreen(onBack: () -> Unit) {
     var minute by remember { mutableStateOf("00") }
     var days by remember { mutableStateOf(setOf(2,3,4,5,6)) }
     var mode by remember { mutableStateOf("SOUND") }
+    var isWakeUp by remember { mutableStateOf(false) }
     val alertPreferences = remember { context.getSharedPreferences("omni_alert_preferences", 0) }
     var doubleAlertEnabled by remember { mutableStateOf(alertPreferences.getBoolean("double_alert_enabled", true)) }
     var doubleAlertDelay by remember { mutableStateOf(alertPreferences.getInt("double_alert_delay_seconds", 12).toFloat()) }
@@ -306,6 +387,7 @@ fun RoutineModeScreen(onBack: () -> Unit) {
         minute = (item?.minute ?: 0).toString().padStart(2, '0')
         days = item?.days ?: setOf(2,3,4,5,6)
         mode = item?.mode ?: "SOUND"
+        isWakeUp = item?.isWakeUp ?: false
         showEditor = true
     }
 
@@ -373,6 +455,7 @@ fun RoutineModeScreen(onBack: () -> Unit) {
                             Text(item.message.ifBlank { "Recordatorio sin mensaje adicional" }, color = Color(0xFFB8C8D9), fontSize = 11.sp)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(if (item.enabled) "ACTIVA" else "PAUSADA", color = if (item.enabled) Color(0xFF5DE0A0) else Color(0xFFFFC66D), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                if (item.isWakeUp) { Spacer(Modifier.width(8.dp)); Text("DESPERTAR · FLOW", color = Color(0xFF68E7FF), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold) }
                                 Spacer(Modifier.width(8.dp)); Text(if (item.mode == "SILENT") "Silenciosa" else if (item.mode == "VOICE") "Aviso por voz" else "Con sonido", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                             }
                         }
@@ -406,6 +489,13 @@ fun RoutineModeScreen(onBack: () -> Unit) {
                             }
                         }
                     }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Preparar OMNI FLOW", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Enviar un aviso silencioso 30 minutos antes de esta rutina.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                        }
+                        Switch(checked = isWakeUp, onCheckedChange = { isWakeUp = it })
+                    }
                     Text("Aviso", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     SingleChoiceSegmentedButtonRow {
                         listOf("SILENT" to "Silencio", "SOUND" to "Sonido", "VOICE" to "Voz").forEachIndexed { index, option ->
@@ -419,7 +509,7 @@ fun RoutineModeScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     val h = hour.toIntOrNull(); val m = minute.toIntOrNull()
                     if (title.isNotBlank() && h != null && h in 0..23 && m != null && m in 0..59 && days.isNotEmpty()) {
-                        val item = OmniRoutine(id = editing?.id ?: UUID.randomUUID().toString(), title = title.trim(), message = message.trim(), hour = h, minute = m, days = days, mode = mode, enabled = editing?.enabled ?: true)
+                        val item = OmniRoutine(id = editing?.id ?: UUID.randomUUID().toString(), title = title.trim(), message = message.trim(), hour = h, minute = m, days = days, mode = mode, enabled = editing?.enabled ?: true, isWakeUp = isWakeUp)
                         persist(if (editing == null) routines + item else routines.map { if (it.id == item.id) item else it })
                         showEditor = false
                     }
