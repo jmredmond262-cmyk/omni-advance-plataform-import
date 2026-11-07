@@ -226,7 +226,10 @@ class DemoWalletRepository(
             done(Result.failure(IllegalStateException("Iniciá sesión para operar.")))
             return
         }
-        if (senderUid == recipientUid) {
+        // Las transferencias comunes a uno mismo siguen bloqueadas. Para pedidos de
+        // comercio DEMO se permite autoconsumo: registra el circuito completo sin mover saldo.
+        val selfConsumption = senderUid == recipientUid && orderId != null
+        if (senderUid == recipientUid && !selfConsumption) {
             done(Result.failure(IllegalArgumentException("No podés transferirte a tu propia cuenta.")))
             return
         }
@@ -263,14 +266,29 @@ class DemoWalletRepository(
             val senderAlias = sender.getString("alias").orEmpty()
             val senderType = if (isQr) TransactionType.QR_PAGO else TransactionType.TRANSFERENCIA_ENVIADA
             val recipientType = if (isQr) TransactionType.QR_COBRO else TransactionType.TRANSFERENCIA_RECIBIDA
-            tx.update(senderRef, mapOf(
-                "balance" to senderBalance - amount, "lastOperationId" to operationId,
-                "updatedAt" to FieldValue.serverTimestamp()
-            ))
-            tx.update(recipientRef, mapOf(
-                "balance" to FieldValue.increment(amount), "lastOperationId" to operationId,
-                "updatedAt" to FieldValue.serverTimestamp()
-            ))
+            if (!selfConsumption) {
+                tx.update(senderRef, mapOf(
+                    "balance" to senderBalance - amount, "lastOperationId" to operationId,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ))
+                tx.update(recipientRef, mapOf(
+                    "balance" to FieldValue.increment(amount), "lastOperationId" to operationId,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ))
+            } else {
+                // Autoconsumo de prueba: el titular simula el pago de su propio comercio.
+                // No se debita ni acredita saldo porque ambas partes son la misma billetera.
+                tx.update(senderRef, mapOf(
+                    "lastOperationId" to operationId,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ))
+                tx.update(orderRef!!, mapOf(
+                    "paymentStatus" to "PAGADO",
+                    "paymentMethod" to "AUTOCONSUMO_OMNI_PAY_DEMO",
+                    "paymentEnvironment" to "DEMO",
+                    "paidAt" to FieldValue.serverTimestamp()
+                ))
+            }
             val orderDetails = if (orderId != null && orderSnapshot != null) mapOf(
                 "orderId" to orderId,
                 "storeId" to (orderSnapshot.getString("storeId") ?: ""),
@@ -282,7 +300,8 @@ class DemoWalletRepository(
                 "paymentEnvironment" to "DEMO"
             ) else emptyMap()
             val operationData = mutableMapOf<String, Any>(
-                "operationId" to operationId, "kind" to if (isQr) "QR_PAYMENT" else "TRANSFER",
+                "operationId" to operationId,
+                "kind" to if (selfConsumption) "SELF_CONSUMPTION_DEMO" else if (isQr) "QR_PAYMENT" else "TRANSFER",
                 "senderUid" to senderUid, "recipientUid" to recipientUid,
                 "amount" to amount, "createdAt" to FieldValue.serverTimestamp()
             )
@@ -290,26 +309,37 @@ class DemoWalletRepository(
                 operationData["orderId"] = orderId
                 operationData["correlationId"] = orderId
                 operationData["environment"] = "DEMO"
-                operationData["status"] = "APROBADA · DEMO"
-                operationData["title"] = "Pago de pedido OMNI"
+                operationData["status"] = if (selfConsumption) "AUTOCONSUMO REGISTRADO · DEMO" else "APROBADA · DEMO"
+                operationData["title"] = if (selfConsumption) "Autoconsumo de pedido OMNI" else "Pago de pedido OMNI"
+                operationData["selfConsumption"] = selfConsumption
+                operationData["balanceImpact"] = if (selfConsumption) 0.0 else amount
                 operationData.putAll(orderDetails)
             }
             tx.set(operationRef, operationData)
             tx.set(senderRef.collection("transactions").document(operationId), transactionData(
-                operationId, senderType, if (orderId != null) "Pago de pedido OMNI" else if (isQr) "Pago con QR" else "Transferencia enviada",
-                recipientAlias, amount, orderDetails
+                operationId,
+                if (selfConsumption) TransactionType.QR_PAGO else senderType,
+                if (selfConsumption) "Autoconsumo de pedido OMNI · sin movimiento de saldo" else if (orderId != null) "Pago de pedido OMNI" else if (isQr) "Pago con QR" else "Transferencia enviada",
+                if (selfConsumption) "Tu propio comercio · DEMO" else recipientAlias,
+                amount,
+                orderDetails + if (selfConsumption) mapOf("selfConsumption" to true, "balanceImpact" to 0.0) else emptyMap()
             ))
-            tx.set(recipientRef.collection("transactions").document(operationId), transactionData(
-                operationId, recipientType, if (orderId != null) "Cobro de pedido OMNI" else if (isQr) "Cobro con QR" else "Transferencia recibida",
-                senderAlias, amount, orderDetails
-            ))
-            if (orderId != null) "PEDIDO PAGADO · OMNI PAY DEMO" else if (isQr) "PAGO QR APROBADO · DEMO" else "TRANSFERENCIA APROBADA · DEMO"
+            if (!selfConsumption) {
+                tx.set(recipientRef.collection("transactions").document(operationId), transactionData(
+                    operationId, recipientType, if (orderId != null) "Cobro de pedido OMNI" else if (isQr) "Cobro con QR" else "Transferencia recibida",
+                    senderAlias, amount, orderDetails
+                ))
+            }
+            if (selfConsumption) "AUTOCONSUMO REGISTRADO · DEMO · SALDO SIN CAMBIOS"
+            else if (orderId != null) "PEDIDO PAGADO · OMNI PAY DEMO" else if (isQr) "PAGO QR APROBADO · DEMO" else "TRANSFERENCIA APROBADA · DEMO"
             }.addOnSuccessListener {
-                UsageAnalyticsRepository.trackWalletOperation(senderUid, if (orderId != null) "DEMO_ORDER_PAYMENT" else if (isQr) "DEMO_QR_PAYMENT" else "DEMO_TRANSFER")
+                UsageAnalyticsRepository.trackWalletOperation(senderUid, if (selfConsumption) "DEMO_ORDER_SELF_CONSUMPTION" else if (orderId != null) "DEMO_ORDER_PAYMENT" else if (isQr) "DEMO_QR_PAYMENT" else "DEMO_TRANSFER")
                 if (orderId != null) {
                     UsageAnalyticsRepository.trackEvent(senderUid, "orders", "ORDER_PAYMENT_COMPLETED", mapOf(
                         "operationId" to operationId, "correlationId" to orderId,
-                        "stage" to "DEMO_WALLET_TRANSFER_CONFIRMED", "success" to true
+                        "stage" to if (selfConsumption) "DEMO_SELF_CONSUMPTION_CONFIRMED" else "DEMO_WALLET_TRANSFER_CONFIRMED",
+                        "selfConsumption" to selfConsumption, "balanceImpact" to if (selfConsumption) 0.0 else amount,
+                        "success" to true
                     ))
                 }
                 done(Result.success(it))
