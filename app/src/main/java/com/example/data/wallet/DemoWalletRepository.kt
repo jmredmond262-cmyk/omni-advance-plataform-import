@@ -222,8 +222,26 @@ class DemoWalletRepository(
         val orderRef = orderId?.let { firestore.collection("storeOrders").document(it) }
         val executeAtomicTransfer: () -> Unit = {
             firestore.runTransaction { tx ->
+            // Todas las lecturas se realizan antes de cualquier escritura. La operación estable
+            // orderpay_<id> se consulta dentro de la misma transacción para impedir dos débitos
+            // simultáneos si el usuario toca pagar dos veces o reintenta tras perder conexión.
+            val operation = tx.get(operationRef)
             val orderSnapshot = orderRef?.let { tx.get(it) }
             val sender = tx.get(senderRef)
+            val recipient = tx.get(recipientRef)
+
+            if (operation.exists()) {
+                if (orderId != null) {
+                    check(operation.getString("senderUid") == senderUid &&
+                        operation.getString("recipientUid") == recipientUid &&
+                        operation.getString("orderId") == orderId &&
+                        kotlin.math.abs((operation.get("amount") as? Number)?.toDouble()?.minus(amount) ?: Double.POSITIVE_INFINITY) < 0.005
+                    ) { "El identificador del pago ya está asociado a otra operación." }
+                    return@runTransaction "PEDIDO YA PAGADO · DEMO"
+                }
+                check(false) { "El identificador de la operación ya existe." }
+            }
+
             if (orderId != null) {
                 check(orderSnapshot?.exists() == true) { "El pedido ya no está disponible." }
                 check(orderSnapshot?.getString("customerUid") == senderUid) { "Solo quien creó el pedido puede pagarlo." }
@@ -236,6 +254,7 @@ class DemoWalletRepository(
                 }
             }
             check(sender.exists()) { "Tu billetera DEMO no está disponible." }
+            check(recipient.exists()) { "La billetera DEMO del comercio no está disponible." }
             val senderBalance = (sender.get("balance") as? Number)?.toDouble() ?: 0.0
             check(senderBalance >= amount) { "Saldo insuficiente para completar la operación." }
             val recipientAlias = "Cuenta OMNI Pay"
@@ -271,20 +290,9 @@ class DemoWalletRepository(
                 done(Result.success(it))
             }.addOnFailureListener { done(Result.failure(it)) }
         }
-        if (orderId != null) {
-            // La consulta respeta las reglas: solo lee operaciones enviadas por esta cuenta.
-            firestore.collection("walletOperations")
-                .whereEqualTo("senderUid", senderUid)
-                .whereEqualTo("orderId", orderId)
-                .limit(1).get()
-                .addOnSuccessListener { existing ->
-                    if (!existing.isEmpty) done(Result.success("PEDIDO YA PAGADO · DEMO"))
-                    else executeAtomicTransfer()
-                }
-                .addOnFailureListener { done(Result.failure(it)) }
-        } else {
-            executeAtomicTransfer()
-        }
+        // La comprobación de duplicados se hace dentro de la transacción atómica,
+        // no mediante una consulta previa que podría competir con otro intento de pago.
+        executeAtomicTransfer()
     }
 
     private fun transactionData(
