@@ -62,7 +62,8 @@ private data class OmniStoreOrder(
     val paymentStatus: String,
     val fulfillmentType: String,
     val deliveryAddress: String,
-    val qrNonce: String
+    val qrNonce: String,
+    val isLocalDemo: Boolean = false
 )
 
 @Composable
