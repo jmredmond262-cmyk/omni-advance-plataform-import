@@ -51,7 +51,7 @@ fun DemoMarketplaceScreen(
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("ENTORNO DEMO · SIN DINERO REAL", color = DemoViolet, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
                 Text(
-                    "Ahora las compras se registran como pedidos compartidos de OMNI. El catálogo, los precios y el stock deben estar publicados por cada comercio.",
+                    "En esta experiencia podés recorrer un catálogo de prueba, armar un carrito y generar un QR DEMO local. No se envía un pedido ni se realiza un cobro.",
                     color = Color.White, fontSize = 11.sp
                 )
             }
@@ -73,11 +73,11 @@ fun DemoMarketplaceScreen(
                         modifier = Modifier.padding(start = 9.dp))
                 }
                 Text(
-                    "Elegí un comercio habilitado, agregá sus productos y confirmá. OMNI guardará el pedido en Firestore y generará un QR que el comercio podrá leer desde otro teléfono.",
+                    "Elegí un comercio de muestra, agregá productos y confirmá para generar un QR ilustrativo. Esta demostración funciona sin conexión a Firebase y el código no puede utilizarse para retirar ni cobrar.",
                     color = DemoMuted, fontSize = 12.sp
                 )
                 Text(
-                    "El cliente podrá consultar el estado y pagar con OMNI Pay DEMO. El comerciante podrá aceptar, preparar y entregar el pedido. No se procesa dinero real.",
+                    "El QR permite visualizar el recorrido de compra y compartir la imagen de prueba. No crea un pedido compartido, no modifica stock y no habilita pagos ni entregas.",
                     color = DemoMuted, fontSize = 11.sp
                 )
                 Button(
