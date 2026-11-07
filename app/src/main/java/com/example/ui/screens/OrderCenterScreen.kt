@@ -191,9 +191,9 @@ fun OrderCenterScreen(
         var listener: ListenerRegistration? = null
         if (!demoMode && uid.isNotBlank() && (!merchantMode || merchantReady)) {
             val query = if (merchantMode) {
-                db.collection("storeOrders").whereEqualTo("merchantUid", uid)
+                db.collection("storeOrders").whereEqualTo("merchantUid", uid).limit(100)
             } else {
-                db.collection("storeOrders").whereEqualTo("customerUid", uid)
+                db.collection("storeOrders").whereEqualTo("customerUid", uid).limit(100)
             }
             listener = query.addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -203,15 +203,20 @@ fun OrderCenterScreen(
                         .filter { !merchantMode || it.storeId == store.id }
                         .sortedByDescending { it.id }
                     orders = loadedOrders
-                    loadedOrders.filter { it.paymentStatus == "PENDIENTE" }.forEach { pendingOrder ->
+                    val pendingOrderIds = loadedOrders.filter { it.paymentStatus == "PENDIENTE" }
+                        .map { it.id }.toSet()
+                    if (pendingOrderIds.isNotEmpty()) {
+                        // Una consulta acotada por cuenta reemplaza una lectura por cada pedido pendiente.
                         db.collection("walletOperations")
                             .whereEqualTo(if (merchantMode) "recipientUid" else "senderUid", uid)
-                            .whereEqualTo("orderId", pendingOrder.id)
-                            .limit(1).get()
-                            .addOnSuccessListener { payment ->
-                                if (!payment.isEmpty) {
+                            .limit(100)
+                            .get()
+                            .addOnSuccessListener { payments ->
+                                val paidOrderIds = payments.documents.mapNotNull { it.getString("orderId") }
+                                    .filter { it in pendingOrderIds }.toSet()
+                                if (paidOrderIds.isNotEmpty()) {
                                     orders = orders.map { current ->
-                                        if (current.id == pendingOrder.id) current.copy(paymentStatus = "PAGADA · DEMO") else current
+                                        if (current.id in paidOrderIds) current.copy(paymentStatus = "PAGADA · DEMO") else current
                                     }
                                 }
                             }

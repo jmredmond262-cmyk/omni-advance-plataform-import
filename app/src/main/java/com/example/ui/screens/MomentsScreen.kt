@@ -59,6 +59,7 @@ fun MomentsScreen(onBack: () -> Unit) {
             error = "Iniciá sesión para administrar tus fechas especiales."
         } else {
             listener = db.collection("omniMoments").whereEqualTo("ownerUid", uid)
+                .limit(100)
                 .addSnapshotListener { snapshot, exception ->
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar tus fechas especiales."

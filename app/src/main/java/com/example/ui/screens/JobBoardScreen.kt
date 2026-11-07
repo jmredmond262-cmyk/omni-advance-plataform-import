@@ -137,6 +137,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
         if (uid.isNotBlank()) {
             registration = db.collection("jobPosts")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(100)
                 .addSnapshotListener { snapshot, exception ->
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar las publicaciones."
@@ -180,6 +181,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
         if (uid.isNotBlank()) {
             registration = db.collection("jobApplications")
                 .whereEqualTo("postOwnerUid", uid)
+                .limit(100)
                 .addSnapshotListener { snapshot, exception ->
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar las postulaciones."

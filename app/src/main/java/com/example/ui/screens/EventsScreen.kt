@@ -74,7 +74,9 @@ fun EventsScreen(onBack: () -> Unit) {
     DisposableEffect(uid) {
         var listener: ListenerRegistration? = null
         if (uid.isNotBlank()) {
-            listener = db.collection("omniEvents").orderBy("createdAt", Query.Direction.DESCENDING)
+            listener = db.collection("omniEvents")
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(100)
                 .addSnapshotListener { snapshot, exception ->
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar los eventos."

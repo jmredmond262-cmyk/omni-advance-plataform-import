@@ -114,20 +114,16 @@ object MerchantProfileRepository {
             callback(emptyList())
             return
         }
-        db.collection("merchantProfiles").get()
+        // Consultar únicamente los perfiles de los comercios que ya aparecen en el directorio.
+        // Firestore limita whereIn a 30 valores; los demás conservan sus datos de directorio.
+        val visibleStores = stores.take(30)
+        db.collection("merchantProfiles")
+            .whereIn("storeId", visibleStores.map { it.id }.distinct())
+            .get()
             .addOnSuccessListener { snapshot ->
-                val profiles = snapshot.documents
+                val profiles = snapshot.documents.associateBy { it.getString("storeId") ?: it.id }
                 val enriched = stores.map { base ->
-                    val profile = profiles.firstOrNull { it.id == base.id }
-                        ?: profiles.firstOrNull { document ->
-                            val nameMatches = document.getString("storeName").orEmpty()
-                                .equals(base.name, ignoreCase = true)
-                            val profileAddress = document.getString("address").orEmpty()
-                            val addressMatches = profileAddress.isNotBlank() &&
-                                (base.address.contains(profileAddress, ignoreCase = true) ||
-                                    profileAddress.contains(base.address, ignoreCase = true))
-                            nameMatches && addressMatches
-                        }
+                    val profile = profiles[base.id]
                     if (profile != null) decode(profile, base).first else base
                 }
                 callback(enriched)
