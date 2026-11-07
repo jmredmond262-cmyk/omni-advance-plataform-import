@@ -189,7 +189,7 @@ fun MomentsScreen(onBack: () -> Unit) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("Tus momentos importantes, organizados en un solo lugar", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 Text("Registrá cumpleaños, aniversarios, graduaciones y fechas personales. Estos datos son privados y sólo visibles desde tu cuenta.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
-                Text("OMNI FLOW podrá mostrar recordatorios dentro de la aplicación. Las notificaciones automáticas con la app cerrada requieren una integración adicional.", color = Color(0xFF72E4FF), fontSize = 10.sp)
+                Text("Configurá avisos locales para recibir una notificación en la fecha y hora elegidas, incluso cuando OMNI esté cerrada.", color = Color(0xFF72E4FF), fontSize = 10.sp)
             }
         }
         Spacer(Modifier.height(8.dp))
