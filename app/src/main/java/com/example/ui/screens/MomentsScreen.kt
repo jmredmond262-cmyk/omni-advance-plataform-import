@@ -72,11 +72,19 @@ fun MomentsScreen(onBack: () -> Unit) {
     var reminderEnabled by remember { mutableStateOf(false) }
     var reminderHour by remember { mutableStateOf("09") }
     var reminderMinute by remember { mutableStateOf("00") }
+    var reminderTarget by remember { mutableStateOf<OmniMoment?>(null) }
+    var showReminderEditor by remember { mutableStateOf(false) }
+    var editReminderHour by remember { mutableStateOf("09") }
+    var editReminderMinute by remember { mutableStateOf("00") }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        reminderEnabled = granted
-        if (!granted) feedback = "Para recibir recordatorios, habilitá las notificaciones de OMNI desde los ajustes del teléfono."
+        if (reminderTarget != null) {
+            if (granted) showReminderEditor = true else { reminderTarget = null; feedback = "Para recibir recordatorios, habilitá las notificaciones de OMNI desde los ajustes del teléfono." }
+        } else {
+            reminderEnabled = granted
+            if (!granted) feedback = "Para recibir recordatorios, habilitá las notificaciones de OMNI desde los ajustes del teléfono."
+        }
     }
 
     DisposableEffect(uid) {
@@ -236,6 +244,14 @@ fun MomentsScreen(onBack: () -> Unit) {
                                         .onFailure { feedback = "No se pudo abrir el menú para compartir." }
                                 }) { Icon(Icons.Default.Share, "Compartir saludo", tint = Color(0xFF57DDF5)) }
                                 IconButton(onClick = {
+                                    reminderTarget = moment
+                                    editReminderHour = moment.reminderHour.toString().padStart(2, '0')
+                                    editReminderMinute = moment.reminderMinute.toString().padStart(2, '0')
+                                    if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else showReminderEditor = true
+                                }) { Icon(Icons.Default.NotificationsActive, "Configurar recordatorio", tint = if (moment.reminderEnabled) Color(0xFF57DDF5) else Color(0xFF8298B8)) }
+                                IconButton(onClick = {
                                     db.collection("omniMoments").document(moment.id).delete()
                                         .addOnSuccessListener { MomentReminderScheduler.cancel(context, moment.id); feedback = "Fecha especial eliminada." }
                                         .addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo eliminar la fecha." }
@@ -288,6 +304,56 @@ fun MomentsScreen(onBack: () -> Unit) {
         confirmButton = { TextButton(onClick = { saveMoment() }, enabled = !busy) { Text(if (busy) "Guardando…" else "Guardar fecha") } },
         dismissButton = { TextButton(onClick = { showEditor = false }, enabled = !busy) { Text("Cancelar") } }
     )
+    if (showReminderEditor && reminderTarget != null) {
+        val target = reminderTarget!!
+        AlertDialog(
+            onDismissRequest = { showReminderEditor = false; reminderTarget = null },
+            containerColor = Color(0xFF101B30),
+            title = { Text("Recordatorio de ${target.personName}", color = Color.White) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("OMNI te avisará el día de esta fecha especial, incluso si la aplicación está cerrada.", color = Color(0xFFB8C8D9), fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(editReminderHour, { editReminderHour = it.filter(Char::isDigit).take(2) }, label = { Text("Hora") }, singleLine = true, modifier = Modifier.weight(1f))
+                        Text(":", color = Color.White)
+                        OutlinedTextField(editReminderMinute, { editReminderMinute = it.filter(Char::isDigit).take(2) }, label = { Text("Minutos") }, singleLine = true, modifier = Modifier.weight(1f))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val h = editReminderHour.toIntOrNull()
+                    val m = editReminderMinute.toIntOrNull()
+                    if (h == null || h !in 0..23 || m == null || m !in 0..59) {
+                        feedback = "Ingresá una hora válida en formato 24 horas (HH:MM)."
+                    } else {
+                        db.collection("omniMoments").document(target.id).update(mapOf(
+                            "reminderEnabled" to true, "reminderHour" to h, "reminderMinute" to m,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )).addOnSuccessListener {
+                            MomentReminderScheduler.schedule(context, target.id, target.personName, target.occasion, target.date, h, m)
+                            feedback = "Recordatorio actualizado para las ${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}."
+                            showReminderEditor = false; reminderTarget = null
+                        }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo guardar el recordatorio." }
+                    }
+                }) { Text("Guardar aviso") }
+            },
+            dismissButton = {
+                Row {
+                    if (target.reminderEnabled) TextButton(onClick = {
+                        db.collection("omniMoments").document(target.id).update(mapOf(
+                            "reminderEnabled" to false, "updatedAt" to FieldValue.serverTimestamp()
+                        )).addOnSuccessListener {
+                            MomentReminderScheduler.cancel(context, target.id)
+                            feedback = "Recordatorio desactivado."
+                            showReminderEditor = false; reminderTarget = null
+                        }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo desactivar el recordatorio." }
+                    }) { Text("Quitar aviso", color = Color(0xFFFF9B9B)) }
+                    TextButton(onClick = { showReminderEditor = false; reminderTarget = null }) { Text("Cancelar") }
+                }
+            }
+        )
+    }
     showFeatureInfo?.let { feature ->
         val detail = when (feature) {
             "Saludos y tarjetas" -> "Prepará dedicatorias y compartilas desde cada fecha guardada. La tarjeta visual personalizada se incorporará en la siguiente etapa."
