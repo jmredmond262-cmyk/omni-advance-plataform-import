@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
 
 private data class AdminTab(val id: String, val label: String, val collection: String? = null)
 private val tabs = listOf(
-  AdminTab("dashboard", "Panel ejecutivo"), AdminTab("users", "Cuentas de usuario", "users"),
+  AdminTab("dashboard", "Panel ejecutivo"), AdminTab("liveMap", "Mapa en tiempo real"), AdminTab("users", "Cuentas de usuario", "users"),
   AdminTab("wallets", "Cuentas OMNI Pay", "walletAccounts"), AdminTab("operations", "Movimientos OMNI Pay", "walletOperations"), AdminTab("finance", "Control financiero DEMO"),
   AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
   AdminTab("feedback", "Opiniones y reportes", "appFeedback"), AdminTab("activity", "Actividad de uso", "usageEvents"), AdminTab("modules", "Módulos y funciones", "moduleRegistry"),
@@ -80,7 +80,8 @@ private val navGroups = listOf(
   AdminNavGroup("overview", "Panel", Icons.Default.Dashboard, listOf("dashboard")),
   AdminNavGroup("people", "Usuarios", Icons.Default.PeopleAlt, listOf("users", "feedback")),
   AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
-  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings"))
+  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
+  AdminNavGroup("geography", "Mapa", Icons.Default.Public, listOf("liveMap"))
 )
 
 @Composable
@@ -95,22 +96,39 @@ private fun OmniAdminRoot() {
   var nextOffset by remember { mutableStateOf(0) }
   var hasMore by remember { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
+  val sectionCache = remember { mutableMapOf<String, Pair<Long, JSONObject>>() }
 
-  fun refresh() {
+  fun refresh(force: Boolean = true) {
     val current = auth.currentUser ?: return
+    val cacheKey = current.uid + ":" + selected
+    if (!force && selected != "liveMap") {
+      val cached = sectionCache[cacheKey]
+      if (cached != null && System.currentTimeMillis() - cached.first < 30_000L) {
+        payload = cached.second
+        nextPageToken = payload.optString("nextPageToken", "")
+        nextOffset = payload.optInt("nextOffset", 0)
+        hasMore = payload.optBoolean("hasMore", false)
+        error = ""
+        loading = false
+        return
+      }
+    }
     scope.launch {
       loading = true
       error = ""
       try {
-        val token = current.getIdToken(true).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
+        val token = current.getIdToken(false).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
         val tab = tabs.first { it.id == selected }
         nextPageToken = ""; nextOffset = 0; hasMore = false
-        payload = when (selected) {
+        val result = when (selected) {
           "dashboard" -> AdminApi.call(token, "dashboard")
+          "liveMap" -> AdminApi.call(token, "geoActivity")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
         }
+        payload = result
+        if (selected != "liveMap") sectionCache[cacheKey] = System.currentTimeMillis() to result
         nextPageToken = payload.optString("nextPageToken", "")
         nextOffset = payload.optInt("nextOffset", 0)
         hasMore = payload.optBoolean("hasMore", false)
@@ -125,7 +143,7 @@ private fun OmniAdminRoot() {
     scope.launch {
       loading = true; error = ""
       try {
-        val token = current.getIdToken(true).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
+        val token = current.getIdToken(false).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
         val tab = tabs.first { it.id == selected }
         val data = JSONObject().put("collection", tab.collection).put("limit", 100)
         if (nextPageToken.isNotBlank()) data.put("pageToken", nextPageToken)
@@ -139,12 +157,13 @@ private fun OmniAdminRoot() {
         nextPageToken = page.optString("nextPageToken", "")
         nextOffset = page.optInt("nextOffset", nextOffset + incoming.length())
         hasMore = page.optBoolean("hasMore", false)
+        sectionCache[current.uid + ":" + selected] = System.currentTimeMillis() to payload
       } catch (ex: Exception) { error = ex.message ?: "No se pudieron cargar más registros." }
       finally { loading = false }
     }
   }
 
-  LaunchedEffect(user?.uid, selected) { if (user != null) refresh() }
+  LaunchedEffect(user?.uid, selected) { if (user != null) refresh(force = false) }
 
   if (user == null) {
     AdminLogin(
@@ -168,7 +187,7 @@ private fun OmniAdminRoot() {
   } else {
     AdminHome(
       email = user?.email ?: "Administrador", selected = selected, payload = payload,
-      loading = loading, error = error, onSelect = { selected = it }, onRefresh = ::refresh, onLoadMore = ::loadMore, hasMore = hasMore,
+      loading = loading, error = error, onSelect = { selected = it }, onRefresh = { refresh(force = true) }, onLoadMore = ::loadMore, hasMore = hasMore,
       onSignOut = {
         auth.signOut(); user = null; payload = JSONObject(); error = ""; selected = "dashboard"
       },
@@ -362,6 +381,7 @@ private fun AdminHome(
         )
       }
       when (selected) {
+        "liveMap" -> LiveMapScreen(payload, loading, error, onRefresh)
         "dashboard" -> DashboardContent(payload, onSelect, onRefresh)
         "finance" -> FinanceContent(payload)
         "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray(), onSaveModule)
@@ -380,7 +400,6 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
   val diagnostics = payload.optJSONObject("diagnostics") ?: JSONObject()
   val recentActivity = jsonArrayToList(payload.optJSONArray("recentUsageEvents"))
   val recentOperations = jsonArrayToList(payload.optJSONArray("recentOperations"))
-  var showMap by remember { mutableStateOf(false) }
   val shortcuts = listOf(
     Triple("Usuarios", "users", Icons.Default.PeopleAlt), Triple("OMNI Pay", "wallets", Icons.Default.AccountBalanceWallet),
     Triple("Comercios", "stores", Icons.Default.Storefront), Triple("Pedidos", "orders", Icons.Default.ShoppingBag),
@@ -432,7 +451,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
       }
     }
     item {
-      Card(Modifier.fillMaxWidth().clickable { showMap = true }.border(1.dp, Color(0xFF00DFFC), RoundedCornerShape(20.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF091A2D)), shape = RoundedCornerShape(20.dp)) {
+      Card(Modifier.fillMaxWidth().clickable { onSelect("liveMap") }.border(1.dp, Color(0xFF00DFFC), RoundedCornerShape(20.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF091A2D)), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF103D55), Color(0xFF0A1B30), Color(0xFF11152D)))).padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text("GEOACTIVITY", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.8.sp); Spacer(Modifier.weight(1f))
@@ -495,7 +514,6 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
       }
     }
   }
-  if (showMap) ActivityMapDialog(points = payload.optJSONArray("geoActivity") ?: JSONArray(), summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject(), onRefresh = onRefresh, onDismiss = { showMap = false })
 }
 
 @Composable

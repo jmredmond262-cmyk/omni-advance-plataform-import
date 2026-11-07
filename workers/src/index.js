@@ -4,6 +4,8 @@ const FIRESTORE_ROOT = `https://firestore.googleapis.com/v1/projects/${PRIMARY_P
 const TOKEN_ISSUER = `https://securetoken.google.com/${ADMIN_AUTH_PROJECT}`;
 let serviceTokenCache = { token: "", expiresAt: 0 };
 let firebaseKeysCache = { keys: [], expiresAt: 0 };
+let dashboardCache = { data: null, expiresAt: 0 };
+let geoActivityCache = { data: null, expiresAt: 0 };
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
@@ -124,7 +126,8 @@ async function firestore(env, path, options = {}) {
   if (!response.ok) {
     const message = data.error?.message || "Error al consultar la base de datos OMNI.";
     if (response.status === 404) return { missing: true };
-    throw new Error(message);
+    const reason = data.error?.errors?.[0]?.reason || data.error?.status || "UNKNOWN";
+    throw new Error("Firestore HTTP " + response.status + " [" + reason + "]: " + message);
   }
   return data;
 }
@@ -138,6 +141,20 @@ async function listDocumentsPage(env, collection, limit = 100, pageToken = "") {
   const data = await firestore(env, "/" + encodeURIComponent(collection) + "?" + params.toString());
   return { items: (data.documents || []).map(documentData), nextPageToken: data.nextPageToken || "" };
 }
+
+async function getDocumentsByIds(env, collection, ids) {
+  const uniqueIds = [...new Set((ids || []).map(value => String(value || "").trim()).filter(Boolean))].slice(0, 100);
+  if (!uniqueIds.length) return [];
+  const documents = uniqueIds.map(id =>
+    FIRESTORE_ROOT + "/" + encodeURIComponent(collection) + "/" + encodeURIComponent(id)
+  );
+  const rows = await firestore(env, ":batchGet", {
+    method: "POST",
+    body: JSON.stringify({ documents })
+  });
+  return (rows || []).filter(row => row.found).map(row => documentData(row.found));
+}
+
 async function recentDocuments(env, collection, limit = 8, offset = 0) {
   const structuredQuery = {
     from: [{ collectionId: collection }],
@@ -148,16 +165,22 @@ async function recentDocuments(env, collection, limit = 8, offset = 0) {
   const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
-async function usageEventsLast7Days(env) {
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+async function queryRecentDocuments(env, collection, orderField, limit, cutoffField = "", cutoffValue = "") {
   const structuredQuery = {
-    from: [{ collectionId: "usageEvents" }],
-    where: { fieldFilter: { field: { fieldPath: "createdAt" }, op: "GREATER_THAN_OR_EQUAL", value: { timestampValue: cutoff } } },
-    orderBy: [{ field: { fieldPath: "createdAt" }, direction: "DESCENDING" }],
-    limit: 5000
+    from: [{ collectionId: collection }],
+    orderBy: [{ field: { fieldPath: orderField }, direction: "DESCENDING" }],
+    limit: Math.min(Math.max(Number(limit) || 100, 1), 1000)
   };
+  if (cutoffField && cutoffValue) {
+    structuredQuery.where = { fieldFilter: { field: { fieldPath: cutoffField }, op: "GREATER_THAN_OR_EQUAL", value: { timestampValue: cutoffValue } } };
+  }
   const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
+}
+async function usageEventsLast7Days(env) {
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // Muestra acotada para evitar lecturas masivas en cada apertura del panel.
+  return queryRecentDocuments(env, "usageEvents", "createdAt", 500, "createdAt", cutoff);
 }
 async function countDocuments(env, collection) {
   const query = {
@@ -198,41 +221,40 @@ function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
-function aggregateGeoPresence(records) {
-  const buckets = new Map();
+function aggregateGeoPresence(records, profiles) {
+  const labels = userLabels(profiles);
   const now = Date.now();
-  let freshUsers = 0;
+  const points = [];
+  let activeUsers = 0;
   for (const record of records) {
     if (record.consent !== true) continue;
     const updatedAt = Date.parse(record.updatedAt || "");
-    if (!Number.isFinite(updatedAt) || now - updatedAt > 24 * 60 * 60 * 1000 || updatedAt > now + 5 * 60 * 1000) continue;
+    if (!Number.isFinite(updatedAt) || now - updatedAt > 3 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
     const uid = String(record.uid || record.id || "");
-    const lat = Number(record.latitude);
-    const lon = Number(record.longitude);
-    if (!uid || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
-    // Reject precise coordinates: this collection is reserved for the app's ~1 km privacy grid.
-    if (Math.abs(lat * 100 - Math.round(lat * 100)) > 0.00001 ||
-        Math.abs(lon * 100 - Math.round(lon * 100)) > 0.00001) continue;
-    freshUsers += 1;
-    const locality = String(record.locality || "Localidad no informada").trim().slice(0, 80);
-    const province = String(record.province || "Provincia no informada").trim().slice(0, 80);
-    const country = String(record.country || "País no informado").trim().slice(0, 80);
-    const key = lat.toFixed(2) + "," + lon.toFixed(2) + "|" + locality.toLowerCase() + "|" + province.toLowerCase();
-    const current = buckets.get(key) || {
-      latitude: lat, longitude: lon, locality, province, country, users: new Set()
-    };
-    current.users.add(uid);
-    buckets.set(key, current);
+    const latitude = Number(record.latitude);
+    const longitude = Number(record.longitude);
+    const accuracyMeters = Number(record.accuracyMeters);
+    if (!uid || !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+        Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
+        !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000) continue;
+    const locationTime = Number(record.locationTimeMillis || Date.parse(record.locationTime || record.updatedAt || ""));
+    if (!Number.isFinite(locationTime) || now - locationTime > 5 * 60 * 1000 || locationTime > now + 60 * 1000) continue;
+    activeUsers += 1;
+    points.push({
+      uid,
+      userLabel: labels.get(uid) || ("Cuenta OMNI · " + uid.slice(0, 8)),
+      latitude,
+      longitude,
+      accuracyMeters: Math.round(accuracyMeters),
+      locality: String(record.locality || "Localidad no informada").trim().slice(0, 80),
+      province: String(record.province || "Provincia no informada").trim().slice(0, 80),
+      country: String(record.country || "País no informado").trim().slice(0, 80),
+      updatedAt: record.updatedAt,
+      locationTime: record.locationTime || record.updatedAt,
+      status: "online"
+    });
   }
-  // A map marker is emitted only when at least three distinct accounts share the same area.
-  const points = [...buckets.values()]
-    .filter(point => point.users.size >= 3)
-    .map(point => ({
-      latitude: point.latitude, longitude: point.longitude,
-      locality: point.locality, province: point.province, country: point.country,
-      count: point.users.size
-    }));
-  return { points, freshUsers, privacyThreshold: 3, freshnessHours: 24 };
+  return { points, activeUsers, freshnessMinutes: 3 };
 }
 
 function summarizeUsage(events) {
@@ -350,19 +372,29 @@ function summarizeUsage(events) {
   };
 }
 async function dashboard(env) {
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "geoPresence", "moduleRegistry", "adminAuditLogs"];
-  const counts = await Promise.all(collections.map(name => countDocuments(env, name)));
-  const [walletPage, operations, userProfiles, usageEvents, geoPresencePage] = await Promise.all([
-    listDocumentsPage(env, "walletAccounts", 200),
-    recentDocuments(env, "walletOperations", 8),
-    recentDocuments(env, "users", 200),
-    usageEventsLast7Days(env),
-    listAllDocuments(env, "geoPresence", 10000)
+  const nowMs = Date.now();
+  if (dashboardCache.data && dashboardCache.expiresAt > nowMs) return dashboardCache.data;
+  const failures = [];
+  async function safe(label, task, fallback) {
+    try { return await task(); }
+    catch (error) {
+      console.error("OMNI dashboard source failed: " + label, error);
+      failures.push({ source: label, message: String(error?.message || error).slice(0, 240) });
+      return fallback;
+    }
+  }
+  // El panel ejecutivo sólo cuenta las tres métricas visibles en su portada.
+  const collections = ["users", "walletAccounts", "storeOrders"];
+  const countResults = [];
+  for (const name of collections) {
+    countResults.push(await safe("count:" + name, () => countDocuments(env, name), 0));
+  }
+  const [operations, userProfiles, usageEvents] = await Promise.all([
+    safe("walletOperations:recent", () => recentDocuments(env, "walletOperations", 8), []),
+    safe("users:recent", () => recentDocuments(env, "users", 30), []),
+    safe("usageEvents:last7days", () => usageEventsLast7Days(env), [])
   ]);
-  const wallets = walletPage.items;
-  const resolvedCounts = Object.fromEntries(collections.map((name, index) => [
-    name, name === "users" ? Math.max(counts[index], userProfiles.length) : counts[index]
-  ]));
+  const resolvedCounts = Object.fromEntries(collections.map((name, index) => [name, countResults[index]]));
   const recentUsers = [...userProfiles]
     .sort((a, b) => String(b.createdAt || b.lastSeenAt || b.updatedAt || "").localeCompare(String(a.createdAt || a.lastSeenAt || a.updatedAt || "")))
     .slice(0, 8);
@@ -378,39 +410,31 @@ async function dashboard(env) {
     const day = String(event.createdAt || "").slice(0, 10);
     if (Object.prototype.hasOwnProperty.call(usageByDay, day)) usageByDay[day] += 1;
   }
-  const usageTrend = dayKeys.map(day => ({
-    date: day.slice(8, 10) + "/" + day.slice(5, 7),
-    count: usageByDay[day]
-  }));
+  const usageTrend = dayKeys.map(day => ({ date: day.slice(8, 10) + "/" + day.slice(5, 7), count: usageByDay[day] }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoPresencePage.items);
-  return {
+  const result = {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
     analytics,
     usageTrend,
-    walletBalanceSample: wallets.reduce((sum, item) => sum + (Number(item.balance) || 0), 0),
-    walletSampleSize: wallets.length,
-    usageSampleLimit: 5000,
-    usageSampleComplete: usageEvents.length < 5000,
-    recentUsers, recentOperations: operations,
-    geoActivity: geoActivity.points,
-    geoActivitySummary: {
-      consentedUsersFresh24h: geoActivity.freshUsers,
-      visibleAreas: geoActivity.points.length,
-      privacyThreshold: geoActivity.privacyThreshold,
-      freshnessHours: geoActivity.freshnessHours,
-      sampleComplete: geoPresencePage.complete
-    },
+    recentUsers,
+    recentOperations: operations,
+    usageSampleLimit: 500,
+    usageSampleComplete: usageEvents.length < 500,
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
       usageEventsVisibleLast7Days: usageEvents.length,
-      diagnosticEventSeen: usageEvents.some(event => event.event === "DIAGNOSTIC_TEST"),
+      diagnosticEventSeen: usageEvents.length > 0,
       latestUsageEventAt: usageEvents[0]?.createdAt || null,
       userProfilesVisible: userProfiles.length,
-      usageQueryWindowDays: 7
+      usageQueryWindowDays: 7,
+      sourceFailures: failures,
+      cacheSeconds: 45,
+      usageSampleLimit: 500
     }
   };
+  dashboardCache = { data: result, expiresAt: Date.now() + 45000 };
+  return result;
 }
 async function listAllDocuments(env, collection, maxItems = 1000) {
   const items = [];
@@ -442,20 +466,20 @@ async function recentTransactionDocuments(env, limit = 100) {
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
 async function finance(env) {
-  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions, userPage] = await Promise.all([
+  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions] = await Promise.all([
     countDocuments(env, "walletAccounts"),
-    listAllDocuments(env, "walletAccounts", 1000),
+    listDocumentsPage(env, "walletAccounts", 100),
     countDocuments(env, "walletOperations"),
-    recentDocuments(env, "walletOperations", 5000),
+    recentDocuments(env, "walletOperations", 100),
     countSubcollectionDocuments(env, "transactions"),
-    recentTransactionDocuments(env, 100),
-    listAllDocuments(env, "users", 1000)
+    recentTransactionDocuments(env, 100)
   ]);
-  const profileByUid = new Map(userPage.items.map(profile => [
+  const profiles = await getDocumentsByIds(env, "users", accountPage.items.map(account => account.uid || account.id));
+  const profileByUid = new Map(profiles.map(profile => [
     String(profile.uid || profile.id || ""),
     String(profile.displayName || profile.fullName || profile.name || profile.email || "Titular no informado")
   ]));
-  const accounts = accountPage.items.slice(0, 100).map(account => ({
+  const accounts = accountPage.items.map(account => ({
     ...account,
     holderName: profileByUid.get(String(account.uid || account.id || "")) || "Titular no informado"
   }));
@@ -484,7 +508,7 @@ async function finance(env) {
       transactionSampleSize: transactions.length,
       transactionSampleComplete: transactionCount <= transactions.length,
       accountSampleSize: accountPage.items.length,
-      accountSampleComplete: accountPage.complete,
+      accountSampleComplete: accountCount <= accountPage.items.length && !accountPage.nextPageToken,
       operationsSampleSize: operationPage.length,
       operationsSampleComplete: operationCount <= operationPage.length
     },
@@ -493,10 +517,28 @@ async function finance(env) {
     operations
   };
 }
-
 async function handleAction(env, actor, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
+    case "geoActivity": {
+      const now = Date.now();
+      if (geoActivityCache.data && geoActivityCache.expiresAt > now) return geoActivityCache.data;
+      const records = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200);
+      const geo = aggregateGeoPresence(records, []);
+      const result = {
+        geoActivity: geo.points,
+        geoActivitySummary: {
+          activeUsers: geo.activeUsers,
+          visibleMarkers: geo.points.length,
+          freshnessMinutes: geo.freshnessMinutes,
+          coordinatePrecision: "GPS sin redondeo",
+          sampleComplete: false,
+          sourceAvailable: true
+        }
+      };
+      geoActivityCache = { data: result, expiresAt: Date.now() + 10000 };
+      return result;
+    }
     case "finance": return finance(env);
     case "list": {
       const collection = String(data.collection || "");
@@ -505,18 +547,17 @@ async function handleAction(env, actor, action, data) {
       if (collection === "usageEvents") {
         const offset = Math.max(0, Math.min(Number(data.offset) || 0, 50000));
         const pageSize = Math.min(Math.max(Number(data.limit) || 100, 1), 100);
-        const [items, profiles] = await Promise.all([
-          recentDocuments(env, collection, pageSize + 1, offset),
-          recentDocuments(env, "users", 200)
-        ]);
+        const items = await recentDocuments(env, collection, pageSize + 1, offset);
+        const visibleItems = items.slice(0, pageSize);
+        const profiles = await getDocumentsByIds(env, "users", visibleItems.map(item => item.uid));
         const hasMore = items.length > pageSize;
-        return { items: attachUserLabels(items.slice(0, pageSize), profiles), hasMore, nextOffset: hasMore ? offset + pageSize : null };
+        return { items: attachUserLabels(visibleItems, profiles), hasMore, nextOffset: hasMore ? offset + pageSize : null };
       }
       const page = await listDocumentsPage(env, collection, data.limit, String(data.pageToken || ""));
       let items = page.items;
       if (collection === "walletAccounts") {
-        const profiles = await listAllDocuments(env, "users", 1000);
-        const labels = new Map(profiles.items.map(profile => [
+        const profiles = await getDocumentsByIds(env, "users", items.map(item => item.uid || item.id));
+        const labels = new Map(profiles.map(profile => [
           String(profile.uid || profile.id || ""),
           String(profile.displayName || profile.fullName || profile.name || profile.email || "Titular no informado")
         ]));
@@ -591,28 +632,29 @@ async function handleGeoPresenceRequest(request, env) {
   if (data.enabled !== true || data.consent !== true) throw new ApiError(400, "invalid-argument", "La ubicación requiere autorización expresa.");
   const latitude = Number(data.latitude);
   const longitude = Number(data.longitude);
-  const roundedLatitude = Math.round(latitude * 100) / 100;
-  const roundedLongitude = Math.round(longitude * 100) / 100;
+  const accuracyMeters = Number(data.accuracyMeters);
+  const locationTime = Number(data.locationTimeMillis);
+  const now = Date.now();
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
       Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
-      Math.abs(latitude - roundedLatitude) > 0.000001 ||
-      Math.abs(longitude - roundedLongitude) > 0.000001) {
-    throw new ApiError(400, "invalid-argument", "La ubicación debe estar redondeada a una celda aproximada de 1 km.");
+      !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000 ||
+      !Number.isFinite(locationTime) || now - locationTime > 2 * 60 * 1000 || locationTime > now + 60 * 1000) {
+    throw new ApiError(400, "invalid-argument", "Se requiere una posición GPS válida, reciente y con precisión informada.");
   }
-  const allowedAccuracy = ["hasta 100 m", "100 a 500 m", "500 m a 1 km", "más de 1 km"];
-  const accuracyBand = allowedAccuracy.includes(String(data.accuracyBand || "")) ? String(data.accuracyBand) : "más de 1 km";
   await writeDocument(env, "geoPresence", identity.uid, {
     uid: identity.uid,
-    latitude: roundedLatitude,
-    longitude: roundedLongitude,
+    latitude,
+    longitude,
+    accuracyMeters,
+    locationTime: new Date(locationTime).toISOString(),
+    locationTimeMillis: locationTime,
     locality: String(data.locality || "").trim().slice(0, 80) || "Localidad no informada",
     province: String(data.province || "").trim().slice(0, 80) || "Provincia no informada",
     country: String(data.country || "").trim().slice(0, 80) || "País no informado",
-    accuracyBand,
     consent: true,
     updatedAt: new Date().toISOString()
   });
-  return json({ ok: true, result: { saved: true, precision: "approx-1km" } });
+  return json({ ok: true, result: { saved: true, precision: "gps-exact", accuracyMeters: Math.round(accuracyMeters) } });
 }
 
 export default {
@@ -641,8 +683,13 @@ export default {
       return json({ ok: true, result });
     } catch (error) {
       if (error instanceof ApiError) return json({ ok: false, error: error.code, message: error.message }, error.status);
+      const diagnostic = String(error?.message || error || "Error interno sin detalle").slice(0, 300);
       console.error("OMNI Admin API error", error);
-      return json({ ok: false, error: "internal", message: "No se pudo completar la operación." }, 500);
+      return json({
+        ok: false,
+        error: "internal",
+        message: "Diagnóstico del servidor: " + diagnostic
+      }, 500);
     }
   }
 };

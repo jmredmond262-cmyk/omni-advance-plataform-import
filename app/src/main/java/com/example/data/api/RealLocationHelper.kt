@@ -51,8 +51,8 @@ object RealLocationHelper {
             }
             val now = System.currentTimeMillis()
             val cachedIsFresh = cached != null &&
-                cached.time > 0L && now - cached.time in 0L..180_000L &&
-                (cached.accuracy <= 500f || cached.accuracy == 0f)
+                cached.time > 0L && now - cached.time in 0L..30_000L &&
+                cached.accuracy in 1f..50f
             if (cachedIsFresh) return cached
 
             // La ubicación en vivo tiene un límite: la pantalla no queda esperando indefinidamente.
@@ -70,7 +70,7 @@ object RealLocationHelper {
                         .addOnSuccessListener { location ->
                             if (continuation.isActive) continuation.resume(
                                 location?.takeIf {
-                                    it.time > 0L && System.currentTimeMillis() - it.time <= 600_000L
+                                    it.time > 0L && System.currentTimeMillis() - it.time in 0L..60_000L && it.accuracy in 1f..1000f
                                 }
                             )
                         }
