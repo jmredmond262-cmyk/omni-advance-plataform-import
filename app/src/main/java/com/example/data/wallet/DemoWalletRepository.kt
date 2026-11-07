@@ -222,28 +222,13 @@ class DemoWalletRepository(
         val orderRef = orderId?.let { firestore.collection("storeOrders").document(it) }
         val executeAtomicTransfer: () -> Unit = {
             firestore.runTransaction { tx ->
-            // La consulta de idempotencia se ejecuta dentro de la transacción y conserva
-            // el filtro senderUid exigido por las reglas actuales de Firestore.
-            // Así evitamos una consulta previa vulnerable a dos pagos simultáneos y no
-            // necesitamos leer por ID un documento inexistente (lectura no autorizada por las reglas).
-            val existingOrderPayments = if (orderId != null) {
-                tx.get(
-                    firestore.collection("walletOperations")
-                        .whereEqualTo("senderUid", senderUid)
-                        .whereEqualTo("orderId", orderId)
-                        .limit(1)
-                )
-            } else null
+            // El documento walletOperations usa un ID estable para pedidos. Las reglas
+            // actuales permiten CREARLO pero prohíben actualizarlo: si dos intentos compiten,
+            // la transacción que llega segunda no puede sobrescribir la operación existente,
+            // y Firestore revierte también sus cambios de saldo. La consulta previa solo mejora
+            // el mensaje de reintento; la protección real es la escritura atómica create-only.
             val orderSnapshot = orderRef?.let { tx.get(it) }
             val sender = tx.get(senderRef)
-
-            val existingPayment = existingOrderPayments?.documents?.firstOrNull()
-            if (existingPayment != null) {
-                check(existingPayment.getString("recipientUid") == recipientUid &&
-                    kotlin.math.abs((existingPayment.get("amount") as? Number)?.toDouble()?.minus(amount) ?: Double.POSITIVE_INFINITY) < 0.005
-                ) { "El identificador del pago ya está asociado a otra operación." }
-                return@runTransaction "PEDIDO YA PAGADO · DEMO"
-            }
 
             if (orderId != null) {
                 check(orderSnapshot?.exists() == true) { "El pedido ya no está disponible." }
@@ -292,9 +277,24 @@ class DemoWalletRepository(
                 done(Result.success(it))
             }.addOnFailureListener { done(Result.failure(it)) }
         }
-        // La comprobación de duplicados se hace dentro de la transacción atómica,
-        // no mediante una consulta previa que podría competir con otro intento de pago.
-        executeAtomicTransfer()
+        if (orderId != null) {
+            firestore.collection("walletOperations")
+                .whereEqualTo("senderUid", senderUid)
+                .whereEqualTo("orderId", orderId)
+                .limit(1).get()
+                .addOnSuccessListener { existing ->
+                    if (!existing.isEmpty) {
+                        val operation = existing.documents.first()
+                        val samePayment = operation.getString("recipientUid") == recipientUid &&
+                            kotlin.math.abs((operation.get("amount") as? Number)?.toDouble()?.minus(amount) ?: Double.POSITIVE_INFINITY) < 0.005
+                        if (samePayment) done(Result.success("PEDIDO YA PAGADO · DEMO"))
+                        else done(Result.failure(IllegalStateException("El identificador del pedido ya está asociado a otro pago.")))
+                    } else executeAtomicTransfer()
+                }
+                .addOnFailureListener { done(Result.failure(it)) }
+        } else {
+            executeAtomicTransfer()
+        }
     }
 
     private fun transactionData(
