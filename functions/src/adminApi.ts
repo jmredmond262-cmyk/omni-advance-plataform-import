@@ -177,7 +177,7 @@ async function listCollection(name: string, limit = 100, pageToken = "") {
       const payments = await db.collection("walletOperations").where("orderId", "in", chunk).get();
       for (const payment of payments.docs) {
         const paymentData = payment.data() as Record<string, unknown>;
-        if (paymentData.kind === "QR_PAYMENT" && paymentData.environment === "DEMO") {
+        if (paymentData.kind === "QR_PAYMENT") {
           const orderId = String(paymentData.orderId ?? "");
           if (orderId) orderPayments.set(orderId, { operationId: payment.id });
         }
