@@ -96,9 +96,23 @@ private fun OmniAdminRoot() {
   var nextOffset by remember { mutableStateOf(0) }
   var hasMore by remember { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
+  val sectionCache = remember { mutableMapOf<String, Pair<Long, JSONObject>>() }
 
-  fun refresh() {
+  fun refresh(force: Boolean = true) {
     val current = auth.currentUser ?: return
+    val cacheKey = current.uid + ":" + selected
+    if (!force && selected != "liveMap") {
+      val cached = sectionCache[cacheKey]
+      if (cached != null && System.currentTimeMillis() - cached.first < 30_000L) {
+        payload = cached.second
+        nextPageToken = payload.optString("nextPageToken", "")
+        nextOffset = payload.optInt("nextOffset", 0)
+        hasMore = payload.optBoolean("hasMore", false)
+        error = ""
+        loading = false
+        return
+      }
+    }
     scope.launch {
       loading = true
       error = ""
@@ -106,13 +120,15 @@ private fun OmniAdminRoot() {
         val token = current.getIdToken(false).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
         val tab = tabs.first { it.id == selected }
         nextPageToken = ""; nextOffset = 0; hasMore = false
-        payload = when (selected) {
+        val result = when (selected) {
           "dashboard" -> AdminApi.call(token, "dashboard")
           "liveMap" -> AdminApi.call(token, "geoActivity")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
         }
+        payload = result
+        if (selected != "liveMap") sectionCache[cacheKey] = System.currentTimeMillis() to result
         nextPageToken = payload.optString("nextPageToken", "")
         nextOffset = payload.optInt("nextOffset", 0)
         hasMore = payload.optBoolean("hasMore", false)
@@ -141,12 +157,13 @@ private fun OmniAdminRoot() {
         nextPageToken = page.optString("nextPageToken", "")
         nextOffset = page.optInt("nextOffset", nextOffset + incoming.length())
         hasMore = page.optBoolean("hasMore", false)
+        sectionCache[current.uid + ":" + selected] = System.currentTimeMillis() to payload
       } catch (ex: Exception) { error = ex.message ?: "No se pudieron cargar más registros." }
       finally { loading = false }
     }
   }
 
-  LaunchedEffect(user?.uid, selected) { if (user != null) refresh() }
+  LaunchedEffect(user?.uid, selected) { if (user != null) refresh(force = false) }
 
   if (user == null) {
     AdminLogin(
@@ -170,7 +187,7 @@ private fun OmniAdminRoot() {
   } else {
     AdminHome(
       email = user?.email ?: "Administrador", selected = selected, payload = payload,
-      loading = loading, error = error, onSelect = { selected = it }, onRefresh = ::refresh, onLoadMore = ::loadMore, hasMore = hasMore,
+      loading = loading, error = error, onSelect = { selected = it }, onRefresh = { refresh(force = true) }, onLoadMore = ::loadMore, hasMore = hasMore,
       onSignOut = {
         auth.signOut(); user = null; payload = JSONObject(); error = ""; selected = "dashboard"
       },
