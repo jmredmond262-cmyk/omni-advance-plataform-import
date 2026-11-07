@@ -329,15 +329,20 @@ fun OrderCenterScreen(
                 val order = decodeOrder(doc)
                 val createdAt = doc.getTimestamp("createdAt")?.toDate()?.time ?: 0L
                 val expired = createdAt == 0L || System.currentTimeMillis() - createdAt > 24L * 60L * 60L * 1000L
-                val itemsMatch = order != null &&
-                    order.items.size == payload.items.size &&
-                    order.items.all { line ->
-                        payload.items.any { qrItem ->
-                            qrItem.productId == line.productId && qrItem.name == line.name &&
-                                kotlin.math.abs(qrItem.price - line.price) < 0.005 &&
-                                qrItem.quantity == line.quantity
-                        }
+                val itemsMatch = order != null && (
+                    if (payload.items.isEmpty()) {
+                        payload.itemCount == order.items.sumOf { it.quantity }
+                    } else {
+                        order.items.size == payload.items.size &&
+                            order.items.all { line ->
+                                payload.items.any { qrItem ->
+                                    qrItem.productId == line.productId && qrItem.name == line.name &&
+                                        kotlin.math.abs(qrItem.price - line.price) < 0.005 &&
+                                        qrItem.quantity == line.quantity
+                                }
+                            }
                     }
+                )
                 if (order == null || order.storeId != store.id || order.merchantUid != uid ||
                     order.qrNonce != payload.qrNonce || order.storeName != payload.merchantName ||
                     kotlin.math.abs(order.total - payload.totalAmount) >= 0.005 || !itemsMatch ||
