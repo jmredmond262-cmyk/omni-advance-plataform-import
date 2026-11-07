@@ -3,7 +3,7 @@ name: OMNI Principal · compile-only validation
 on:
   push:
     branches:
-      - fix/omni-principal-demo-qr-local-checkout
+      - feat/omni-marketplace-demo-commerce-cycle
   workflow_dispatch:
 
 permissions:
