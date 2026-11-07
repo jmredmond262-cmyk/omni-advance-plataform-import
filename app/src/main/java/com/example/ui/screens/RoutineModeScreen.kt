@@ -352,6 +352,7 @@ fun RoutineModeScreen(onBack: () -> Unit) {
         }
     }
     var routines by remember { mutableStateOf(RoutineStore.load(context)) }
+    LaunchedEffect(routines) { FlowBriefingScheduler.schedule(context, routines) }
     var showEditor by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<OmniRoutine?>(null) }
     var title by remember { mutableStateOf("") }
