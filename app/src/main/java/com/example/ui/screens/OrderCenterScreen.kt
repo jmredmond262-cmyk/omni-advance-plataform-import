@@ -66,7 +66,12 @@ private data class OmniStoreOrder(
 )
 
 @Composable
-fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: () -> Unit) {
+fun OrderCenterScreen(
+    viewModel: MainViewModel,
+    merchantMode: Boolean,
+    onBack: () -> Unit,
+    demoMode: Boolean = false
+) {
     val context = LocalContext.current
     val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     val profile by viewModel.userProfile.collectAsState()
@@ -181,9 +186,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         }
     }
 
-    DisposableEffect(merchantMode, merchantReady, store.id, uid) {
+    DisposableEffect(merchantMode, merchantReady, store.id, uid, demoMode) {
         var listener: ListenerRegistration? = null
-        if (uid.isNotBlank() && (!merchantMode || merchantReady)) {
+        if (!demoMode && uid.isNotBlank() && (!merchantMode || merchantReady)) {
             val query = if (merchantMode) {
                 db.collection("storeOrders").whereEqualTo("merchantUid", uid)
             } else {
@@ -227,11 +232,35 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     val total = cartLines.sumOf { it.price * it.quantity }
 
     fun submitOrder() {
-        if (uid.isBlank() || cartLines.isEmpty() || cartLines.size > 30 || total <= 0.0 || total > 500000.0 || (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())) {
+        if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 || total <= 0.0 || total > 500000.0 || (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())) {
             feedback = "Revisá el pedido: máximo 30 productos distintos, total hasta OM$ 500.000 y dirección obligatoria para delivery."
             return
         }
         sending = true
+        if (demoMode) {
+            val demoId = "DEMO-" + UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
+            val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
+            createdOrder = OmniStoreOrder(
+                id = demoId,
+                storeId = store.id,
+                storeName = store.name,
+                merchantUid = "",
+                customerUid = uid,
+                customerName = profile.fullName,
+                customerPhone = profile.phone,
+                items = cartLines,
+                total = total,
+                status = "SIMULACIÓN LOCAL",
+                paymentStatus = "NO APLICA · DEMO",
+                fulfillmentType = fulfillmentType,
+                deliveryAddress = deliveryAddress.trim(),
+                qrNonce = nonce,
+                isLocalDemo = true
+            )
+            updateCart(emptyMap())
+            sending = false
+            return
+        }
         db.collection("merchantProfiles").document(store.id).get()
             .addOnSuccessListener { merchant ->
                 val merchantUid = merchant.getString("ownerUid").orEmpty()
@@ -386,6 +415,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 OrderQRScanner(
                     onOrderScanned = { handleScannedOrder(it) },
                     onLegacyWalletQr = { feedback = "Este es un QR de cuenta, no un QR de pedido." },
+                    onDemoOrderScanned = {
+                        feedback = "QR DEMO local detectado. Es solo una simulación: no existe un pedido registrado y no se puede aceptar, cobrar ni entregar."
+                    },
                     onError = { feedback = it },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     buttonLabel = "Escanear QR · Pedidos y cobros",
@@ -395,8 +427,25 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             if (merchantError != null) Text(merchantError.orEmpty(), color = Color(0xFFFF9B8F), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
             else if (!merchantReady) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
         } else {
-            Text("Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
-            Text("CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+            Text(
+                if (demoMode) "Elegí un comercio de prueba, armá tu carrito y generá un QR de demostración sin conexión."
+                else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.",
+                color = Color(0xFF9AAAC2), fontSize = 11.sp
+            )
+            if (demoMode) {
+                Surface(
+                    color = Color(0xFF201B35),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                ) {
+                    Column(Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("MODO DEMOSTRACIÓN LOCAL", color = Color(0xFFB69CFF), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("No consulta ni guarda datos en Firebase. El QR generado es ilustrativo: no envía el pedido al comercio y no sirve para retirar, cobrar ni acreditar pagos.", color = Color(0xFFE0D9F5), fontSize = 10.sp)
+                    }
+                }
+            } else {
+                Text("CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+            }
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
@@ -476,9 +525,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         if (fulfillmentType == "DELIVERY") {
                             OutlinedTextField(deliveryAddress, { deliveryAddress = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Dirección de entrega") }, singleLine = true)
                         }
-                        Text("Podés seguir agregando productos. El QR se genera únicamente cuando confirmás el pedido.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                        Text(
+                            if (demoMode) "La confirmación genera un QR local de prueba; no se envía ninguna orden."
+                            else "Podés seguir agregando productos. El QR se genera únicamente cuando confirmás el pedido.",
+                            color = Color(0xFF9AAAC2), fontSize = 10.sp
+                        )
                         Button(onClick = { showOrderReview = true }, enabled = !sending, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
-                            Text("Revisar carrito")
+                            Text(if (demoMode) "Revisar compra DEMO" else "Revisar carrito")
                         }
                     }
                 }
@@ -569,7 +622,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         AlertDialog(
             onDismissRequest = { if (!sending) showOrderReview = false },
             containerColor = Color(0xFF101B30),
-            title = { Text("Confirmar pedido", color = Color.White) },
+            title = { Text(if (demoMode) "Confirmar compra DEMO" else "Confirmar pedido", color = Color.White) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(store.name, color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold)
@@ -578,10 +631,14 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     }
                     Text("Total: OM$ ${String.format("%,.2f", total)}", color = Color.White, fontWeight = FontWeight.Bold)
                     Text(if (fulfillmentType == "DELIVERY") "Entrega: ${deliveryAddress.trim()}" else "Modalidad: Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 11.sp)
-                    Text("Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    Text(
+                        if (demoMode) "El QR será solo una muestra visual. No habrá pedido enviado ni pago."
+                        else "Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.",
+                        color = Color(0xFFFFC978), fontSize = 10.sp
+                    )
                 }
             },
-            confirmButton = { Button(onClick = { showOrderReview = false; submitOrder() }, enabled = !sending) { Text("Confirmar y generar QR") } },
+            confirmButton = { Button(onClick = { showOrderReview = false; submitOrder() }, enabled = !sending) { Text(if (demoMode) "Generar QR DEMO" else "Confirmar y generar QR") } },
             dismissButton = { TextButton(onClick = { showOrderReview = false }, enabled = !sending) { Text("Volver al carrito") } }
         )
     }
@@ -589,7 +646,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         val payload = OrderQRCodec.encode(
             order.id, order.storeName, order.total,
             order.items.map { OrderQRItem(it.productId, it.name, it.price, it.quantity) },
-            order.qrNonce
+            order.qrNonce,
+            isLocalDemo = order.isLocalDemo
         )
         val bitmap = remember(payload) {
             runCatching {
@@ -604,37 +662,53 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         AlertDialog(
             onDismissRequest = { createdOrder = null },
             containerColor = Color(0xFF101B30),
-            title = { Text("Pedido enviado", color = Color.White) },
+            title = { Text(if (order.isLocalDemo) "QR DEMO generado" else "Pedido enviado", color = Color.White) },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Mostrá este QR en el comercio para identificar tu pedido.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
+                    Text(
+                        if (order.isLocalDemo) "Este QR es una simulación local. No se guardó ni envió ningún pedido al comercio."
+                        else "Mostrá este QR en el comercio para identificar tu pedido.",
+                        color = Color(0xFFB8C8D9), fontSize = 11.sp
+                    )
                     bitmap?.let { qrBitmap ->
                         Image(qrBitmap.asImageBitmap(), "QR del pedido", modifier = Modifier.size(190.dp))
                         OutlinedButton(onClick = {
                             runCatching {
                                 val folder = File(context.cacheDir, "shared_qr").apply { mkdirs() }
-                                val qrFile = File(folder, "omni-pedido-${order.id.take(10)}.png")
+                                val qrFile = File(folder, if (order.isLocalDemo) "omni-pedido-demo-${order.id.take(10)}.png" else "omni-pedido-${order.id.take(10)}.png")
                                 FileOutputStream(qrFile).use { output -> check(qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) }
                                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", qrFile)
                                 UsageAnalyticsRepository.trackCurrentAction("orders", "ORDER_SHARED", mapOf("method" to "share_sheet"))
                                 val share = Intent(Intent.ACTION_SEND).apply {
                                     type = "image/png"
                                     putExtra(Intent.EXTRA_STREAM, uri)
-                                    putExtra(Intent.EXTRA_TEXT, "Pedido OMNI ${order.id}\nComercio: ${order.storeName}\nTotal: OM$ ${String.format("%,.2f", order.total)}\nPago pendiente al retirar o recibir.")
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        if (order.isLocalDemo) "QR DEMO LOCAL OMNI\nNo es un pedido real. No sirve para retirar, cobrar ni acreditar pagos.\nComercio de muestra: ${order.storeName}\nTotal ilustrativo: OM$ ${String.format("%,.2f", order.total)}"
+                                        else "Pedido OMNI ${order.id}\nComercio: ${order.storeName}\nTotal: OM$ ${String.format("%,.2f", order.total)}\nPago pendiente al retirar o recibir."
+                                    )
                                     clipData = ClipData.newUri(context.contentResolver, "QR Pedido OMNI", uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(Intent.createChooser(share, "Compartir QR del pedido"))
+                                context.startActivity(Intent.createChooser(share, if (order.isLocalDemo) "Compartir QR DEMO" else "Compartir QR del pedido"))
                             }.onFailure { feedback = it.localizedMessage ?: "No se pudo compartir el QR." }
                         }) { Text("Compartir QR") }
                     } ?: Text("No se pudo generar la imagen QR.", color = Color(0xFFFF9B8F), fontSize = 10.sp)
-                    Text("Pedido ${order.id.take(10)} · ${order.status}", color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                    Text("Pago pendiente · se abona al retirar o recibir. Este QR no es un comprobante de pago.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    Text(
+                        if (order.isLocalDemo) "Código ${order.id} · SOLO DEMOSTRACIÓN"
+                        else "Pedido ${order.id.take(10)} · ${order.status}",
+                        color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold, fontSize = 11.sp
+                    )
+                    Text(
+                        if (order.isLocalDemo) "No genera retiro, cobro, pago ni registro comercial."
+                        else "Pago pendiente · se abona al retirar o recibir. Este QR no es un comprobante de pago.",
+                        color = Color(0xFFFFC978), fontSize = 10.sp
+                    )
                 }
             },
             confirmButton = {
                 Button(onClick = { createdOrder = null }) {
-                    Text("Ver pedido y opciones de pago")
+                    Text(if (order.isLocalDemo) "Cerrar demostración" else "Ver pedido y opciones de pago")
                 }
             }
         )
