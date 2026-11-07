@@ -7,7 +7,7 @@ Flujo integral de pedidos comerciales con OMNI Pay DEMO. No procesa dinero real,
 ## Ciclo del cliente y comercio
 
 1. El cliente arma un pedido en un comercio habilitado y confirma hasta OM$ 50.000 por pedido.
-2. OMNI registra el documento en `storeOrders` y genera el QR protegido por nonce. El QR identifica el pedido; no es una autorización de débito.
+2. OMNI registra el documento en `storeOrders` y genera el QR protegido por nonce. El QR compacto contiene ID, nonce y cantidad de unidades; los artículos y el total se recuperan del pedido autoritativo. El QR no es una autorización de débito.
 3. El comercio escanea el QR. OMNI verifica comercio, titular, pedido, nonce, total, artículos y vencimiento.
 4. El cliente abre **Mis pedidos** y autoriza el pago con su propia billetera OMNI Pay DEMO. El comercio nunca puede debitar el saldo del cliente.
 5. La transferencia ficticia actualiza ambas billeteras y crea una operación estable `orderpay_<orderId>` en `walletOperations`. La operación contiene `orderId`, `correlationId`, `kind=QR_PAYMENT`, `environment=DEMO` y `status=APROBADA · DEMO`.
