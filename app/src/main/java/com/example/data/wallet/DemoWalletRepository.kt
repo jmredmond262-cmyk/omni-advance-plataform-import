@@ -112,13 +112,28 @@ class DemoWalletRepository(
                     val dateText = document.getTimestamp("createdAt")?.toDate()?.let {
                         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(it)
                     } ?: "Procesando…"
+                    val itemDetails = (document.get("items") as? List<*>)?.mapNotNull { raw ->
+                        val item = raw as? Map<*, *> ?: return@mapNotNull null
+                        val quantity = (item["quantity"] as? Number)?.toInt() ?: 0
+                        val name = item["name"] as? String ?: return@mapNotNull null
+                        val price = (item["price"] as? Number)?.toDouble() ?: 0.0
+                        if (quantity > 0) "${quantity} × ${name} · OM$ ${String.format("%,.2f", price * quantity)}" else null
+                    }.orEmpty()
                     WalletTransaction(
                         id = document.getString("operationId") ?: document.id,
                         title = document.getString("title").orEmpty(),
-                        storeOrEntityName = document.getString("peerName").orEmpty(),
+                        storeOrEntityName = document.getString("storeName")
+                            ?: document.getString("peerName").orEmpty(),
                         amount = (document.get("amount") as? Number)?.toDouble() ?: 0.0,
                         type = type, dateText = dateText,
-                        status = document.getString("status") ?: "APROBADA · DEMO"
+                        status = document.getString("status") ?: "APROBADA · DEMO",
+                        orderId = document.getString("orderId"),
+                        storeName = document.getString("storeName").orEmpty(),
+                        customerName = document.getString("customerName").orEmpty(),
+                        itemDetails = itemDetails,
+                        fulfillmentDetails = if (document.getString("fulfillmentType") == "DELIVERY")
+                            "Delivery · ${document.getString("deliveryAddress").orEmpty()}" else if (document.getString("fulfillmentType") == "RETIRO") "Retiro en comercio" else "",
+                        environment = document.getString("paymentEnvironment") ?: "DEMO"
                     )
                 }
                 publish()
