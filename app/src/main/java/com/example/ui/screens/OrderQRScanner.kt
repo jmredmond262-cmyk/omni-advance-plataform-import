@@ -28,7 +28,8 @@ data class OrderQRPayload(
     val totalAmount: Double,
     val items: List<OrderQRItem>,
     val qrNonce: String,
-    val isLocalDemo: Boolean = false
+    val isLocalDemo: Boolean = false,
+    val itemCount: Int = 0
 )
 
 object OrderQRCodec {
@@ -40,19 +41,14 @@ object OrderQRCodec {
         qrNonce: String,
         isLocalDemo: Boolean = false
     ): String {
-        val jsonItems = org.json.JSONArray()
-        items.forEach { item ->
-            jsonItems.put(JSONObject()
-                .put("productId", item.productId)
-                .put("name", item.name)
-                .put("price", item.price)
-                .put("quantity", item.quantity))
-        }
+        // QR compacto: el detalle autoritativo se recupera del pedido en Firestore.
+        // itemCount permite una comprobación adicional sin cargar nombres y precios en el código.
         return JSONObject()
+            .put("version", 2)
             .put("orderId", orderId)
             .put("merchantName", merchantName)
             .put("totalAmount", totalAmount)
-            .put("items", jsonItems)
+            .put("itemCount", items.sumOf { it.quantity })
             .put("qrNonce", qrNonce)
             .put("mode", if (isLocalDemo) "LOCAL_DEMO" else "LIVE")
             .toString()
@@ -64,8 +60,8 @@ object OrderQRCodec {
         val merchantName = json.optString("merchantName").trim()
         val totalAmount = json.optDouble("totalAmount", Double.NaN)
         val nonce = json.optString("qrNonce").trim()
-        val jsonItems = json.optJSONArray("items") ?: throw IllegalArgumentException("Faltan los artículos del pedido.")
-        val items = (0 until jsonItems.length()).map { index ->
+        val jsonItems = json.optJSONArray("items")
+        val items = if (jsonItems == null) emptyList() else (0 until jsonItems.length()).map { index ->
             val item = jsonItems.getJSONObject(index)
             OrderQRItem(
                 productId = item.optString("productId"),
@@ -74,12 +70,17 @@ object OrderQRCodec {
                 quantity = item.optInt("quantity", 0)
             )
         }
+        val itemCount = json.optInt("itemCount", 0)
         require(orderId.isNotBlank() && merchantName.isNotBlank() && nonce.isNotBlank())
         require(totalAmount.isFinite() && totalAmount > 0.0)
-        require(items.isNotEmpty() && items.all { it.name.isNotBlank() && it.price.isFinite() && it.price >= 0.0 && it.quantity > 0 })
+        require(
+            (items.isNotEmpty() && items.all { it.name.isNotBlank() && it.price.isFinite() && it.price >= 0.0 && it.quantity > 0 }) ||
+                (items.isEmpty() && json.optInt("version", 0) >= 2 && itemCount > 0)
+        )
         OrderQRPayload(
             orderId, merchantName, totalAmount, items, nonce,
-            isLocalDemo = json.optString("mode") == "LOCAL_DEMO"
+            isLocalDemo = json.optString("mode") == "LOCAL_DEMO",
+            itemCount = itemCount
         )
     }.getOrNull()
 }
