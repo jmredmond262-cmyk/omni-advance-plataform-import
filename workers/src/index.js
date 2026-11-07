@@ -5,6 +5,7 @@ const TOKEN_ISSUER = `https://securetoken.google.com/${ADMIN_AUTH_PROJECT}`;
 let serviceTokenCache = { token: "", expiresAt: 0 };
 let firebaseKeysCache = { keys: [], expiresAt: 0 };
 let dashboardCache = { data: null, expiresAt: 0 };
+let geoActivityCache = { data: null, expiresAt: 0 };
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
@@ -140,6 +141,20 @@ async function listDocumentsPage(env, collection, limit = 100, pageToken = "") {
   const data = await firestore(env, "/" + encodeURIComponent(collection) + "?" + params.toString());
   return { items: (data.documents || []).map(documentData), nextPageToken: data.nextPageToken || "" };
 }
+
+async function getDocumentsByIds(env, collection, ids) {
+  const uniqueIds = [...new Set((ids || []).map(value => String(value || "").trim()).filter(Boolean))].slice(0, 100);
+  if (!uniqueIds.length) return [];
+  const documents = uniqueIds.map(id =>
+    FIRESTORE_ROOT + "/" + encodeURIComponent(collection) + "/" + encodeURIComponent(id)
+  );
+  const rows = await firestore(env, ":batchGet", {
+    method: "POST",
+    body: JSON.stringify({ documents })
+  });
+  return (rows || []).filter(row => row.found).map(row => documentData(row.found));
+}
+
 async function recentDocuments(env, collection, limit = 8, offset = 0) {
   const structuredQuery = {
     from: [{ collectionId: collection }],
@@ -165,7 +180,7 @@ async function queryRecentDocuments(env, collection, orderField, limit, cutoffFi
 async function usageEventsLast7Days(env) {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   // Muestra acotada para evitar lecturas masivas en cada apertura del panel.
-  return queryRecentDocuments(env, "usageEvents", "createdAt", 750, "createdAt", cutoff);
+  return queryRecentDocuments(env, "usageEvents", "createdAt", 500, "createdAt", cutoff);
 }
 async function countDocuments(env, collection) {
   const query = {
@@ -359,8 +374,6 @@ function summarizeUsage(events) {
 async function dashboard(env) {
   const nowMs = Date.now();
   if (dashboardCache.data && dashboardCache.expiresAt > nowMs) return dashboardCache.data;
-  // Cada fuente se consulta de forma independiente: un módulo incompleto no debe
-  // bloquear el panel completo. Los fallos quedan identificados en diagnostics.
   const failures = [];
   async function safe(label, task, fallback) {
     try { return await task(); }
@@ -370,23 +383,18 @@ async function dashboard(env) {
       return fallback;
     }
   }
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
-  // Ejecutar conteos de a uno evita ráfagas simultáneas contra Firestore.
+  // El panel ejecutivo sólo cuenta las tres métricas visibles en su portada.
+  const collections = ["users", "walletAccounts", "storeOrders"];
   const countResults = [];
   for (const name of collections) {
     countResults.push(await safe("count:" + name, () => countDocuments(env, name), 0));
   }
-  const [walletPage, operations, userProfiles, usageEvents, geoRecords] = await Promise.all([
-    safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 100), { items: [], nextPageToken: "" }),
+  const [operations, userProfiles, usageEvents] = await Promise.all([
     safe("walletOperations:recent", () => recentDocuments(env, "walletOperations", 8), []),
-    safe("users:recent", () => recentDocuments(env, "users", 100), []),
-    safe("usageEvents:last7days", () => usageEventsLast7Days(env), []),
-    safe("geoPresence:recent", () => queryRecentDocuments(env, "geoPresence", "updatedAt", 200), null)
+    safe("users:recent", () => recentDocuments(env, "users", 30), []),
+    safe("usageEvents:last7days", () => usageEventsLast7Days(env), [])
   ]);
-  const wallets = walletPage.items || [];
-  const resolvedCounts = Object.fromEntries(collections.map((name, index) => [
-    name, name === "users" ? Math.max(countResults[index], userProfiles.length) : countResults[index]
-  ]));
+  const resolvedCounts = Object.fromEntries(collections.map((name, index) => [name, countResults[index]]));
   const recentUsers = [...userProfiles]
     .sort((a, b) => String(b.createdAt || b.lastSeenAt || b.updatedAt || "").localeCompare(String(a.createdAt || a.lastSeenAt || a.updatedAt || "")))
     .slice(0, 8);
@@ -404,26 +412,15 @@ async function dashboard(env) {
   }
   const usageTrend = dayKeys.map(day => ({ date: day.slice(8, 10) + "/" + day.slice(5, 7), count: usageByDay[day] }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoRecords || [], userProfiles);
   const result = {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
     analytics,
     usageTrend,
-    walletBalanceSample: wallets.reduce((sum, item) => sum + (Number(item.balance) || 0), 0),
-    walletSampleSize: wallets.length,
-    usageSampleLimit: 750,
-    usageSampleComplete: usageEvents.length < 750,
-    recentUsers, recentOperations: operations,
-    geoActivity: geoActivity.points,
-    geoActivitySummary: {
-      activeUsers: geoActivity.activeUsers,
-      visibleMarkers: geoActivity.points.length,
-      freshnessMinutes: geoActivity.freshnessMinutes,
-      coordinatePrecision: "GPS sin redondeo",
-      sampleComplete: false,
-      sourceAvailable: Array.isArray(geoRecords)
-    },
+    recentUsers,
+    recentOperations: operations,
+    usageSampleLimit: 500,
+    usageSampleComplete: usageEvents.length < 500,
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
       usageEventsVisibleLast7Days: usageEvents.length,
@@ -433,8 +430,7 @@ async function dashboard(env) {
       usageQueryWindowDays: 7,
       sourceFailures: failures,
       cacheSeconds: 45,
-      geoSampleLimit: 200,
-      usageSampleLimit: 750
+      usageSampleLimit: 500
     }
   };
   dashboardCache = { data: result, expiresAt: Date.now() + 45000 };
@@ -470,20 +466,20 @@ async function recentTransactionDocuments(env, limit = 100) {
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
 async function finance(env) {
-  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions, userPage] = await Promise.all([
+  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions] = await Promise.all([
     countDocuments(env, "walletAccounts"),
-    listAllDocuments(env, "walletAccounts", 1000),
+    listDocumentsPage(env, "walletAccounts", 100),
     countDocuments(env, "walletOperations"),
-    recentDocuments(env, "walletOperations", 5000),
+    recentDocuments(env, "walletOperations", 100),
     countSubcollectionDocuments(env, "transactions"),
-    recentTransactionDocuments(env, 100),
-    listAllDocuments(env, "users", 1000)
+    recentTransactionDocuments(env, 100)
   ]);
-  const profileByUid = new Map(userPage.items.map(profile => [
+  const profiles = await getDocumentsByIds(env, "users", accountPage.items.map(account => account.uid || account.id));
+  const profileByUid = new Map(profiles.map(profile => [
     String(profile.uid || profile.id || ""),
     String(profile.displayName || profile.fullName || profile.name || profile.email || "Titular no informado")
   ]));
-  const accounts = accountPage.items.slice(0, 100).map(account => ({
+  const accounts = accountPage.items.map(account => ({
     ...account,
     holderName: profileByUid.get(String(account.uid || account.id || "")) || "Titular no informado"
   }));
@@ -512,7 +508,7 @@ async function finance(env) {
       transactionSampleSize: transactions.length,
       transactionSampleComplete: transactionCount <= transactions.length,
       accountSampleSize: accountPage.items.length,
-      accountSampleComplete: accountPage.complete,
+      accountSampleComplete: accountCount <= accountPage.items.length && !accountPage.nextPageToken,
       operationsSampleSize: operationPage.length,
       operationsSampleComplete: operationCount <= operationPage.length
     },
@@ -521,10 +517,28 @@ async function finance(env) {
     operations
   };
 }
-
 async function handleAction(env, actor, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
+    case "geoActivity": {
+      const now = Date.now();
+      if (geoActivityCache.data && geoActivityCache.expiresAt > now) return geoActivityCache.data;
+      const records = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200);
+      const geo = aggregateGeoPresence(records, []);
+      const result = {
+        geoActivity: geo.points,
+        geoActivitySummary: {
+          activeUsers: geo.activeUsers,
+          visibleMarkers: geo.points.length,
+          freshnessMinutes: geo.freshnessMinutes,
+          coordinatePrecision: "GPS sin redondeo",
+          sampleComplete: false,
+          sourceAvailable: true
+        }
+      };
+      geoActivityCache = { data: result, expiresAt: Date.now() + 10000 };
+      return result;
+    }
     case "finance": return finance(env);
     case "list": {
       const collection = String(data.collection || "");
@@ -533,18 +547,17 @@ async function handleAction(env, actor, action, data) {
       if (collection === "usageEvents") {
         const offset = Math.max(0, Math.min(Number(data.offset) || 0, 50000));
         const pageSize = Math.min(Math.max(Number(data.limit) || 100, 1), 100);
-        const [items, profiles] = await Promise.all([
-          recentDocuments(env, collection, pageSize + 1, offset),
-          recentDocuments(env, "users", 200)
-        ]);
+        const items = await recentDocuments(env, collection, pageSize + 1, offset);
+        const visibleItems = items.slice(0, pageSize);
+        const profiles = await getDocumentsByIds(env, "users", visibleItems.map(item => item.uid));
         const hasMore = items.length > pageSize;
-        return { items: attachUserLabels(items.slice(0, pageSize), profiles), hasMore, nextOffset: hasMore ? offset + pageSize : null };
+        return { items: attachUserLabels(visibleItems, profiles), hasMore, nextOffset: hasMore ? offset + pageSize : null };
       }
       const page = await listDocumentsPage(env, collection, data.limit, String(data.pageToken || ""));
       let items = page.items;
       if (collection === "walletAccounts") {
-        const profiles = await listAllDocuments(env, "users", 1000);
-        const labels = new Map(profiles.items.map(profile => [
+        const profiles = await getDocumentsByIds(env, "users", items.map(item => item.uid || item.id));
+        const labels = new Map(profiles.map(profile => [
           String(profile.uid || profile.id || ""),
           String(profile.displayName || profile.fullName || profile.name || profile.email || "Titular no informado")
         ]));

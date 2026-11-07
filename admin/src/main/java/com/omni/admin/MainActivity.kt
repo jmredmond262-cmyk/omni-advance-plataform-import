@@ -103,11 +103,12 @@ private fun OmniAdminRoot() {
       loading = true
       error = ""
       try {
-        val token = current.getIdToken(true).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
+        val token = current.getIdToken(false).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
         val tab = tabs.first { it.id == selected }
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
-          "dashboard", "liveMap" -> AdminApi.call(token, "dashboard")
+          "dashboard" -> AdminApi.call(token, "dashboard")
+          "liveMap" -> AdminApi.call(token, "geoActivity")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
@@ -126,7 +127,7 @@ private fun OmniAdminRoot() {
     scope.launch {
       loading = true; error = ""
       try {
-        val token = current.getIdToken(true).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
+        val token = current.getIdToken(false).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
         val tab = tabs.first { it.id == selected }
         val data = JSONObject().put("collection", tab.collection).put("limit", 100)
         if (nextPageToken.isNotBlank()) data.put("pageToken", nextPageToken)
