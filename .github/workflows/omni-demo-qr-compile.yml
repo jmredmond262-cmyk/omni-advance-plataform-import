@@ -1,4 +1,4 @@
-name: OMNI Principal · compile-only validation
+name: OMNI Principal · Mercado OMNI compile-only validation
 
 on:
   push:
