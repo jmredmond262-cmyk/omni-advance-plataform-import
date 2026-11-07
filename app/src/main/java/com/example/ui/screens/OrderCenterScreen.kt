@@ -209,9 +209,8 @@ fun OrderCenterScreen(
                     }
                 }
             }
-            if (merchantMode) {
-                paymentListener = db.collection("walletOperations")
-                    .whereEqualTo("recipientUid", uid)
+            paymentListener = db.collection("walletOperations")
+                    .whereEqualTo(if (merchantMode) "recipientUid" else "senderUid", uid)
                     .limit(200)
                     .addSnapshotListener { snapshot, error ->
                         if (error != null) {
@@ -232,7 +231,6 @@ fun OrderCenterScreen(
                             }
                         }
                     }
-            }
         }
         onDispose { listener?.remove(); paymentListener?.remove() }
     }
@@ -296,7 +294,8 @@ fun OrderCenterScreen(
                         "customerName" to profile.fullName, "customerPhone" to profile.phone,
                         "items" to payloadItems, "total" to total,
                         "status" to "RECIBIDO", "paymentStatus" to "PENDIENTE",
-                        "paymentMethod" to "OMNI_PAY_DEMO",
+                        "paymentMethod" to "PAGO_AL_RETIRAR",
+                    "paymentFlow" to "OMNI_PAY_DEMO",
                         "fulfillmentType" to fulfillmentType, "deliveryAddress" to deliveryAddress.trim(),
                         "qrNonce" to nonce,
                         "operationId" to ref.id,
@@ -798,7 +797,7 @@ private fun OrderStatusCard(
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
             Text(
                 if (order.paymentStatus.startsWith("PAGADA")) "Pago: acreditado · DEMO"
-                else "Pago: pendiente · OMNI Pay DEMO o al retirar/recibir",
+                else "Pago: pendiente · autorización del cliente en OMNI Pay DEMO",
                 color = if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
                 fontSize = 9.sp
             )
