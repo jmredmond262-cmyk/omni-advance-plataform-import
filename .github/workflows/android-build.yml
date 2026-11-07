@@ -3,9 +3,9 @@ name: OMNI Android Build 1.4
 
 on:
   push:
-    branches: [ "main", "omni-resto-mejoras", "omni-admin-app", "omni-admin-rebuild", "omni-v1.3-release-candidate", "omni-v1.3-integral", "omni-v1.4-integral", "feat/omni-flow-daily-briefing" ]
+    branches: [ "main", "omni-resto-mejoras", "omni-admin-app", "omni-admin-rebuild", "omni-v1.3-release-candidate", "omni-v1.3-integral", "omni-v1.4-integral", "feat/omni-flow-daily-briefing", "feat/omni-marketplace-demo-commerce-cycle" ]
   pull_request:
-    branches: [ "main", "omni-advance-1.4", "omni-resto-mejoras", "omni-v1.3-release-candidate", "omni-v1.3-integral", "omni-v1.4-integral" ]
+    branches: [ "main", "omni-advance-1.4", "omni-resto-mejoras", "omni-v1.3-release-candidate", "omni-v1.3-integral", "omni-v1.4-integral", "feat/omni-order-qr-full-demo-cycle-1.4.5" ]
   workflow_dispatch:
 
 permissions:
