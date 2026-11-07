@@ -188,7 +188,7 @@ fun OrderCenterScreen(
         }
     }
 
-    DisposableEffect(merchantMode, merchantReady, store.id, uid, demoMode) {
+    DisposableEffect(merchantMode, merchantReady, store.id, uid, demoMode, selectedScannedOrder) {
         var listener: ListenerRegistration? = null
         var paymentListener: ListenerRegistration? = null
         if (!demoMode && uid.isNotBlank() && (!merchantMode || merchantReady)) {
@@ -809,7 +809,7 @@ private fun OrderStatusCard(
                         Text(if (paying) "Procesando pago DEMO…" else "Pagar con OMNI Pay DEMO", fontSize = 10.sp)
                     }
                 } else {
-                    Text("El total supera el límite de OMNI Pay DEMO (OM$ 50.000). Podés pagar al retirar o recibir.", color = Color(0xFFFFC978), fontSize = 9.sp)
+                    Text("El total supera el límite por operación de OMNI Pay DEMO (OM$ 50.000).", color = Color(0xFFFFC978), fontSize = 9.sp)
                 }
             }
             if (merchantMode && order.customerPhone.isNotBlank()) {
