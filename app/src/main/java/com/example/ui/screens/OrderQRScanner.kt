@@ -102,7 +102,7 @@ fun OrderQRScanner(
                     val raw = barcode.rawValue.orEmpty().trim()
                     val payload = OrderQRCodec.decode(raw)
                     when {
-                        payload?.isLocalDemo == true -> onDemoOrderScanned(payload)
+                        payload != null && payload.isLocalDemo -> onDemoOrderScanned(payload)
                         payload != null -> onOrderScanned(payload)
                         raw.startsWith("OMNI-DEMO|") -> onLegacyWalletQr(raw)
                         else -> onError("El QR no contiene un pedido OMNI válido.")
