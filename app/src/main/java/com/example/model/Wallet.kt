@@ -18,7 +18,13 @@ data class WalletTransaction(
     val type: TransactionType,
     val dateText: String,
     val cashbackEarned: Double = 0.0,
-    val status: String = "APROBADA · DEMO"
+    val status: String = "APROBADA · DEMO",
+    val orderId: String? = null,
+    val storeName: String = "",
+    val customerName: String = "",
+    val itemDetails: List<String> = emptyList(),
+    val fulfillmentDetails: String = "",
+    val environment: String = "DEMO"
 )
 
 data class PaymentCard(
