@@ -26,11 +26,11 @@ OMNI Admin ya consume `storeOrders`, `walletOperations` y `usageEvents`. La vers
 
 - Correlación de telemetría mediante `data.correlationId = orderId` y `data.operationId`.
 - Eventos: `STORE_ORDER_CREATED`, `ORDER_QR_GENERATED`, `ORDER_QR_SCAN_STARTED`, `ORDER_QR_VERIFIED`, `ORDER_PAYMENT_COMPLETED` y `ORDER_STATUS_<ESTADO>`.
-- La lista administrativa de `storeOrders` relaciona operaciones `QR_PAYMENT` DEMO por `orderId` y devuelve `paymentStatus`, `paymentEnvironment` y `paymentOperationId`.
+- El Worker de OMNI Admin (`workers/src/index.js`) relaciona la lista `storeOrders` con operaciones `QR_PAYMENT` por `orderId` y devuelve `paymentStatus`, `paymentEnvironment` y `paymentOperationId`.
 - Los importes y datos personales no se copian a la telemetría general; el detalle de venta se obtiene del pedido y de la operación financiera protegida.
 
 ## Firebase y despliegue
 
 Se conserva el contrato actual de creación de pedidos de Firestore (`paymentMethod=PAGO_AL_RETIRAR`) por compatibilidad con las reglas ya publicadas; `paymentFlow=OMNI_PAY_DEMO` identifica el nuevo circuito ficticio. No se modifican ni despliegan reglas de Firestore en esta entrega.
 
-El enriquecimiento de pedidos en OMNI Admin está implementado en `functions/src/adminApi.ts`. Para que el panel instalado lo muestre, ese código requiere desplegar **solo** la función `omniAdminApi` desde el workflow manual existente. Ese despliegue no forma parte de esta rama ni se ejecuta automáticamente.
+El enriquecimiento de pedidos está implementado en el Worker que consume la app Admin. Para que el panel instalado lo muestre, hay que ejecutar manualmente el workflow `Deploy OMNI Admin API to Cloudflare` seleccionando esta rama. El workflow ahora despliega el código de la rama elegida. No se ejecutó ningún despliegue en esta entrega.
