@@ -677,7 +677,7 @@ fun OmniApp(viewModel: MainViewModel) {
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("🌅 OMNI Buenos Días · Ver presentación") },
+                                    text = { Text("✦ FLOW · Tu resumen del día") },
                                     onClick = {
                                         viewModel.navigateTo(Screen.MorningBriefing)
                                         overflowMenuExpanded = false
