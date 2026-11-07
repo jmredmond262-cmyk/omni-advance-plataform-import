@@ -394,6 +394,10 @@ fun OrderCenterScreen(
     }
 
     fun advanceOrder(order: OmniStoreOrder, next: String) {
+        if (next == "RECHAZADO" && order.paymentStatus.startsWith("PAGADA")) {
+            feedback = "El pedido ya está pagado. No se puede rechazar desde el comercio; requiere una gestión de devolución DEMO."
+            return
+        }
         if (next in listOf("EN_CAMINO", "ENTREGADO") && !order.paymentStatus.startsWith("PAGADA")) {
             feedback = "No se puede despachar ni entregar: el cliente debe autorizar primero el pago desde su OMNI Pay DEMO."
             return
@@ -836,7 +840,7 @@ private fun OrderStatusCard(
                             else -> "Marcar entregado"
                         }, fontSize = 10.sp)
                     }
-                    if (order.status == "RECIBIDO") {
+                    if (order.status == "RECIBIDO" && !order.paymentStatus.startsWith("PAGADA")) {
                         OutlinedButton(onClick = { onAdvance("RECHAZADO") }) {
                             Text("Rechazar", fontSize = 10.sp)
                         }
