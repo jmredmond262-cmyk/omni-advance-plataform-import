@@ -179,7 +179,7 @@ async function listCollection(name: string, limit = 100, pageToken = "") {
         const paymentData = payment.data() as Record<string, unknown>;
         if (paymentData.kind === "QR_PAYMENT" && paymentData.environment === "DEMO") {
           const orderId = String(paymentData.orderId ?? "");
-          if (orderId) orderPayments.set(orderId, { operationId: payment.id, createdAt: paymentData.createdAt });
+          if (orderId) orderPayments.set(orderId, { operationId: payment.id });
         }
       }
     }
@@ -193,8 +193,7 @@ async function listCollection(name: string, limit = 100, pageToken = "") {
           id: doc.id, ...data,
           paymentStatus: payment ? "PAGADA · DEMO" : "PENDIENTE",
           paymentEnvironment: "DEMO",
-          paymentOperationId: payment?.operationId ?? null,
-          paymentCreatedAt: payment?.createdAt ?? null
+          paymentOperationId: payment?.operationId ?? null
         };
       }
       if (name === "omniMoments") {
