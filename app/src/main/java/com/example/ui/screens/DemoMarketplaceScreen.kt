@@ -87,7 +87,7 @@ fun DemoMarketplaceScreen(
                 ) {
                     Icon(Icons.Default.ShoppingCart, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Abrir comercios y realizar pedido")
+                    Text("Probar carrito y QR DEMO")
                 }
             }
         }
@@ -98,9 +98,9 @@ fun DemoMarketplaceScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("¿Qué pasa con los QR DEMO anteriores?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("DEMO y pedidos reales: son recorridos separados", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Text(
-                    "Los pedidos creados por la versión anterior quedaron guardados localmente en el teléfono original. Se conservan como historial, pero esos códigos antiguos no se pueden convertir en pedidos compartidos ni acreditar pagos. Los nuevos pedidos deben generarse desde Pedidos OMNI.",
+                    "El QR de esta pantalla es solo una simulación local. Para enviar una compra real, el cliente debe entrar a la ficha del comercio y ese comercio debe tener habilitados los pedidos QR.",
                     color = DemoMuted, fontSize = 10.sp
                 )
             }
