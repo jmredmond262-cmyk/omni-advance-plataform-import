@@ -154,14 +154,15 @@ fun MomentsScreen(onBack: () -> Unit) {
             "status" to "ACTIVE", "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )).addOnSuccessListener {
-            if (reminderEnabled) {
+            val reminderWasEnabled = reminderEnabled
+            if (reminderWasEnabled) {
                 MomentReminderScheduler.schedule(context, momentRef.id, personName.trim(), occasion, date.trim(),
                     parsedHour ?: 9, parsedMinute ?: 0)
             }
             busy = false; showEditor = false
             personName = ""; date = ""; greeting = ""; note = ""
             reminderEnabled = false; reminderHour = "09"; reminderMinute = "00"
-            feedback = if (reminderEnabled) "Fecha guardada y recordatorio programado en este dispositivo." else "Fecha especial guardada en tu espacio privado de OMNI Momentos."
+            feedback = if (reminderWasEnabled) "Fecha guardada y recordatorio programado en este dispositivo." else "Fecha especial guardada en tu espacio privado de OMNI Momentos."
         }.addOnFailureListener {
             busy = false; feedback = it.localizedMessage ?: "No se pudo guardar la fecha especial."
         }
