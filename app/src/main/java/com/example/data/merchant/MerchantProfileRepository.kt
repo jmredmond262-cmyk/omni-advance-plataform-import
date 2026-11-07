@@ -6,6 +6,7 @@ import com.example.model.Store
 import com.example.model.StoreNews
 import com.example.model.StoreProduct
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -118,10 +119,10 @@ object MerchantProfileRepository {
         // Firestore limita whereIn a 30 valores; los demás conservan sus datos de directorio.
         val visibleStores = stores.take(30)
         db.collection("merchantProfiles")
-            .whereIn("storeId", visibleStores.map { it.id }.distinct())
+            .whereIn(FieldPath.documentId(), visibleStores.map { it.id }.distinct())
             .get()
             .addOnSuccessListener { snapshot ->
-                val profiles = snapshot.documents.associateBy { it.getString("storeId") ?: it.id }
+                val profiles = snapshot.documents.associateBy { it.id }
                 val enriched = stores.map { base ->
                     val profile = profiles[base.id]
                     if (profile != null) decode(profile, base).first else base
