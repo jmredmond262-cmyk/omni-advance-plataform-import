@@ -58,7 +58,5 @@ jobs:
           keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=OMNI Compile Check,O=OMNI,C=AR" -keyalg RSA -keysize 2048 -validity 2
       - name: Compile OMNI Admin source (not published)
         run: gradle :admin:assembleDebug
-      - name: Install Admin API dependencies
-        run: npm install --prefix functions --no-package-lock
-      - name: Validate Admin API TypeScript
-        run: npm run lint --prefix functions
+      - name: Validate OMNI Admin Cloudflare Worker syntax
+        run: node --check workers/src/index.js
