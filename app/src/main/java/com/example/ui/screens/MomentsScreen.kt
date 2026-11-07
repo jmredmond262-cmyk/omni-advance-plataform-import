@@ -14,6 +14,14 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -45,6 +53,9 @@ fun MomentsScreen(onBack: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var feedback by remember { mutableStateOf<String?>(null) }
+    var searchText by remember { mutableStateOf("") }
+    var selectedFilter by remember { mutableStateOf("Todos") }
+    var showFeatureInfo by remember { mutableStateOf<String?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var occasion by remember { mutableStateOf("Cumpleaños") }
     var personName by remember { mutableStateOf("") }
@@ -77,6 +88,14 @@ fun MomentsScreen(onBack: () -> Unit) {
                 }
         }
         onDispose { listener?.remove() }
+    }
+
+    val visibleMoments = remember(moments, searchText, selectedFilter) {
+        moments.filter { moment ->
+            val matchesSearch = searchText.isBlank() || moment.personName.contains(searchText, true) || moment.occasion.contains(searchText, true)
+            val matchesFilter = selectedFilter == "Todos" || moment.occasion == selectedFilter
+            matchesSearch && matchesFilter
+        }.sortedBy { daysUntilMoment(it.date) }
     }
 
     fun saveMoment() {
@@ -127,6 +146,27 @@ fun MomentsScreen(onBack: () -> Unit) {
         Button(onClick = { showEditor = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
             Icon(Icons.Default.CalendarMonth, null, modifier = Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("Agregar fecha especial")
         }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("Saludos y tarjetas" to Icons.Default.Share, "Voz" to Icons.Default.Mic, "Programar" to Icons.Default.Schedule, "Regalos QR" to Icons.Default.CardGiftcard, "Vouchers" to Icons.Default.NotificationsActive, "Grupos" to Icons.Default.Groups).forEach { (label, icon) ->
+                AssistChip(onClick = { showFeatureInfo = label }, label = { Text(label, fontSize = 9.sp) }, leadingIcon = { Icon(icon, null, modifier = Modifier.size(15.dp)) })
+            }
+        }
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF10243A)), shape = RoundedCornerShape(13.dp)) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("TU CALENDARIO DE MOMENTOS", color = Color(0xFF57DDF5), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("${moments.size} fechas guardadas", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("${moments.count { daysUntilMoment(it.date) in 0..30 }} próximas en 30 días", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                }
+                Icon(Icons.Default.Cake, null, tint = Color(0xFFBD83FF), modifier = Modifier.size(28.dp))
+            }
+        }
+        OutlinedTextField(searchText, { searchText = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Buscar persona o celebración") }, leadingIcon = { Icon(Icons.Default.Search, null) })
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            listOf("Todos", "Cumpleaños", "Aniversario", "Graduación", "Otra fecha").forEach { filter ->
+                FilterChip(selected = selectedFilter == filter, onClick = { selectedFilter = filter }, label = { Text(filter, fontSize = 9.sp) })
+            }
+        }
         when {
             loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
             error != null -> Text(error.orEmpty(), color = Color(0xFFFFA7A7), fontSize = 12.sp)
@@ -137,8 +177,9 @@ fun MomentsScreen(onBack: () -> Unit) {
                     Text("Agregá el primer cumpleaños, aniversario o recuerdo importante.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
                 }
             }
+            visibleMoments.isEmpty() && moments.isNotEmpty() -> Text("No hay momentos que coincidan con la búsqueda o el filtro.", color = Color(0xFF9AAAC2), fontSize = 11.sp, modifier = Modifier.padding(12.dp))
             else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(moments, key = { it.id }) { moment ->
+                items(visibleMoments, key = { it.id }) { moment ->
                     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B30)), shape = RoundedCornerShape(13.dp)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -186,7 +227,34 @@ fun MomentsScreen(onBack: () -> Unit) {
         confirmButton = { TextButton(onClick = { saveMoment() }, enabled = !busy) { Text(if (busy) "Guardando…" else "Guardar fecha") } },
         dismissButton = { TextButton(onClick = { showEditor = false }, enabled = !busy) { Text("Cancelar") } }
     )
+    showFeatureInfo?.let { feature ->
+        val detail = when (feature) {
+            "Saludos y tarjetas" -> "Prepará dedicatorias y compartilas desde cada fecha guardada. La tarjeta visual personalizada se incorporará en la siguiente etapa."
+            "Voz" -> "Los mensajes de voz requieren grabación, permiso de micrófono y almacenamiento seguro. No simulamos una grabación."
+            "Programar" -> "Los envíos programados y avisos con OMNI cerrada requieren un planificador persistente y pruebas en el dispositivo."
+            "Regalos QR" -> "Los regalos QR se habilitarán como obsequios DEMO, sin mover dinero real."
+            "Vouchers" -> "Los vales necesitarán código único, vencimiento y registro de canje para evitar usos duplicados."
+            else -> "Los regalos grupales necesitarán participantes, aportes DEMO y seguimiento del objetivo compartido."
+        }
+        AlertDialog(onDismissRequest = { showFeatureInfo = null }, containerColor = Color(0xFF101B30),
+            title = { Text(feature, color = Color.White) }, text = { Text(detail, color = Color(0xFFB8C8D9), fontSize = 12.sp) },
+            confirmButton = { TextButton(onClick = { showFeatureInfo = null }) { Text("Entendido") } })
+    }
     feedback?.let { message ->
         AlertDialog(onDismissRequest = { feedback = null }, title = { Text("OMNI Momentos") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { feedback = null }) { Text("Aceptar") } })
     }
+}
+
+private fun daysUntilMoment(dateText: String): Int {
+    val parsed = runCatching { SimpleDateFormat("dd/MM/yyyy", Locale("es", "AR")).apply { isLenient = false }.parse(dateText) }.getOrNull() ?: return Int.MAX_VALUE
+    val today = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val target = java.util.Calendar.getInstance().apply {
+        time = parsed
+        set(java.util.Calendar.YEAR, today.get(java.util.Calendar.YEAR))
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }
+    if (target.before(today)) target.add(java.util.Calendar.YEAR, 1)
+    return ((target.timeInMillis - today.timeInMillis) / 86_400_000L).toInt()
 }
