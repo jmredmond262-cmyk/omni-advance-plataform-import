@@ -328,7 +328,11 @@ class DemoWalletRepository(
                 if (selfConsumption) "Autoconsumo de pedido OMNI · sin movimiento de saldo" else if (orderId != null) "Pago de pedido OMNI" else if (isQr) "Pago con QR" else "Transferencia enviada",
                 if (selfConsumption) "Tu propio comercio · DEMO" else recipientAlias,
                 amount,
-                orderDetails + if (selfConsumption) mapOf("selfConsumption" to true, "balanceImpact" to 0.0) else emptyMap()
+                orderDetails + if (selfConsumption) mapOf(
+                    "selfConsumption" to true,
+                    "balanceImpact" to 0.0,
+                    "status" to "AUTOCONSUMO REGISTRADO · DEMO"
+                ) else emptyMap()
             ))
             if (!selfConsumption) {
                 tx.set(recipientRef.collection("transactions").document(operationId), transactionData(
