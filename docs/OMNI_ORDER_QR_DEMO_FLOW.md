@@ -1,36 +1,46 @@
-# OMNI pedidos QR y ventas DEMO — contrato 1.4.5
+# OMNI pedidos QR y ventas DEMO — contrato 1.4.7
 
 ## Alcance
 
-Flujo integral de pedidos comerciales con OMNI Pay DEMO. No procesa dinero real, no usa pasarelas externas y no requiere credenciales pagas.
+Flujo comercial completo dentro de OMNI Principal. OMNI Pay sigue siendo una sección interna de Principal. Todos los saldos, débitos y créditos son ficticios; no se usa dinero real ni una pasarela externa.
 
-## Ciclo del cliente y comercio
+## Ciclo obligatorio del cliente y comercio
 
-1. El cliente arma un pedido en un comercio habilitado y confirma hasta OM$ 50.000 por pedido.
-2. OMNI registra el documento en `storeOrders` y genera el QR protegido por nonce. El QR compacto contiene ID, nonce y cantidad de unidades; los artículos y el total se recuperan del pedido autoritativo. El QR no es una autorización de débito.
-3. El comercio escanea el QR. OMNI verifica comercio, titular, pedido, nonce, total, artículos y vencimiento.
-4. El cliente abre **Mis pedidos** y autoriza el pago con su propia billetera OMNI Pay DEMO. El comercio nunca puede debitar el saldo del cliente.
-5. La transferencia ficticia actualiza ambas billeteras y crea una operación estable `orderpay_<orderId>` en `walletOperations`. La operación contiene `orderId`, `correlationId`, `kind=QR_PAYMENT`, `environment=DEMO` y `status=APROBADA · DEMO`.
-6. El listener de operaciones actualiza el estado de pago para cliente y comercio.
-7. El comercio acepta y prepara el pedido. El despacho (`EN_CAMINO`) y la entrega (`ENTREGADO`) quedan bloqueados en la interfaz hasta que el pago figure `PAGADA · DEMO`.
+1. El cliente arma el pedido desde Mercado OMNI y confirma el envío. Se crea un documento único en `storeOrders` con QR de identificación, nonce, artículos, cantidades, precios, comercio, cliente y modalidad de entrega.
+2. El comercio escanea el QR y valida que el pedido corresponde a su comercio y a su cuenta titular. El QR no autoriza ni ejecuta pagos.
+3. El comercio acepta el pedido y pasa a **Revisión de disponibilidad**. En esta etapa verifica cada artículo.
+4. Si todos los artículos están disponibles, confirma disponibilidad y comienza la preparación.
+5. Si faltan artículos, informa cuáles no están disponibles y envía al cliente una propuesta con los productos restantes y el nuevo total. El cliente debe aceptar expresamente esa propuesta o cancelar. Mientras espera la decisión, OMNI Pay permanece bloqueado.
+6. Una vez confirmada la disponibilidad por el cliente y el comercio, el comercio comienza la preparación y marca el pedido como **LISTO**.
+7. Recién cuando el pedido está LISTO, la disponibilidad fue revisada y el comercio solicita el pago, OMNI Pay se habilita en la cuenta del cliente.
+8. El cliente selecciona OMNI Pay DEMO y autoriza el pago. El servidor valida pedido, titular, comercio, total definitivo, disponibilidad revisada y solicitud de pago.
+9. Una transacción atómica crea un único movimiento `orderpay_<orderId>`, registra el débito ficticio del cliente y el crédito ficticio del comercio. Los reintentos no generan un segundo cobro.
+10. Cliente y comercio reciben la confirmación dentro de OMNI. Se emite un ticket de compra para el cliente y un ticket de cobro para el comercio; ambos quedan almacenados en las transacciones de sus billeteras y en `walletOperations`.
+11. El comercio registra el despacho o retiro y el cierre del pedido. No se permite entregar antes de que el pago DEMO figure acreditado.
 
 ## Estados del pedido
 
-`RECIBIDO → ACEPTADO → EN_PREPARACION → LISTO → EN_CAMINO (delivery) → ENTREGADO`
+`RECIBIDO → ACEPTADO → EN_REVISION → DISPONIBILIDAD_CONFIRMADA → EN_PREPARACION → LISTO → EN_CAMINO (delivery) → ENTREGADO`
 
-Para retiro, desde `LISTO` pasa a `ENTREGADO`. También se contemplan `RECHAZADO` y `CANCELADO` antes del cierre.
+Si faltan artículos:
 
-## Datos para OMNI Admin
+`EN_REVISION → ESPERA_CONFIRMACION_CLIENTE → CONFIRMADO_CLIENTE → EN_PREPARACION`
 
-OMNI Admin ya consume `storeOrders`, `walletOperations` y `usageEvents`. La versión 1.4.5 agrega:
+También se contemplan `RECHAZADO` y `CANCELADO`. El cliente puede cancelar mientras el pedido está recibido o cuando debe responder una propuesta de disponibilidad.
 
-- Correlación de telemetría mediante `data.correlationId = orderId` y `data.operationId`.
-- Eventos: `STORE_ORDER_CREATED`, `ORDER_QR_GENERATED`, `ORDER_QR_SCAN_STARTED`, `ORDER_QR_VERIFIED`, `ORDER_PAYMENT_COMPLETED` y `ORDER_STATUS_<ESTADO>`.
-- El Worker de OMNI Admin (`workers/src/index.js`) relaciona la lista `storeOrders` con operaciones `QR_PAYMENT` por `orderId` y devuelve `paymentStatus`, `paymentEnvironment` y `paymentOperationId`.
-- Los importes y datos personales no se copian a la telemetría general; el detalle de venta se obtiene del pedido y de la operación financiera protegida.
+## Tickets y trazabilidad
 
-## Firebase y despliegue
+- El ticket contiene identificador, pedido, comercio y datos de contacto, cliente, artículos, cantidades, precios, total definitivo, modalidad de entrega, dirección cuando corresponda, método y entorno de pago.
+- El ticket del cliente se guarda en la transacción de débito de su billetera.
+- El ticket del comercio se guarda en la transacción de crédito de su billetera.
+- La operación central `walletOperations` conserva la misma copia de los datos y el identificador de correlación.
+- Los cambios de estado, revisión, faltantes, aceptación del cliente y pago generan eventos de trazabilidad en `usageEvents`, visibles desde OMNI Admin.
+- OMNI Admin consulta `storeOrders` y `walletOperations` para supervisar estado, importe, ticket y correlación. No duplica OMNI Pay ni procesa pagos.
 
-Se conserva el contrato actual de creación de pedidos de Firestore (`paymentMethod=PAGO_AL_RETIRAR`) por compatibilidad con las reglas ya publicadas; `paymentFlow=OMNI_PAY_DEMO` identifica el nuevo circuito ficticio. No se modifican ni despliegan reglas de Firestore en esta entrega.
+## Seguridad y compatibilidad
 
-El enriquecimiento de pedidos está implementado en el Worker que consume la app Admin. Para que el panel instalado lo muestre, hay que ejecutar manualmente el workflow `Deploy OMNI Admin API to Cloudflare` seleccionando esta rama. El workflow ahora despliega el código de la rama elegida. No se ejecutó ningún despliegue en esta entrega.
+- El servidor y las reglas de Firestore validan los actores y las transiciones permitidas.
+- El pago se bloquea hasta que `status=LISTO`, `availabilityReviewed=true`, `paymentRequested=true` y `paymentStatus=PENDIENTE`.
+- El ID estable `orderpay_<orderId>` y la escritura atómica evitan dobles débitos y créditos.
+- Los tickets se guardan como copias inmutables de los datos comerciales al momento del pago.
+- Se mantiene el entorno exclusivamente DEMO, con el saldo ficticio de OMNI Pay.
