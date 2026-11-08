@@ -464,7 +464,7 @@ fun OrderCenterScreen(
             UsageAnalyticsRepository.trackEvent(uid, "orders",
                 if (hasMissing) "ORDER_AVAILABILITY_ISSUE_REPORTED" else "ORDER_AVAILABILITY_CONFIRMED",
                 mapOf("operationId" to order.id, "correlationId" to order.id, "stage" to nextStatus,
-                    "missingItems" to missingProductIds.size, "proposedTotal" to proposedTotal, "success" to true))
+                    "resultCount" to available.size, "status" to nextStatus, "success" to true))
             val updated = order.copy(status = nextStatus, proposedItems = available,
                 proposedTotal = proposedTotal, availabilityMessage = message, availabilityReviewed = true)
             orders = orders.map { if (it.id == order.id) updated else it }
@@ -492,7 +492,7 @@ fun OrderCenterScreen(
         )).addOnSuccessListener {
             UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_AVAILABILITY_PROPOSAL_ACCEPTED",
                 mapOf("operationId" to order.id, "correlationId" to order.id,
-                    "stage" to "CUSTOMER_CONFIRMED_FINAL_TOTAL", "finalTotal" to finalTotal, "success" to true))
+                    "stage" to "CUSTOMER_CONFIRMED_FINAL_TOTAL", "resultCount" to order.proposedItems.size, "status" to "CONFIRMADO_CLIENTE", "success" to true))
             val updated = order.copy(items = order.proposedItems, total = finalTotal, status = "CONFIRMADO_CLIENTE")
             orders = orders.map { if (it.id == order.id) updated else it }
             feedback = "Aceptaste la disponibilidad y el total definitivo. El comercio ya puede preparar tu pedido."
