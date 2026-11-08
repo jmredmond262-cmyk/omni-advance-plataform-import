@@ -301,16 +301,6 @@ class DemoWalletRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 ))
             }
-            if (orderId != null) {
-                tx.update(orderRef!!, mapOf(
-                    "paymentStatus" to "PAGADO",
-                    "paymentMethod" to if (selfConsumption) "AUTOCONSUMO_OMNI_PAY_DEMO" else "OMNI_PAY_DEMO",
-                    "paymentEnvironment" to "DEMO",
-                    "paidAt" to FieldValue.serverTimestamp(),
-                    "receiptId" to "OMNI-" + orderId.takeLast(12).uppercase(Locale.ROOT),
-                    "receiptData" to orderDetails["receiptData"]!!
-                ))
-            }
             val orderDetails = if (orderId != null && orderSnapshot != null) {
                 val receiptId = "OMNI-" + orderId.takeLast(12).uppercase(Locale.ROOT)
                 val receiptData = mapOf(
@@ -351,6 +341,17 @@ class DemoWalletRepository(
                     "receiptData" to receiptData
                 )
             } else emptyMap<String, Any>()
+            if (orderId != null) {
+                tx.update(orderRef!!, mapOf(
+                    "paymentStatus" to "PAGADO",
+                    "paymentMethod" to if (selfConsumption) "AUTOCONSUMO_OMNI_PAY_DEMO" else "OMNI_PAY_DEMO",
+                    "paymentEnvironment" to "DEMO",
+                    "paidAt" to FieldValue.serverTimestamp(),
+                    "receiptId" to "OMNI-" + orderId.takeLast(12).uppercase(Locale.ROOT),
+                    "receiptData" to orderDetails["receiptData"]!!
+                ))
+            }
+
             val operationData = mutableMapOf<String, Any>(
                 "operationId" to operationId,
                 "kind" to if (selfConsumption) "SELF_CONSUMPTION_DEMO" else if (isQr) "QR_PAYMENT" else "TRANSFER",
