@@ -6,6 +6,7 @@ import com.google.firebase.auth.PhoneAuthCredential
 import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.firestore.FieldValue
+import com.example.data.analytics.QueryDiagnosticsRepository
 import com.google.firebase.firestore.FirebaseFirestore
 import java.util.concurrent.TimeUnit
 
@@ -122,8 +123,12 @@ class AuthRepository(
 
         firestore.collection("users").document(user.uid)
             .set(profile, com.google.firebase.firestore.SetOptions.merge())
-            .addOnSuccessListener { done(Result.success(Unit)) }
+            .addOnSuccessListener {
+                QueryDiagnosticsRepository.recordWrite("user_profile")
+                done(Result.success(Unit))
+            }
             .addOnFailureListener { error ->
+                QueryDiagnosticsRepository.recordWrite("user_profile", failed = true)
                 // Authentication is valid even if profile synchronization is temporarily unavailable.
                 done(Result.failure(error))
             }
