@@ -174,6 +174,16 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
           fontSize = 9.sp
         )
         Text("Solo se muestran ubicaciones recientes de cuentas que aceptaron compartir su GPS.", color = MapMuted, fontSize = 8.sp)
+        val received = summary?.optInt("recordsReceived", points.length()) ?: points.length()
+        val gps = summary?.optInt("gpsRecords", received) ?: received
+        val missingNames = summary?.optInt("profilesMissing", 0) ?: 0
+        Text(
+          "$received registros recibidos · $gps fuentes GPS · $activeUsers posiciones activas",
+          color = MapCyan, fontSize = 8.sp
+        )
+        if (missingNames > 0) {
+          Text("$missingNames perfiles activos todavía no tienen un nombre registrado en OMNI.", color = Color(0xFFFFC66D), fontSize = 8.sp)
+        }
       }
     }
   }
