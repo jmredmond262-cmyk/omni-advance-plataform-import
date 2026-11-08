@@ -72,7 +72,7 @@ private val tabs = listOf(
   AdminTab("dashboard", "Panel ejecutivo"), AdminTab("liveMap", "Mapa en tiempo real"), AdminTab("users", "Cuentas de usuario", "users"),
   AdminTab("wallets", "Cuentas OMNI Pay", "walletAccounts"), AdminTab("operations", "Movimientos OMNI Pay", "walletOperations"), AdminTab("finance", "Control financiero DEMO"),
   AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
-  AdminTab("feedback", "Opiniones y reportes", "appFeedback"), AdminTab("activity", "Actividad de uso", "usageEvents"), AdminTab("modules", "Módulos y funciones", "moduleRegistry"),
+  AdminTab("feedback", "Opiniones y reportes", "appFeedback"), AdminTab("activity", "Actividad de uso", "usageEvents"), AdminTab("queryDiagnostics", "Diagnóstico y consumo"), AdminTab("modules", "Módulos y funciones", "moduleRegistry"),
   AdminTab("audit", "Auditoría y trazabilidad", "adminAuditLogs"), AdminTab("invitations", "Accesos de prueba", "betaInvitations"), AdminTab("settings", "Parámetros generales")
 )
 private data class AdminNavGroup(val id: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val tabIds: List<String>)
@@ -80,7 +80,7 @@ private val navGroups = listOf(
   AdminNavGroup("overview", "Panel", Icons.Default.Dashboard, listOf("dashboard")),
   AdminNavGroup("people", "Usuarios", Icons.Default.PeopleAlt, listOf("users", "feedback")),
   AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
-  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
+  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "queryDiagnostics", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
   AdminNavGroup("geography", "Mapa", Icons.Default.Public, listOf("liveMap"))
 )
 
@@ -107,8 +107,9 @@ private fun OmniAdminRoot() {
         val tab = tabs.first { it.id == selected }
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
-          "liveMap" -> AdminApi.call(token, "dashboard")
+          "liveMap" -> AdminApi.call(token, "geoPresence")
           "dashboard" -> AdminApi.call(token, "dashboard")
+          "queryDiagnostics" -> AdminApi.call(token, "queryDiagnostics")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
@@ -147,15 +148,7 @@ private fun OmniAdminRoot() {
   }
 
   LaunchedEffect(user?.uid, selected) {
-    if (user != null) {
-      refresh()
-      if (selected == "liveMap") {
-        while (true) {
-          delay(15_000L)
-          if (!loading) refresh()
-        }
-      }
-    }
+    if (user != null) refresh()
   }
 
   if (user == null) {
@@ -375,6 +368,7 @@ private fun AdminHome(
       }
       when (selected) {
         "liveMap" -> LiveMapScreen(payload, loading, error, onRefresh)
+        "queryDiagnostics" -> QueryDiagnosticsContent(payload)
         "dashboard" -> DashboardContent(payload, onSelect, onRefresh)
         "finance" -> FinanceContent(payload)
         "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray(), onSaveModule)
@@ -382,6 +376,85 @@ private fun AdminHome(
         "invitations" -> InvitationContent(payload.optJSONArray("items") ?: JSONArray(), onInvite)
         else -> RecordsContent(selected, payload.optJSONArray("items") ?: JSONArray(), hasMore, onLoadMore)
       }
+    }
+  }
+}
+
+@Composable
+private fun QueryDiagnosticsContent(payload: JSONObject) {
+  val totals = payload.optJSONObject("totals") ?: JSONObject()
+  val modules = jsonArrayToList(payload.optJSONArray("modules"))
+  val selfCost = payload.optJSONObject("monitorSelfCost") ?: JSONObject()
+  val sampled = payload.optInt("sampledDocuments", 0)
+  val number = { key: String -> totals.optLong(key, 0L).toString() }
+  LazyColumn(
+    Modifier.fillMaxSize().padding(horizontal = 15.dp),
+    contentPadding = PaddingValues(vertical = 16.dp),
+    verticalArrangement = Arrangement.spacedBy(12.dp)
+  ) {
+    item {
+      Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("DIAGNÓSTICO Y CONSUMO", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+        Text("Qué sección genera las consultas", color = White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Ventana de análisis: últimos 7 días · registros agregados por módulo", color = Muted, fontSize = 11.sp)
+      }
+    }
+    item {
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ModuleSummary("Consultas", number("queryCount"), Icons.Default.Search, Modifier.weight(1f))
+        ModuleSummary("Lecturas estimadas", number("estimatedDocumentReads"), Icons.Default.Storage, Modifier.weight(1f))
+      }
+      Spacer(Modifier.height(8.dp))
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ModuleSummary("Escrituras", number("writeCount"), Icons.Default.Edit, Modifier.weight(1f))
+        ModuleSummary("Errores", number("errorCount"), Icons.Default.Warning, Modifier.weight(1f))
+      }
+    }
+    item {
+      Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Text("COSTO DEL PROPIO MONITOR", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+          Text("Lecturas para consultar este informe: ${selfCost.optInt("firestoreDocumentsRead", sampled)}", color = White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+          Text("Escrituras para consultar este informe: ${selfCost.optInt("firestoreWrites", 0)}", color = White, fontSize = 12.sp)
+          Text(selfCost.optString("note", "El costo del monitor se contabiliza por separado."), color = Muted, fontSize = 10.sp)
+        }
+      }
+    }
+    if (modules.isEmpty()) {
+      item {
+        EmptyState("Todavía no hay mediciones de consultas instrumentadas. Las cifras aparecerán a medida que OMNI registre operaciones por módulo; no se mostrarán estimaciones inventadas.")
+      }
+    } else {
+      item { Text("DESGLOSE POR MÓDULO", color = White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) }
+      items(modules) { row ->
+        val moduleId = row["module"]?.toString().orEmpty()
+        val moduleLabel = when (moduleId) {
+          "events" -> "Eventos OMNI"
+          "moments" -> "OMNI Momentos"
+          "conex_profiles" -> "OMNI CONEX · perfiles profesionales"
+          "conex_jobs" -> "OMNI CONEX · publicaciones laborales"
+          "conex_applications" -> "OMNI CONEX · postulaciones"
+          "merchant_profiles" -> "Comercios y catálogos del mapa"
+          "wallet_accounts" -> "OMNI Pay · cuentas"
+          "wallet_transactions" -> "OMNI Pay · historial de movimientos"
+          "user_profile" -> "Perfil y sincronización de cuenta"
+          "diagnostics" -> "Diagnóstico y consumo · propio"
+          else -> moduleId.ifBlank { "Módulo sin identificar" }
+        }
+        Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(15.dp)) {
+          Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(moduleLabel, color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Consultas: ${row["queryCount"] ?: 0} · Lecturas estimadas: ${row["estimatedDocumentReads"] ?: 0}", color = White, fontSize = 11.sp)
+            Text("Servidor: ${row["serverSnapshots"] ?: 0} · Caché: ${row["cacheSnapshots"] ?: 0} · Errores: ${row["errorCount"] ?: 0}", color = Muted, fontSize = 10.sp)
+            Text("Escrituras de la sección: ${row["writeCount"] ?: 0} · Escrituras de medición: ${row["flushWrites"] ?: 0}", color = Muted, fontSize = 10.sp)
+            Text("Última operación: ${row["lastOperation"] ?: "OPERACION_NO_INFORMADA"}", color = Color(0xFF9AB5D4), fontSize = 10.sp)
+            Text("Última medición: ${row["lastUpdatedAt"] ?: "Sin fecha"}", color = Color(0xFF7188A6), fontSize = 9.sp)
+          }
+        }
+      }
+    }
+    item {
+      Text("Las lecturas estimadas provienen de las operaciones instrumentadas en la app. No sustituyen el consumo facturado de Firebase. Las consultas de servidor, caché y errores se distinguen para evitar sumar como facturables operaciones que no lo son.", color = Muted, fontSize = 10.sp, lineHeight = 15.sp)
     }
   }
 }

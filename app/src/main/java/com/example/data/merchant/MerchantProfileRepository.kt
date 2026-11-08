@@ -10,6 +10,8 @@ import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.example.data.analytics.QueryDiagnosticsRepository
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Persists the merchant-owned part of a Store in the existing merchantProfiles document.
@@ -17,11 +19,15 @@ import com.google.firebase.firestore.SetOptions
  */
 object MerchantProfileRepository {
     private val db = FirebaseFirestore.getInstance()
+    private val publicCatalogCache = ConcurrentHashMap<String, Pair<Long, Store>>()
+    private const val PUBLIC_CATALOG_CACHE_MILLIS = 5 * 60 * 1000L
 
     fun loadOrClaim(store: Store, uid: String, callback: (Result<Pair<Store, List<StoreNews>>>) -> Unit) {
         val ref = db.collection("merchantProfiles").document(store.id)
+        val queryStartedAt = System.currentTimeMillis()
         ref.get()
             .addOnSuccessListener { snapshot ->
+                QueryDiagnosticsRepository.recordSnapshot("merchant_profiles", "merchantProfiles.owner.get", if (snapshot.metadata.isFromCache) 0 else 1, snapshot.metadata.isFromCache, System.currentTimeMillis() - queryStartedAt, true, false)
                 if (snapshot.exists()) {
                     val ownerUid = snapshot.getString("ownerUid").orEmpty()
                     if (ownerUid != uid) {
@@ -40,7 +46,10 @@ object MerchantProfileRepository {
                     }.addOnFailureListener { callback(Result.failure(it)) }
                 }
             }
-            .addOnFailureListener { callback(Result.failure(it)) }
+            .addOnFailureListener {
+                QueryDiagnosticsRepository.recordSnapshot("merchant_profiles", "merchantProfiles.owner.get", 0, false, System.currentTimeMillis() - queryStartedAt, true, true)
+                callback(Result.failure(it))
+            }
     }
 
     fun save(store: Store, news: List<StoreNews>, uid: String, callback: (Result<Unit>) -> Unit) {
@@ -101,8 +110,14 @@ object MerchantProfileRepository {
         )
         db.collection("merchantProfiles").document(store.id)
             .set(data, SetOptions.merge())
-            .addOnSuccessListener { callback(Result.success(Unit)) }
-            .addOnFailureListener { callback(Result.failure(it)) }
+            .addOnSuccessListener {
+                QueryDiagnosticsRepository.recordWrite("merchant_profiles")
+                callback(Result.success(Unit))
+            }
+            .addOnFailureListener {
+                QueryDiagnosticsRepository.recordWrite("merchant_profiles", failed = true)
+                callback(Result.failure(it))
+            }
     }
 
 
@@ -115,21 +130,40 @@ object MerchantProfileRepository {
             callback(emptyList())
             return
         }
-        // Consultar únicamente los perfiles de los comercios que ya aparecen en el directorio.
-        // Firestore limita whereIn a 30 valores; los demás conservan sus datos de directorio.
-        val visibleStores = stores.take(30)
+        // Reutilizar catálogos durante cinco minutos y consultar sólo perfiles aún no cacheados.
+        // Firestore limita whereIn a 30 valores; el resto conserva datos del directorio.
+        val now = System.currentTimeMillis()
+        val cached = stores.associate { base ->
+            val entry = publicCatalogCache[base.id]
+            base.id to entry?.takeIf { now - it.first < PUBLIC_CATALOG_CACHE_MILLIS }?.second
+        }
+        val missing = stores.filter { cached[it.id] == null }.take(30)
+        if (missing.isEmpty()) {
+            callback(stores.map { base -> cached[base.id] ?: base })
+            return
+        }
+        val queryStartedAt = System.currentTimeMillis()
         db.collection("merchantProfiles")
-            .whereIn(FieldPath.documentId(), visibleStores.map { it.id }.distinct())
+            .whereIn(FieldPath.documentId(), missing.map { it.id }.distinct())
             .get()
             .addOnSuccessListener { snapshot ->
+                QueryDiagnosticsRepository.recordSnapshot("merchant_profiles", "merchantProfiles.publicCatalogs.whereIn", if (snapshot.metadata.isFromCache) 0 else snapshot.documents.size, snapshot.metadata.isFromCache, System.currentTimeMillis() - queryStartedAt, true, false)
                 val profiles = snapshot.documents.associateBy { it.id }
                 val enriched = stores.map { base ->
-                    val profile = profiles[base.id]
-                    if (profile != null) decode(profile, base).first else base
+                    val existing = cached[base.id]
+                    if (existing != null) existing else {
+                        val profile = profiles[base.id]
+                        val resolved = if (profile != null) decode(profile, base).first else base
+                        if (missing.any { it.id == base.id }) publicCatalogCache[base.id] = now to resolved
+                        resolved
+                    }
                 }
                 callback(enriched)
             }
-            .addOnFailureListener { callback(stores) }
+            .addOnFailureListener {
+                QueryDiagnosticsRepository.recordSnapshot("merchant_profiles", "merchantProfiles.publicCatalogs.whereIn", 0, false, System.currentTimeMillis() - queryStartedAt, true, true)
+                callback(stores.map { base -> cached[base.id] ?: base })
+            }
     }
 
     private fun decode(snapshot: DocumentSnapshot, base: Store): Pair<Store, List<StoreNews>> {

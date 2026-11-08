@@ -165,7 +165,7 @@ async function queryRecentDocuments(env, collection, orderField, limit, cutoffFi
 async function usageEventsLast7Days(env) {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   // Muestra acotada para evitar lecturas masivas en cada apertura del panel.
-  return queryRecentDocuments(env, "usageEvents", "createdAt", 750, "createdAt", cutoff);
+  return queryRecentDocuments(env, "usageEvents", "createdAt", 100, "createdAt", cutoff);
 }
 async function countDocuments(env, collection) {
   const query = {
@@ -212,7 +212,7 @@ function aggregateGeoPresence(records, profiles) {
   const points = [];
   let activeUsers = 0;
   for (const record of records) {
-    if (record.consent !== true) continue;
+    if (record.consent !== true || record.source !== "GPS_ANDROID") continue;
     const updatedAt = Date.parse(record.updatedAt || "");
     if (!Number.isFinite(updatedAt) || now - updatedAt > 3 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
     const uid = String(record.uid || record.id || "");
@@ -376,12 +376,11 @@ async function dashboard(env) {
   for (const name of collections) {
     countResults.push(await safe("count:" + name, () => countDocuments(env, name), 0));
   }
-  const [walletPage, operations, userProfiles, usageEvents, geoRecords] = await Promise.all([
-    safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 100), { items: [], nextPageToken: "" }),
+  const [walletPage, operations, userProfiles, usageEvents] = await Promise.all([
+    safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 50), { items: [], nextPageToken: "" }),
     safe("walletOperations:recent", () => recentDocuments(env, "walletOperations", 8), []),
-    safe("users:recent", () => recentDocuments(env, "users", 100), []),
-    safe("usageEvents:last7days", () => usageEventsLast7Days(env), []),
-    safe("geoPresence:recent", () => queryRecentDocuments(env, "geoPresence", "updatedAt", 200), null)
+    safe("users:recent", () => recentDocuments(env, "users", 30), []),
+    safe("usageEvents:last7days", () => usageEventsLast7Days(env), [])
   ]);
   const wallets = walletPage.items || [];
   const resolvedCounts = Object.fromEntries(collections.map((name, index) => [
@@ -404,7 +403,6 @@ async function dashboard(env) {
   }
   const usageTrend = dayKeys.map(day => ({ date: day.slice(8, 10) + "/" + day.slice(5, 7), count: usageByDay[day] }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoRecords || [], userProfiles);
   const result = {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
@@ -412,18 +410,9 @@ async function dashboard(env) {
     usageTrend,
     walletBalanceSample: wallets.reduce((sum, item) => sum + (Number(item.balance) || 0), 0),
     walletSampleSize: wallets.length,
-    usageSampleLimit: 750,
-    usageSampleComplete: usageEvents.length < 750,
+    usageSampleLimit: 100,
+    usageSampleComplete: usageEvents.length < 100,
     recentUsers, recentOperations: operations,
-    geoActivity: geoActivity.points,
-    geoActivitySummary: {
-      activeUsers: geoActivity.activeUsers,
-      visibleMarkers: geoActivity.points.length,
-      freshnessMinutes: geoActivity.freshnessMinutes,
-      coordinatePrecision: "GPS sin redondeo",
-      sampleComplete: false,
-      sourceAvailable: Array.isArray(geoRecords)
-    },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
       usageEventsVisibleLast7Days: usageEvents.length,
@@ -433,8 +422,7 @@ async function dashboard(env) {
       usageQueryWindowDays: 7,
       sourceFailures: failures,
       cacheSeconds: 45,
-      geoSampleLimit: 200,
-      usageSampleLimit: 750
+      usageSampleLimit: 100
     }
   };
   dashboardCache = { data: result, expiresAt: Date.now() + 45000 };
@@ -525,10 +513,42 @@ async function finance(env) {
 async function handleAction(env, actor, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
+    case "geoPresence": {
+      const activeCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+      const records = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200, "updatedAt", activeCutoff);
+      const geo = aggregateGeoPresence(records, []);
+      return {
+        geoActivity: geo.points,
+        geoActivitySummary: { activeUsers: geo.activeUsers, visibleMarkers: geo.points.length, freshnessMinutes: geo.freshnessMinutes, coordinatePrecision: "GPS sin redondeo", sampleComplete: false, sourceAvailable: true },
+        diagnostics: { source: "geoPresence", documentsRead: records.length, adminModule: "liveMap", refreshedAt: new Date().toISOString() }
+      };
+    }
+    case "queryDiagnostics": {
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const records = await queryRecentDocuments(env, "queryDiagnostics", "updatedAt", 100, "updatedAt", cutoff);
+      const byModule = new Map();
+      for (const item of records) {
+        const moduleStats = item.modules && typeof item.modules === "object" ? item.modules : {};
+        for (const [module, stats] of Object.entries(moduleStats)) {
+          const row = byModule.get(module) || { module, queryCount: 0, estimatedDocumentReads: 0, serverSnapshots: 0, cacheSnapshots: 0, writeCount: 0, errorCount: 0, flushWrites: 0, durationMsTotal: 0, lastUpdatedAt: "", lastOperation: "" };
+          for (const key of ["queryCount", "estimatedDocumentReads", "serverSnapshots", "cacheSnapshots", "writeCount", "errorCount", "flushWrites", "durationMsTotal"]) row[key] += Number(stats[key]) || 0;
+          if (String(item.updatedAt || "") > row.lastUpdatedAt) row.lastUpdatedAt = String(item.updatedAt);
+          row.lastOperation = String(stats.lastOperation || row.lastOperation);
+          byModule.set(module, row);
+        }
+      }
+      const modules = [...byModule.values()].sort((a, b) => b.estimatedDocumentReads - a.estimatedDocumentReads);
+      const totals = modules.reduce((sum, row) => {
+        for (const key of ["queryCount", "estimatedDocumentReads", "serverSnapshots", "cacheSnapshots", "writeCount", "errorCount", "flushWrites", "durationMsTotal"]) sum[key] += row[key];
+        return sum;
+      }, { queryCount: 0, estimatedDocumentReads: 0, serverSnapshots: 0, cacheSnapshots: 0, writeCount: 0, errorCount: 0, flushWrites: 0, durationMsTotal: 0 });
+      const monitor = modules.find(row => row.module === "diagnostics");
+      return { periodDays: 7, sampledDocuments: records.length, totals, modules, monitorSelfCost: { firestoreDocumentsRead: records.length, firestoreWrites: monitor?.writeCount || 0, note: "Las lecturas de esta consulta pertenecen al módulo Diagnóstico y consumo; las escrituras de instrumentación figuran como módulo diagnostics." }, refreshedAt: new Date().toISOString() };
+    }
     case "finance": return finance(env);
     case "list": {
       const collection = String(data.collection || "");
-      const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
+      const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "queryDiagnostics", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
       if (!allowed.has(collection)) throw new ApiError(400, "invalid-argument", "Colección no disponible.");
       if (collection === "usageEvents") {
         const offset = Math.max(0, Math.min(Number(data.offset) || 0, 50000));
@@ -677,6 +697,7 @@ async function handleGeoPresenceRequest(request, env) {
     province: String(data.province || "").trim().slice(0, 80) || "Provincia no informada",
     country: String(data.country || "").trim().slice(0, 80) || "País no informado",
     consent: true,
+    source: "GPS_ANDROID",
     updatedAt: new Date().toISOString()
   });
   return json({ ok: true, result: { saved: true, precision: "gps-exact", accuracyMeters: Math.round(accuracyMeters) } });

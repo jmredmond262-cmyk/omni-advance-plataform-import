@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.data.analytics.QueryDiagnosticsRepository
 import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
@@ -93,9 +94,17 @@ fun MomentsScreen(onBack: () -> Unit) {
             loading = false
             error = "Iniciá sesión para administrar tus fechas especiales."
         } else {
+            val queryStartedAt = System.currentTimeMillis()
+            var firstSnapshot = true
+            var serverSnapshotSeen = false
             listener = db.collection("omniMoments").whereEqualTo("ownerUid", uid)
                 .limit(100)
                 .addSnapshotListener { snapshot, exception ->
+                    val fromCache = snapshot?.metadata?.isFromCache == true
+                    val readCount = if (snapshot == null || fromCache) 0 else if (!serverSnapshotSeen) snapshot.documents.size else snapshot.documentChanges.count { it.type != com.google.firebase.firestore.DocumentChange.Type.REMOVED }
+                    QueryDiagnosticsRepository.recordSnapshot(context, "moments", "omniMoments.owner.listen", readCount, fromCache, System.currentTimeMillis() - queryStartedAt, firstSnapshot, exception != null)
+                    if (snapshot != null && !fromCache) serverSnapshotSeen = true
+                    firstSnapshot = false
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar tus fechas especiales."
                     } else {
@@ -162,6 +171,7 @@ fun MomentsScreen(onBack: () -> Unit) {
             "status" to "ACTIVE", "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )).addOnSuccessListener {
+            QueryDiagnosticsRepository.recordWrite(context, "moments")
             val reminderWasEnabled = reminderEnabled
             if (reminderWasEnabled) {
                 MomentReminderScheduler.schedule(context, momentRef.id, personName.trim(), occasion, date.trim(),

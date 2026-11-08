@@ -32,6 +32,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.example.data.analytics.UsageAnalyticsRepository
+import com.example.data.analytics.QueryDiagnosticsRepository
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -74,10 +75,18 @@ fun EventsScreen(onBack: () -> Unit) {
     DisposableEffect(uid) {
         var listener: ListenerRegistration? = null
         if (uid.isNotBlank()) {
+            val queryStartedAt = System.currentTimeMillis()
+            var firstSnapshot = true
+            var serverSnapshotSeen = false
             listener = db.collection("omniEvents")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(100)
                 .addSnapshotListener { snapshot, exception ->
+                    val fromCache = snapshot?.metadata?.isFromCache == true
+                    val readCount = if (snapshot == null || fromCache) 0 else if (!serverSnapshotSeen) snapshot.documents.size else snapshot.documentChanges.count { it.type != com.google.firebase.firestore.DocumentChange.Type.REMOVED }
+                    QueryDiagnosticsRepository.recordSnapshot(context, "events", "omniEvents.listen", readCount, fromCache, System.currentTimeMillis() - queryStartedAt, firstSnapshot, exception != null)
+                    if (snapshot != null && !fromCache) serverSnapshotSeen = true
+                    firstSnapshot = false
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar los eventos."
                     } else {
@@ -142,6 +151,7 @@ fun EventsScreen(onBack: () -> Unit) {
             eventData["createdAt"] = FieldValue.serverTimestamp()
         }
         eventRef.set(eventData, SetOptions.merge()).addOnSuccessListener {
+            QueryDiagnosticsRepository.recordWrite(context, "events")
             UsageAnalyticsRepository.trackAction(uid, if (isEditing) "EVENT_UPDATED" else "EVENT_PUBLISHED", "community")
             busy = false
             showPublish = false
@@ -149,6 +159,7 @@ fun EventsScreen(onBack: () -> Unit) {
             title = ""; description = ""; dateTime = ""; location = ""; contact = ""
             feedback = if (isEditing) "Evento actualizado correctamente." else "Evento publicado para la comunidad OMNI."
         }.addOnFailureListener { e ->
+            QueryDiagnosticsRepository.recordWrite(context, "events", failed = true)
             busy = false
             feedback = e.localizedMessage ?: "No se pudo guardar. Revisá las reglas de Firestore."
         }

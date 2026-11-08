@@ -156,6 +156,8 @@ class MainViewModel : ViewModel() {
 
     private val _isLoadingLiveLocation = MutableStateFlow(false)
     val isLoadingLiveLocation: StateFlow<Boolean> = _isLoadingLiveLocation.asStateFlow()
+    @Volatile private var liveLocationRefreshInProgress = false
+    @Volatile private var lastLiveLocationRefreshAt = 0L
 
     // Ciudad y Localidad Actual
     private val _currentCity = MutableStateFlow("Detectando ubicación")
@@ -550,7 +552,7 @@ class MainViewModel : ViewModel() {
         _searchRadiusMeters.value = meters
         context.getSharedPreferences("omni_session", Context.MODE_PRIVATE).edit().putInt("radius", meters).apply()
         _userProfile.value = _userProfile.value.copy(searchRadiusMeters = meters)
-        refreshLiveGpsAndPlaces(context)
+        refreshLiveGpsAndPlaces(context, force = true)
     }
 
     fun searchTrip(origin: String, destination: String) {
@@ -801,16 +803,21 @@ class MainViewModel : ViewModel() {
 
     fun setDemoGoogleApiKey(context: Context, key: String) {
         GooglePlacesApi.saveDemoApiKey(context, key)
-        refreshLiveGpsAndPlaces(context)
+        refreshLiveGpsAndPlaces(context, force = true)
     }
 
     fun getGoogleApiKey(context: Context): String = GooglePlacesApi.getApiKey(context)
 
     fun rescanAreaStores(context: Context) {
-        refreshLiveGpsAndPlaces(context)
+        refreshLiveGpsAndPlaces(context, force = true)
     }
 
-    fun refreshLiveGpsAndPlaces(context: Context) {
+    fun refreshLiveGpsAndPlaces(context: Context, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (liveLocationRefreshInProgress) return
+        if (!force && now - lastLiveLocationRefreshAt < 45_000L) return
+        liveLocationRefreshInProgress = true
+        lastLiveLocationRefreshAt = now
         viewModelScope.launch {
             _isLoadingLiveLocation.value = true
             try {
@@ -857,6 +864,7 @@ class MainViewModel : ViewModel() {
                 _currentCity.value = "No se pudo actualizar GPS · intentá nuevamente"
             } finally {
                 _isLoadingLiveLocation.value = false
+                liveLocationRefreshInProgress = false
             }
         }
     }

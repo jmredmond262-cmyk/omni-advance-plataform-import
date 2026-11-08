@@ -4,6 +4,7 @@ import com.example.model.TransactionType
 import com.example.model.WalletTransaction
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.example.data.analytics.QueryDiagnosticsRepository
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.example.data.analytics.UsageAnalyticsRepository
@@ -84,9 +85,17 @@ class DemoWalletRepository(
         var alias = ""
         var cvu = ""
         var transactions = emptyList<WalletTransaction>()
+        var accountFirstSnapshot = true
+        val accountStartedAt = System.currentTimeMillis()
+        var transactionsFirstSnapshot = true
+        var transactionsServerSeen = false
+        val transactionsStartedAt = System.currentTimeMillis()
         fun publish() = onUpdate(Result.success(DemoWalletSnapshot(balance, cashback, alias, cvu, transactions)))
 
         val accountListener = accountRef.addSnapshotListener { snapshot, error ->
+            val accountFromCache = snapshot?.metadata?.isFromCache == true
+            QueryDiagnosticsRepository.recordSnapshot("wallet_accounts", "walletAccounts.observe", if (snapshot == null || accountFromCache) 0 else 1, accountFromCache, System.currentTimeMillis() - accountStartedAt, accountFirstSnapshot, error != null)
+            accountFirstSnapshot = false
             if (error != null) {
                 onUpdate(Result.failure(error))
                 return@addSnapshotListener
@@ -101,6 +110,11 @@ class DemoWalletRepository(
         val transactionsListener = accountRef.collection("transactions")
             .orderBy("createdAt", Query.Direction.DESCENDING).limit(50)
             .addSnapshotListener { snapshot, error ->
+                val transactionsFromCache = snapshot?.metadata?.isFromCache == true
+                val transactionReads = if (snapshot == null || transactionsFromCache) 0 else if (!transactionsServerSeen) snapshot.documents.size else snapshot.documentChanges.count { it.type != com.google.firebase.firestore.DocumentChange.Type.REMOVED }
+                QueryDiagnosticsRepository.recordSnapshot("wallet_transactions", "walletAccounts.transactions.listen", transactionReads, transactionsFromCache, System.currentTimeMillis() - transactionsStartedAt, transactionsFirstSnapshot, error != null)
+                if (snapshot != null && !transactionsFromCache) transactionsServerSeen = true
+                transactionsFirstSnapshot = false
                 if (error != null) {
                     onUpdate(Result.failure(error))
                     return@addSnapshotListener

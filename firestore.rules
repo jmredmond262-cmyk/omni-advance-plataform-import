@@ -548,8 +548,36 @@ service cloud.firestore {
         && (!("localHour" in request.resource.data) || (request.resource.data.localHour is int && request.resource.data.localHour >= 0 && request.resource.data.localHour <= 23))
         && (!("localDayOfWeek" in request.resource.data) || (request.resource.data.localDayOfWeek is int && request.resource.data.localDayOfWeek >= 1 && request.resource.data.localDayOfWeek <= 7))
         && (!("timezoneOffsetMinutes" in request.resource.data) || (request.resource.data.timezoneOffsetMinutes is int && request.resource.data.timezoneOffsetMinutes >= -840 && request.resource.data.timezoneOffsetMinutes <= 840))
-        && (!("localDate" in request.resource.data) || (request.resource.data.localDate is string && request.resource.data.localDate.matches('^\\d{4}-\\d{2}-\\d{2}$')))
+        && (!("localDate" in request.resource.data) || (request.resource.data.localDate is string && request.resource.data.localDate.matches('^\\d{4}-\\d{2}-\\d{2}$')));
       allow update, delete: if false;
+    }
+
+    // Aggregated, privacy-safe client query telemetry. One document per user/day.
+    // Aggregated, privacy-safe client query telemetry. One document per user/day.
+    match /queryDiagnostics/{diagnosticId} {
+      allow read: if isSystemAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.day is string
+        && request.resource.data.day.size() == 8
+        && diagnosticId == request.auth.uid + "_" + request.resource.data.day
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.modules is map
+        && request.resource.data.modules.keys().hasOnly([
+          "events", "moments", "conex_profiles", "conex_jobs", "conex_applications",
+          "merchant_profiles", "wallet_accounts", "wallet_transactions", "user_profile", "diagnostics"
+        ]);
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.day == resource.data.day
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["modules", "updatedAt"])
+        && request.resource.data.modules is map
+        && request.resource.data.modules.keys().hasOnly([
+          "events", "moments", "conex_profiles", "conex_jobs", "conex_applications",
+          "merchant_profiles", "wallet_accounts", "wallet_transactions", "user_profile", "diagnostics"
+        ]);
+      allow delete: if false;
     }
 
     match /appFeedback/{feedbackId} {
