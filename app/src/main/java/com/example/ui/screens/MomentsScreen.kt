@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.data.analytics.QueryDiagnosticsRepository
 import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
