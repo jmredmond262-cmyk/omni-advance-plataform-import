@@ -574,7 +574,8 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp
         && request.resource.data.modules is map
         && request.resource.data.modules.keys().hasOnly([
-          "events", "conex_profiles", "conex_jobs", "conex_applications", "diagnostics"
+          "events", "moments", "conex_profiles", "conex_jobs", "conex_applications",
+          "merchant_profiles", "wallet_accounts", "wallet_transactions", "user_profile", "diagnostics"
         ]);
       allow update: if signedIn()
         && resource.data.uid == request.auth.uid
@@ -583,7 +584,8 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["modules", "updatedAt"])
         && request.resource.data.modules is map
         && request.resource.data.modules.keys().hasOnly([
-          "events", "conex_profiles", "conex_jobs", "conex_applications", "diagnostics"
+          "events", "moments", "conex_profiles", "conex_jobs", "conex_applications",
+          "merchant_profiles", "wallet_accounts", "wallet_transactions", "user_profile", "diagnostics"
         ]);
       allow delete: if false;
     }
