@@ -349,7 +349,7 @@ fun OmniApp(viewModel: MainViewModel) {
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                delay(60 * 1000L)
+                delay(30 * 1000L)
                 GeoPresenceRepository.refreshPresenceWhileActive(context)
             }
         }

@@ -524,6 +524,23 @@ async function finance(env) {
 
 async function handleAction(env, actor, action, data) {
   switch (action) {
+    case "geoActivity": {
+      const [records, profiles] = await Promise.all([
+        queryRecentDocuments(env, "geoPresence", "updatedAt", 200),
+        recentDocuments(env, "users", 300)
+      ]);
+      const activity = aggregateGeoPresence(records, profiles);
+      return {
+        geoActivity: activity.points,
+        geoActivitySummary: {
+          activeUsers: activity.activeUsers,
+          visibleMarkers: activity.points.length,
+          freshnessMinutes: activity.freshnessMinutes,
+          coordinatePrecision: "GPS sin redondeo",
+          sourceAvailable: true
+        }
+      };
+    }
     case "dashboard": return dashboard(env);
     case "finance": return finance(env);
     case "list": {
@@ -565,7 +582,7 @@ async function handleAction(env, actor, action, data) {
             if (!row.document) continue;
             const payment = documentData(row.document);
             const orderId = String(payment.orderId || "");
-            if (payment.kind === "QR_PAYMENT" && orderId) {
+            if (["QR_PAYMENT", "SELF_CONSUMPTION_DEMO"].includes(payment.kind) && orderId) {
               paymentByOrder.set(orderId, payment.id);
             }
           }

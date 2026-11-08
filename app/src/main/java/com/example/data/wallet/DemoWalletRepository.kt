@@ -254,7 +254,11 @@ class DemoWalletRepository(
                 check(orderSnapshot?.getString("merchantUid") == recipientUid) { "El comercio del pedido no coincide." }
                 val orderTotal = (orderSnapshot?.get("total") as? Number)?.toDouble() ?: 0.0
                 check(kotlin.math.abs(orderTotal - amount) < 0.005) { "El importe del pedido cambió. Volvé a revisar el total." }
-                check(orderSnapshot?.getString("paymentStatus") == "PENDIENTE") { "El pedido ya figura pagado." }
+                check(orderSnapshot?.getString("paymentStatus") == "PENDIENTE") { "El pedido todavía no tiene un pago solicitado o ya fue pagado." }
+                check(orderSnapshot?.getString("status") == "LISTO") { "El comercio todavía no marcó el pedido como listo." }
+                check(orderSnapshot?.getBoolean("paymentRequested") == true || orderSnapshot?.getTimestamp("paymentRequestedAt") != null) {
+                    "El comercio todavía no solicitó el pago."
+                }
                 check(orderSnapshot?.getString("status") !in listOf("ENTREGADO", "RECHAZADO", "CANCELADO")) {
                     "El pedido está cerrado y no admite pagos."
                 }

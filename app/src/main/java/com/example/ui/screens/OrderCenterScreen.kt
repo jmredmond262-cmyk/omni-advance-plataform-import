@@ -63,7 +63,8 @@ private data class OmniStoreOrder(
     val fulfillmentType: String,
     val deliveryAddress: String,
     val qrNonce: String,
-    val isLocalDemo: Boolean = false
+    val isLocalDemo: Boolean = false,
+    val paymentRequested: Boolean = false
 )
 
 @Composable
@@ -138,7 +139,8 @@ fun OrderCenterScreen(
             paymentStatus = doc.getString("paymentStatus").orEmpty(),
             fulfillmentType = doc.getString("fulfillmentType").orEmpty(),
             deliveryAddress = doc.getString("deliveryAddress").orEmpty(),
-            qrNonce = doc.getString("qrNonce").orEmpty()
+            qrNonce = doc.getString("qrNonce").orEmpty(),
+            paymentRequested = doc.getBoolean("paymentRequested") == true || doc.getTimestamp("paymentRequestedAt") != null
         )
     }.getOrNull()
 
@@ -218,7 +220,7 @@ fun OrderCenterScreen(
                             feedback = error.localizedMessage ?: "No se pudo actualizar la confirmación de cobros DEMO."
                         } else {
                             val confirmed = snapshot?.documents.orEmpty()
-                                .filter { it.getString("kind") == "QR_PAYMENT" }
+                                .filter { it.getString("kind") in listOf("QR_PAYMENT", "SELF_CONSUMPTION_DEMO") }
                                 .mapNotNull { it.getString("orderId") }
                                 .toSet()
                             if (merchantMode && paymentListenerInitialized) {
@@ -293,10 +295,7 @@ fun OrderCenterScreen(
         db.collection("merchantProfiles").document(store.id).get()
             .addOnSuccessListener { merchant ->
                 val merchantUid = merchant.getString("ownerUid").orEmpty()
-                if (merchantUid.isNotBlank() && merchantUid == uid) {
-                    sending = false
-                    feedback = "Estás usando la misma cuenta que administra este comercio. Para generar un pedido de prueba, ingresá a OMNI con otra cuenta de cliente. El comercio sí puede recibir pedidos QR; OMNI no permite compras a uno mismo."
-                } else if (!merchant.exists() || merchantUid.isBlank()) {
+                if (!merchant.exists() || merchantUid.isBlank()) {
                     sending = false
                     feedback = "No se encontró un perfil comercial activo para este catálogo. El comercio debe ingresar a su Panel de Comercio con la cuenta titular para vincularlo antes de recibir pedidos."
                 } else {
@@ -311,7 +310,8 @@ fun OrderCenterScreen(
                         "merchantUid" to merchantUid, "customerUid" to uid,
                         "customerName" to profile.fullName, "customerPhone" to profile.phone,
                         "items" to payloadItems, "total" to total,
-                        "status" to "RECIBIDO", "paymentStatus" to "PENDIENTE",
+                        "status" to "RECIBIDO", "paymentStatus" to "NO_SOLICITADO",
+                        "paymentRequested" to false,
                         "paymentMethod" to "PAGO_AL_RETIRAR",
                     "paymentFlow" to "OMNI_PAY_DEMO",
                         "fulfillmentType" to fulfillmentType, "deliveryAddress" to deliveryAddress.trim(),
@@ -326,7 +326,7 @@ fun OrderCenterScreen(
                         createdOrder = OmniStoreOrder(
                             ref.id, store.id, store.name, merchantUid, uid,
                             profile.fullName, profile.phone, cartLines, total,
-                            "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce
+                            "RECIBIDO", "NO_SOLICITADO", fulfillmentType, deliveryAddress.trim(), nonce
                         )
                         updateCart(emptyMap())
                     }.addOnFailureListener { e ->
@@ -385,8 +385,8 @@ fun OrderCenterScreen(
 
     fun payOrderDemo(order: OmniStoreOrder) {
         if (payingOrderId != null) return
-        if (order.customerUid != uid || order.paymentStatus != "PENDIENTE") {
-            feedback = "Este pedido no está pendiente de pago en tu cuenta."
+        if (order.customerUid != uid || order.status != "LISTO" || !order.paymentRequested || order.paymentStatus != "PENDIENTE") {
+            feedback = "El pago todavía no está habilitado: el comercio debe marcar el pedido como listo y solicitar el pago."
             return
         }
         payingOrderId = order.id
@@ -398,7 +398,7 @@ fun OrderCenterScreen(
                         result.fold(
                             onSuccess = {
                                 orders = orders.map { current ->
-                                    if (current.id == order.id) current.copy(paymentStatus = "PAGADA · DEMO") else current
+                                    if (current.id == order.id) current.copy(paymentStatus = "PAGADA · DEMO", paymentRequested = true) else current
                                 }
                                 feedback = "$it. Se registró el movimiento ficticio en las dos billeteras. No se movió dinero real."
                             },
@@ -432,6 +432,33 @@ fun OrderCenterScreen(
             orders = orders.map { current -> if (current.id == order.id) current.copy(status = next) else current }
             if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next)
         }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo actualizar el estado." }
+    }
+
+    fun requestOrderPayment(order: OmniStoreOrder) {
+        if (order.merchantUid != uid || order.status != "LISTO" || order.paymentRequested || order.paymentStatus.startsWith("PAGADA")) {
+            feedback = "La solicitud de pago solo está disponible para el pedido listo que administra este comercio."
+            return
+        }
+        db.collection("storeOrders").document(order.id).update(
+            mapOf(
+                "paymentStatus" to "PENDIENTE",
+                "paymentRequested" to true,
+                "paymentRequestedAt" to FieldValue.serverTimestamp(),
+                "paymentRequestedBy" to uid,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        ).addOnSuccessListener {
+            UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_PAYMENT_REQUESTED", mapOf(
+                "operationId" to order.id, "correlationId" to order.id,
+                "stage" to "MERCHANT_REQUESTED_PAYMENT", "success" to true
+            ))
+            orders = orders.map { current ->
+                if (current.id == order.id) current.copy(paymentStatus = "PENDIENTE", paymentRequested = true) else current
+            }
+            selectedScannedOrder = selectedScannedOrder?.takeIf { it.id == order.id }
+                ?.copy(paymentStatus = "PENDIENTE", paymentRequested = true)
+            feedback = "Solicitud de pago enviada al cliente. OMNI Pay quedó habilitado."
+        }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo solicitar el pago al cliente." }
     }
 
     fun cancelCustomerOrder(order: OmniStoreOrder) {
@@ -591,7 +618,11 @@ fun OrderCenterScreen(
             } else {
                 Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     orders.forEach { order ->
-                        OrderStatusCard(order, merchantMode = true, onAdvance = { next -> advanceOrder(order, next) })
+                        OrderStatusCard(
+                            order, merchantMode = true,
+                            onAdvance = { next -> advanceOrder(order, next) },
+                            onRequestPayment = { requestOrderPayment(order) }
+                        )
                     }
                 }
             }
@@ -630,7 +661,9 @@ fun OrderCenterScreen(
                     Text(if (scanned.fulfillmentType == "DELIVERY") "Delivery: ${scanned.deliveryAddress}" else "Modalidad: Retiro en comercio", color = Color(0xFFB8C8D9), fontSize = 11.sp)
                     Text("Estado: ${scanned.status.replace("_", " ")}", color = Color(0xFF57DDF5), fontSize = 11.sp)
                     Text("Pago: ${scanned.paymentStatus}", color = if (scanned.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978), fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                    if (scanned.paymentStatus == "PENDIENTE") Text("El cliente debe abrir Mis pedidos y autorizar el pago con OMNI Pay DEMO. El comercio no puede debitar su billetera.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    if (scanned.paymentRequested && scanned.paymentStatus == "PENDIENTE") Text("Solicitud enviada. El cliente ya puede autorizar el pago con OMNI Pay DEMO.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    else if (scanned.status == "LISTO") Text("Pedido listo. Solicitá el pago para habilitar OMNI Pay en el cliente.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    else Text("El pago permanece bloqueado hasta que el comercio marque el pedido como listo y solicite el cobro.", color = Color(0xFFFFC978), fontSize = 10.sp)
                 }
             },
             confirmButton = {
@@ -642,16 +675,27 @@ fun OrderCenterScreen(
                     "EN_CAMINO" -> "ENTREGADO"
                     else -> ""
                 }
-                if (next.isNotBlank()) Button(onClick = {
-                    advanceOrder(scanned, next)
-                }) { Text(when(next) {
-                    "ACEPTADO" -> "Aceptar pedido"
-                    "EN_PREPARACION" -> "Preparar pedido"
-                    "LISTO" -> "Marcar listo"
-                    "EN_CAMINO" -> "Enviar delivery"
-                    else -> "Marcar entregado"
-                }) }
-                else TextButton(onClick = { selectedScannedOrder = null }) { Text("Cerrar") }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (scanned.status == "LISTO" && !scanned.paymentRequested && !scanned.paymentStatus.startsWith("PAGADA")) {
+                        Button(onClick = { requestOrderPayment(scanned) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Solicitar pago al cliente")
+                        }
+                    }
+                    if (next.isNotBlank()) {
+                        val paymentBlocked = next in listOf("EN_CAMINO", "ENTREGADO") && !scanned.paymentStatus.startsWith("PAGADA")
+                        Button(onClick = { advanceOrder(scanned, next) }, enabled = !paymentBlocked, modifier = Modifier.fillMaxWidth()) {
+                            Text(when(next) {
+                                "ACEPTADO" -> "Aceptar pedido"
+                                "EN_PREPARACION" -> "Preparar pedido"
+                                "LISTO" -> "Marcar listo"
+                                "EN_CAMINO" -> "Enviar delivery"
+                                else -> "Marcar entregado"
+                            })
+                        }
+                    } else {
+                        TextButton(onClick = { selectedScannedOrder = null }) { Text("Cerrar") }
+                    }
+                }
             },
             dismissButton = {
                 Row {
@@ -789,6 +833,7 @@ private fun OrderStatusCard(
     merchantMode: Boolean,
     onAdvance: (String) -> Unit,
     onPay: (() -> Unit)? = null,
+    onRequestPayment: (() -> Unit)? = null,
     paying: Boolean = false
 ) {
     val context = LocalContext.current
@@ -823,13 +868,17 @@ private fun OrderStatusCard(
             order.items.forEach { Text("${it.quantity} × ${it.name}", color = Color(0xFFB8C8D9), fontSize = 10.sp) }
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
             Text(
-                if (order.paymentStatus.startsWith("PAGADA")) "Pago: acreditado · DEMO"
-                else "Pago: pendiente · autorización del cliente en OMNI Pay DEMO",
+                when {
+                    order.paymentStatus.startsWith("PAGADA") -> "Pago: acreditado · DEMO"
+                    order.paymentRequested && order.paymentStatus == "PENDIENTE" -> "Pago solicitado por el comercio · esperando al cliente"
+                    order.status == "LISTO" -> "Pedido listo · esperando que el comercio solicite el pago"
+                    else -> "Pago bloqueado · se habilita cuando el comercio termina y solicita el cobro"
+                },
                 color = if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
                 fontSize = 9.sp
             )
-            if (!merchantMode && onPay != null && order.paymentStatus == "PENDIENTE" &&
-                order.status !in listOf("ENTREGADO", "RECHAZADO", "CANCELADO")) {
+            if (!merchantMode && onPay != null && order.paymentRequested && order.paymentStatus == "PENDIENTE" &&
+                order.status == "LISTO") {
                 if (order.total <= 50000.0) {
                     Button(onClick = onPay, enabled = !paying, modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
@@ -849,6 +898,15 @@ private fun OrderStatusCard(
                 OutlinedButton(onClick = { onAdvance("CANCELADO") }, modifier = Modifier.fillMaxWidth()) {
                     Text("Cancelar pedido", fontSize = 10.sp)
                 }
+            }
+            if (merchantMode && order.status == "LISTO" && !order.paymentRequested && !order.paymentStatus.startsWith("PAGADA")) {
+                Button(onClick = { onRequestPayment?.invoke() }, enabled = onRequestPayment != null, modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
+                    Text("Solicitar pago al cliente")
+                }
+            }
+            if (merchantMode && order.paymentRequested && order.paymentStatus == "PENDIENTE") {
+                Text("Solicitud de pago enviada · esperando autorización del cliente", color = Color(0xFFFFC978), fontSize = 9.sp)
             }
             if (merchantMode && next.isNotBlank()) {
                 val paymentRequired = next in listOf("EN_CAMINO", "ENTREGADO") && !order.paymentStatus.startsWith("PAGADA")

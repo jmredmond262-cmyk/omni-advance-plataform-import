@@ -27,7 +27,7 @@ object GeoPresenceRepository {
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refreshInProgress = AtomicBoolean(false)
     private const val MIN_MOVEMENT_METERS = 35f
-    private const val HEARTBEAT_MILLIS = 2 * 60 * 1000L
+    private const val HEARTBEAT_MILLIS = 45 * 1000L
 
     private fun uid() = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
