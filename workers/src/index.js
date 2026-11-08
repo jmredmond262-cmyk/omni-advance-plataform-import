@@ -165,7 +165,7 @@ async function queryRecentDocuments(env, collection, orderField, limit, cutoffFi
 async function usageEventsLast7Days(env) {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   // Muestra acotada para evitar lecturas masivas en cada apertura del panel.
-  return queryRecentDocuments(env, "usageEvents", "createdAt", 750, "createdAt", cutoff);
+  return queryRecentDocuments(env, "usageEvents", "createdAt", 100, "createdAt", cutoff);
 }
 async function countDocuments(env, collection) {
   const query = {
@@ -212,7 +212,7 @@ function aggregateGeoPresence(records, profiles) {
   const points = [];
   let activeUsers = 0;
   for (const record of records) {
-    if (record.consent !== true) continue;
+    if (record.consent !== true || record.source !== "GPS_ANDROID") continue;
     const updatedAt = Date.parse(record.updatedAt || "");
     if (!Number.isFinite(updatedAt) || now - updatedAt > 3 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
     const uid = String(record.uid || record.id || "");
@@ -370,16 +370,16 @@ async function dashboard(env) {
       return fallback;
     }
   }
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "queryDiagnostics", "moduleRegistry", "adminAuditLogs"];
   // Ejecutar conteos de a uno evita ráfagas simultáneas contra Firestore.
   const countResults = [];
   for (const name of collections) {
     countResults.push(await safe("count:" + name, () => countDocuments(env, name), 0));
   }
   const [walletPage, operations, userProfiles, usageEvents, geoRecords] = await Promise.all([
-    safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 100), { items: [], nextPageToken: "" }),
+    safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 50), { items: [], nextPageToken: "" }),
     safe("walletOperations:recent", () => recentDocuments(env, "walletOperations", 8), []),
-    safe("users:recent", () => recentDocuments(env, "users", 100), []),
+    safe("users:recent", () => recentDocuments(env, "users", 30), []),
     safe("usageEvents:last7days", () => usageEventsLast7Days(env), []),
     safe("geoPresence:recent", () => queryRecentDocuments(env, "geoPresence", "updatedAt", 200), null)
   ]);
@@ -677,6 +677,7 @@ async function handleGeoPresenceRequest(request, env) {
     province: String(data.province || "").trim().slice(0, 80) || "Provincia no informada",
     country: String(data.country || "").trim().slice(0, 80) || "País no informado",
     consent: true,
+    source: "GPS_ANDROID",
     updatedAt: new Date().toISOString()
   });
   return json({ ok: true, result: { saved: true, precision: "gps-exact", accuracyMeters: Math.round(accuracyMeters) } });
