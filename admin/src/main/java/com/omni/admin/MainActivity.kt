@@ -427,9 +427,23 @@ private fun QueryDiagnosticsContent(payload: JSONObject) {
     } else {
       item { Text("DESGLOSE POR MÓDULO", color = White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) }
       items(modules) { row ->
+        val moduleId = row["module"]?.toString().orEmpty()
+        val moduleLabel = when (moduleId) {
+          "events" -> "Eventos OMNI"
+          "moments" -> "OMNI Momentos"
+          "conex_profiles" -> "OMNI CONEX · perfiles profesionales"
+          "conex_jobs" -> "OMNI CONEX · publicaciones laborales"
+          "conex_applications" -> "OMNI CONEX · postulaciones"
+          "merchant_profiles" -> "Comercios y catálogos del mapa"
+          "wallet_accounts" -> "OMNI Pay · cuentas"
+          "wallet_transactions" -> "OMNI Pay · historial de movimientos"
+          "user_profile" -> "Perfil y sincronización de cuenta"
+          "diagnostics" -> "Diagnóstico y consumo · propio"
+          else -> moduleId.ifBlank { "Módulo sin identificar" }
+        }
         Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(15.dp)) {
           Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(row["module"]?.toString() ?: "Módulo no informado", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(moduleLabel, color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text("Consultas: ${row["queryCount"] ?: 0} · Lecturas estimadas: ${row["estimatedDocumentReads"] ?: 0}", color = White, fontSize = 11.sp)
             Text("Servidor: ${row["serverSnapshots"] ?: 0} · Caché: ${row["cacheSnapshots"] ?: 0} · Errores: ${row["errorCount"] ?: 0}", color = Muted, fontSize = 10.sp)
             Text("Escrituras de la sección: ${row["writeCount"] ?: 0} · Escrituras de medición: ${row["flushWrites"] ?: 0}", color = Muted, fontSize = 10.sp)
