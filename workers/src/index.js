@@ -411,7 +411,7 @@ async function dashboard(env) {
     walletBalanceSample: wallets.reduce((sum, item) => sum + (Number(item.balance) || 0), 0),
     walletSampleSize: wallets.length,
     usageSampleLimit: 100,
-    usageSampleComplete: usageEvents.length < 750,
+    usageSampleComplete: usageEvents.length < 100,
     recentUsers, recentOperations: operations,
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
@@ -422,8 +422,7 @@ async function dashboard(env) {
       usageQueryWindowDays: 7,
       sourceFailures: failures,
       cacheSeconds: 45,
-      geoSampleLimit: 200,
-      usageSampleLimit: 750
+      usageSampleLimit: 100
     }
   };
   dashboardCache = { data: result, expiresAt: Date.now() + 45000 };
@@ -548,7 +547,7 @@ async function handleAction(env, actor, action, data) {
     case "finance": return finance(env);
     case "list": {
       const collection = String(data.collection || "");
-      const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
+      const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "queryDiagnostics", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
       if (!allowed.has(collection)) throw new ApiError(400, "invalid-argument", "Colección no disponible.");
       if (collection === "usageEvents") {
         const offset = Math.max(0, Math.min(Number(data.offset) || 0, 50000));
