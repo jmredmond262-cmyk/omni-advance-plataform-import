@@ -1015,7 +1015,7 @@ private fun OrderStatusCard(
     val context = LocalContext.current
     var expanded by remember(order.id) { mutableStateOf(false) }
     val next = when (order.status) {
-        "RECIBIDO" -> "ACEPTADO"
+        "RECIBIDO" -> "EN_REVISION"
         "ACEPTADO" -> "EN_REVISION"
         "DISPONIBILIDAD_CONFIRMADA", "CONFIRMADO_CLIENTE" -> "EN_PREPARACION"
         "EN_PREPARACION" -> "LISTO"
@@ -1115,7 +1115,7 @@ private fun OrderStatusCard(
             if (merchantMode && order.paymentRequested && order.paymentStatus == "PENDIENTE") {
                 Text("Solicitud de pago enviada · esperando autorización del cliente", color = Color(0xFFFFC978), fontSize = 9.sp)
             }
-            if (merchantMode && next.isNotBlank()) {
+            if (merchantMode && next.isNotBlank() && order.status != "EN_PREPARACION") {
                 val paymentRequired = next in listOf("EN_CAMINO", "ENTREGADO") && !order.paymentStatus.startsWith("PAGADA")
                 if (paymentRequired) Text("Para despachar o entregar, el cliente debe autorizar el pago OMNI Pay DEMO.", color = Color(0xFFFFC978), fontSize = 9.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
