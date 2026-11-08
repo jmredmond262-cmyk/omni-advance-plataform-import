@@ -193,7 +193,7 @@ service cloud.firestore {
       }
       function validNextStatus() {
         return
-          (resource.data.status == "RECIBIDO" && request.resource.data.status in ["ACEPTADO", "RECHAZADO"]) ||
+          (resource.data.status == "RECIBIDO" && request.resource.data.status in ["ACEPTADO", "EN_REVISION", "RECHAZADO"]) ||
           (resource.data.status == "ACEPTADO" && request.resource.data.status in ["EN_REVISION", "CANCELADO"]) ||
           (resource.data.status in ["DISPONIBILIDAD_CONFIRMADA", "CONFIRMADO_CLIENTE"] && request.resource.data.status == "EN_PREPARACION"
             && resource.data.availabilityReviewed == true) ||
@@ -230,6 +230,24 @@ service cloud.firestore {
       allow read: if isSystemAdmin() || (signedIn()
         && (resource.data.customerUid == request.auth.uid
           || resource.data.merchantUid == request.auth.uid));
+      function validMerchantReadyAndPaymentRequest() {
+        return resource.data.status == "EN_PREPARACION"
+          && resource.data.availabilityReviewed == true
+          && resource.data.paymentStatus == "NO_SOLICITADO"
+          && resource.data.paymentRequested == false
+          && request.resource.data.status == "LISTO"
+          && request.resource.data.paymentStatus == "PENDIENTE"
+          && request.resource.data.paymentRequested == true
+          && request.resource.data.paymentRequestedBy == request.auth.uid
+          && request.resource.data.paymentRequestedAt is timestamp
+          && request.resource.data.updatedAt is timestamp
+          && request.resource.data.total == resource.data.total
+          && request.resource.data.qrNonce == resource.data.qrNonce
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status", "paymentStatus", "paymentRequested", "paymentRequestedAt",
+            "paymentRequestedBy", "updatedAt"
+          ]);
+      }
       function validMerchantPaymentRequest() {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             "paymentStatus", "paymentRequested", "paymentRequestedAt", "paymentRequestedBy", "updatedAt"
@@ -289,7 +307,7 @@ service cloud.firestore {
       }
       function validMerchantAvailabilityReview() {
         return resource.data.status == "EN_REVISION"
-          && request.resource.data.status in ["DISPONIBILIDAD_CONFIRMADA", "ESPERA_CONFIRMACION_CLIENTE"]
+          && request.resource.data.status in ["EN_PREPARACION", "DISPONIBILIDAD_CONFIRMADA", "ESPERA_CONFIRMACION_CLIENTE"]
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             "status", "proposedItems", "proposedTotal", "availabilityMessage",
             "availabilityReviewed", "availabilityReviewedBy", "availabilityReviewedAt",
@@ -308,7 +326,7 @@ service cloud.firestore {
           && request.resource.data.availabilityReviewedBy == request.auth.uid
           && request.resource.data.availabilityReviewedAt is timestamp
           && (
-            (request.resource.data.status == "DISPONIBILIDAD_CONFIRMADA"
+            (request.resource.data.status in ["EN_PREPARACION", "DISPONIBILIDAD_CONFIRMADA"]
               && request.resource.data.availabilityStatus == "TODO_DISPONIBLE"
               && request.resource.data.proposedItems == resource.data.items
               && request.resource.data.proposedTotal == resource.data.total)
@@ -328,7 +346,7 @@ service cloud.firestore {
           ])
           && request.resource.data.items == resource.data.proposedItems
           && request.resource.data.total == resource.data.proposedTotal
-          && request.resource.data.status == "CONFIRMADO_CLIENTE"
+          && request.resource.data.status == "EN_PREPARACION"
           && request.resource.data.customerAcceptedBy == request.auth.uid
           && request.resource.data.customerAcceptedAt is timestamp
           && request.resource.data.updatedAt is timestamp
@@ -360,6 +378,11 @@ service cloud.firestore {
         validCustomerProposalDecision()
         ||
         validCustomerCancellation()
+        ||
+        (
+          resource.data.merchantUid == request.auth.uid
+          && validMerchantReadyAndPaymentRequest()
+        )
         ||
         (
           resource.data.merchantUid == request.auth.uid
