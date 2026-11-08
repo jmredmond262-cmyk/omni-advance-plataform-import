@@ -124,6 +124,8 @@ fun OrderCenterScreen(
     var missingProductIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var availabilityNote by remember { mutableStateOf("") }
     var ordersInitialized by remember { mutableStateOf(false) }
+    var customerSection by remember { mutableStateOf("COMPRAR") }
+    var merchantSection by remember { mutableStateOf("PEDIDOS") }
 
     fun decodeOrder(doc: com.google.firebase.firestore.DocumentSnapshot): OmniStoreOrder? = runCatching {
         val lines = (doc.get("items") as? List<*>)?.mapNotNull { raw ->
@@ -371,6 +373,7 @@ fun OrderCenterScreen(
                             "RECIBIDO", "NO_SOLICITADO", fulfillmentType, deliveryAddress.trim(), nonce
                         )
                         updateCart(emptyMap())
+                        customerSection = "MIS_PEDIDOS"
                     }.addOnFailureListener { e ->
                         sending = false
                         feedback = e.localizedMessage ?: "No se pudo registrar el pedido. Revisá las reglas de Firestore."
@@ -620,7 +623,14 @@ fun OrderCenterScreen(
         }
 
         if (merchantMode) {
-            Text("Acceso rápido para leer el QR del cliente, revisar el pedido y gestionar cobro DEMO, preparación y entrega.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = merchantSection == "PEDIDOS", onClick = { merchantSection = "PEDIDOS" },
+                    label = { Text("Pedidos · ${orders.size}") })
+                FilterChip(selected = merchantSection == "QR", onClick = { merchantSection = "QR" },
+                    label = { Text("Escanear QR") })
+            }
+            if (merchantSection == "QR") {
+            Text("Escaneá el QR del cliente para abrir el pedido y continuar su gestión.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
             if (merchantReady && merchantError == null) {
                 OrderQRScanner(
                     onOrderScanned = { handleScannedOrder(it) },
@@ -636,7 +646,16 @@ fun OrderCenterScreen(
             }
             if (merchantError != null) Text(merchantError.orEmpty(), color = Color(0xFFFF9B8F), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
             else if (!merchantReady) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
+            }
         } else {
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = customerSection == "COMPRAR", onClick = { customerSection = "COMPRAR" },
+                    label = { Text("Comprar") })
+                FilterChip(selected = customerSection == "MIS_PEDIDOS", onClick = { customerSection = "MIS_PEDIDOS" },
+                    label = { Text("Mis pedidos · ${orders.count { it.customerUid == uid }}") })
+            }
+        }
+        if (!merchantMode && customerSection == "COMPRAR") {
             Text(
                 if (demoMode) "Elegí un comercio de prueba, armá tu carrito y generá un QR de demostración sin conexión."
                 else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.",
@@ -748,9 +767,15 @@ fun OrderCenterScreen(
             }
         }
 
-        if (merchantMode && merchantReady && merchantError == null) {
+        if (merchantMode && merchantSection == "PEDIDOS" && merchantReady && merchantError == null) {
             if (orders.isEmpty()) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) { Text("Todavía no recibiste pedidos.", color = Color(0xFF9AAAC2), fontSize = 12.sp) }
+                Surface(color = Color(0xFF101B30), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Todavía no recibiste pedidos", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Los nuevos pedidos aparecerán acá. También podés escanear un QR desde la pestaña correspondiente.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
+                        OutlinedButton(onClick = { merchantSection = "QR" }) { Text("Escanear QR de pedido") }
+                    }
+                }
             } else {
                 Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     orders.forEach { order ->
@@ -764,10 +789,19 @@ fun OrderCenterScreen(
                     }
                 }
             }
-        } else if (!merchantMode) {
+        } else if (!merchantMode && customerSection == "MIS_PEDIDOS") {
             val ownOrders = orders.filter { it.customerUid == uid }
-            if (ownOrders.isNotEmpty()) {
-                Text("MIS PEDIDOS", color = Color(0xFF57DDF5), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("SEGUIMIENTO DE COMPRAS", color = Color(0xFF57DDF5), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            if (ownOrders.isEmpty()) {
+                Surface(color = Color(0xFF101B30), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Todavía no tenés pedidos", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Cuando confirmes una compra, vas a poder seguirla desde acá.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
+                        Button(onClick = { customerSection = "COMPRAR" }) { Text("Explorar comercios") }
+                    }
+                }
+            } else {
+
                 Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 80.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ownOrders.forEach { order ->
                         OrderStatusCard(
@@ -779,6 +813,7 @@ fun OrderCenterScreen(
                         )
                     }
                 }
+            }
             }
         }
     }
@@ -1061,17 +1096,49 @@ private fun OrderStatusCard(
                 }
                 Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
             }
-            Text(
-                when {
-                    order.paymentStatus.startsWith("PAGADA") -> "Pago: acreditado · DEMO"
-                    order.paymentRequested && order.paymentStatus == "PENDIENTE" -> "Pago solicitado por el comercio · esperando al cliente"
-                    order.status == "LISTO" -> "Pedido listo · esperando que el comercio solicite el pago"
-                    order.status == "ESPERA_CONFIRMACION_CLIENTE" -> "Pago bloqueado · falta tu confirmación de disponibilidad"
-                    else -> "Pago bloqueado · se habilita cuando el comercio termina y solicita el cobro"
+            Surface(
+                color = when {
+                    order.paymentStatus.startsWith("PAGADA") -> Color(0xFF12352F)
+                    order.status in listOf("ESPERA_CONFIRMACION_CLIENTE", "EN_REVISION", "EN_PREPARACION") || order.paymentRequested -> Color(0xFF302A1B)
+                    else -> Color(0xFF14253A)
                 },
-                color = if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
-                fontSize = 9.sp
-            )
+                shape = RoundedCornerShape(9.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        when {
+                            order.paymentStatus.startsWith("PAGADA") -> "PAGO ACREDITADO · DEMO"
+                            !merchantMode && order.status == "ESPERA_CONFIRMACION_CLIENTE" -> "ACCIÓN REQUERIDA"
+                            merchantMode && order.status == "RECIBIDO" -> "PRÓXIMO PASO · ACEPTAR Y REVISAR"
+                            merchantMode && order.status == "EN_REVISION" -> "PRÓXIMO PASO · CONFIRMAR DISPONIBILIDAD"
+                            merchantMode && order.status == "EN_PREPARACION" -> "PRÓXIMO PASO · MARCAR PREPARADO Y SOLICITAR PAGO"
+                            order.paymentRequested && order.paymentStatus == "PENDIENTE" -> "PAGO SOLICITADO · ESPERANDO AL CLIENTE"
+                            order.status == "LISTO" -> "PEDIDO PREPARADO"
+                            order.status == "EN_CAMINO" -> "DELIVERY EN CAMINO"
+                            order.status == "ENTREGADO" -> "PEDIDO COMPLETADO"
+                            else -> "PEDIDO EN CURSO"
+                        },
+                        color = if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFD27D),
+                        fontSize = 9.sp, fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        when {
+                            order.paymentStatus.startsWith("PAGADA") -> if (merchantMode) "El cobro ficticio ya se acreditó en tu billetera." else "El pago ficticio fue acreditado al comercio."
+                            !merchantMode && order.status == "ESPERA_CONFIRMACION_CLIENTE" -> "Revisá los productos alternativos y confirmá el nuevo total para continuar."
+                            merchantMode && order.status == "RECIBIDO" -> "Verificá los artículos del pedido antes de aceptarlo."
+                            merchantMode && order.status == "EN_REVISION" -> "Indicá qué productos tenés disponibles y cuáles faltan."
+                            merchantMode && order.status == "EN_PREPARACION" -> "Cuando termines de preparar la compra, avisale al cliente y habilitá el pago."
+                            order.paymentRequested && order.paymentStatus == "PENDIENTE" -> "El cliente debe autorizar el pago desde OMNI Pay DEMO."
+                            order.status == "LISTO" -> "Esperando autorización del pago para habilitar la entrega."
+                            order.status == "EN_CAMINO" -> "Entregá el pedido al cliente cuando llegue."
+                            order.status == "ENTREGADO" -> "Esta compra ya finalizó."
+                            else -> "El pago se habilita después de preparar el pedido."
+                        },
+                        color = Color(0xFFB8C8D9), fontSize = 10.sp
+                    )
+                }
+            }
             if (!merchantMode && onPay != null && order.paymentRequested && order.paymentStatus == "PENDIENTE" &&
                 order.status == "LISTO") {
                 if (order.total <= 50000.0) {
