@@ -80,6 +80,20 @@ service cloud.firestore {
               )
             )
           )
+          ||
+          (
+            getAfter(operationPath(request.resource.data.lastOperationId)).data.kind == "SELF_CONSUMPTION_DEMO"
+            && request.auth.uid == userId
+            && getAfter(operationPath(request.resource.data.lastOperationId)).data.senderUid == userId
+            && getAfter(operationPath(request.resource.data.lastOperationId)).data.recipientUid == userId
+            && request.resource.data.balance == resource.data.balance
+            && request.resource.data.depositedTotal == resource.data.depositedTotal
+            && getAfter(operationPath(request.resource.data.lastOperationId)).data.balanceImpact == 0
+            && getAfter(operationPath(request.resource.data.lastOperationId)).data.orderId is string
+            && existsAfter(/databases/$(database)/documents/storeOrders/$(getAfter(operationPath(request.resource.data.lastOperationId)).data.orderId))
+            && getAfter(/databases/$(database)/documents/storeOrders/$(getAfter(operationPath(request.resource.data.lastOperationId)).data.orderId)).data.paymentStatus == "PAGADO"
+            && getAfter(/databases/$(database)/documents/storeOrders/$(getAfter(operationPath(request.resource.data.lastOperationId)).data.orderId)).data.paymentMethod == "AUTOCONSUMO_OMNI_PAY_DEMO"
+          )
         )
       ) || (
         signedIn()
@@ -103,7 +117,7 @@ service cloud.firestore {
           && request.resource.data.operationId == transactionId
           && request.resource.data.amount is number
           && request.resource.data.amount > 0
-          && request.resource.data.status == "APROBADA · DEMO"
+          && request.resource.data.status in ["APROBADA · DEMO", "AUTOCONSUMO REGISTRADO · DEMO"]
           && (
             (
               transactionId == "welcome"
@@ -120,6 +134,20 @@ service cloud.firestore {
                 || userId == getAfter(operationPath(transactionId)).data.recipientUid
               )
               && request.resource.data.amount == getAfter(operationPath(transactionId)).data.amount
+              && (
+                (
+                  getAfter(operationPath(transactionId)).data.kind == "SELF_CONSUMPTION_DEMO"
+                  && request.resource.data.status == "AUTOCONSUMO REGISTRADO · DEMO"
+                  && userId == getAfter(operationPath(transactionId)).data.senderUid
+                  && userId == getAfter(operationPath(transactionId)).data.recipientUid
+                  && getAfter(operationPath(transactionId)).data.balanceImpact == 0
+                )
+                ||
+                (
+                  getAfter(operationPath(transactionId)).data.kind != "SELF_CONSUMPTION_DEMO"
+                  && request.resource.data.status == "APROBADA · DEMO"
+                )
+              )
             )
           );
         allow update, delete: if false;
@@ -168,16 +196,18 @@ service cloud.firestore {
           (resource.data.status == "RECIBIDO" && request.resource.data.status in ["ACEPTADO", "RECHAZADO"]) ||
           (resource.data.status == "ACEPTADO" && request.resource.data.status in ["EN_PREPARACION", "CANCELADO"]) ||
           (resource.data.status == "EN_PREPARACION" && request.resource.data.status in ["LISTO", "CANCELADO"]) ||
-          (resource.data.status == "LISTO" && request.resource.data.status in ["EN_CAMINO", "ENTREGADO"]) ||
-          (resource.data.status == "EN_CAMINO" && request.resource.data.status == "ENTREGADO");
+          (resource.data.status == "LISTO" && request.resource.data.status in ["EN_CAMINO", "ENTREGADO"]
+            && resource.data.paymentStatus == "PAGADO") ||
+          (resource.data.status == "EN_CAMINO" && request.resource.data.status == "ENTREGADO"
+            && resource.data.paymentStatus == "PAGADO");
       }
       allow create: if signedIn()
         && request.resource.data.customerUid == request.auth.uid
         && request.resource.data.merchantUid is string
-        && request.resource.data.merchantUid != request.auth.uid
         && request.resource.data.storeId is string
         && request.resource.data.status == "RECIBIDO"
-        && request.resource.data.paymentStatus == "PENDIENTE"
+        && request.resource.data.paymentStatus == "NO_SOLICITADO"
+        && request.resource.data.paymentRequested == false
         && request.resource.data.paymentMethod == "PAGO_AL_RETIRAR"
         && request.resource.data.fulfillmentType in ["RETIRO", "DELIVERY"]
         && (request.resource.data.fulfillmentType == "RETIRO"
@@ -197,13 +227,77 @@ service cloud.firestore {
       allow read: if isSystemAdmin() || (signedIn()
         && (resource.data.customerUid == request.auth.uid
           || resource.data.merchantUid == request.auth.uid));
-      allow update: if signedIn()
-        && get(merchantProfilePath()).data.ownerUid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
-        && request.resource.data.paymentStatus == resource.data.paymentStatus
-        && request.resource.data.total == resource.data.total
-        && request.resource.data.qrNonce == resource.data.qrNonce
-        && validNextStatus();
+      function validMerchantPaymentRequest() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "paymentStatus", "paymentRequested", "paymentRequestedAt", "paymentRequestedBy", "updatedAt"
+          ])
+          && resource.data.status == "LISTO"
+          && resource.data.paymentStatus == "NO_SOLICITADO"
+          && resource.data.paymentRequested == false
+          && request.resource.data.paymentStatus == "PENDIENTE"
+          && request.resource.data.paymentRequested == true
+          && request.resource.data.paymentRequestedBy == request.auth.uid
+          && request.resource.data.paymentRequestedAt is timestamp
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.total == resource.data.total
+          && request.resource.data.qrNonce == resource.data.qrNonce;
+      }
+      function validOrderPaymentSettlement() {
+        let paymentOperation = operationPath("orderpay_" + orderId);
+        return resource.data.status == "LISTO"
+          && resource.data.paymentRequested == true
+          && resource.data.paymentStatus == "PENDIENTE"
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "paymentStatus", "paymentMethod", "paymentEnvironment", "paidAt"
+          ])
+          && request.resource.data.paymentStatus == "PAGADO"
+          && request.resource.data.paymentEnvironment == "DEMO"
+          && request.resource.data.paidAt is timestamp
+          && existsAfter(paymentOperation)
+          && getAfter(paymentOperation).data.kind in ["QR_PAYMENT", "SELF_CONSUMPTION_DEMO"]
+          && getAfter(paymentOperation).data.senderUid == resource.data.customerUid
+          && getAfter(paymentOperation).data.recipientUid == resource.data.merchantUid
+          && getAfter(paymentOperation).data.orderId == orderId
+          && getAfter(paymentOperation).data.amount == resource.data.total
+          && (
+            (
+              getAfter(paymentOperation).data.kind == "SELF_CONSUMPTION_DEMO"
+              && resource.data.customerUid == request.auth.uid
+              && resource.data.merchantUid == request.auth.uid
+              && getAfter(paymentOperation).data.balanceImpact == 0
+              && request.resource.data.paymentMethod == "AUTOCONSUMO_OMNI_PAY_DEMO"
+            )
+            ||
+            (
+              getAfter(paymentOperation).data.kind == "QR_PAYMENT"
+              && resource.data.customerUid == request.auth.uid
+              && resource.data.merchantUid != request.auth.uid
+              && request.resource.data.paymentMethod == "OMNI_PAY_DEMO"
+            )
+          )
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.paymentRequested == resource.data.paymentRequested
+          && request.resource.data.total == resource.data.total
+          && request.resource.data.qrNonce == resource.data.qrNonce;
+      }
+      allow update: if signedIn() && (
+        (
+          get(merchantProfilePath()).data.ownerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
+          && request.resource.data.paymentStatus == resource.data.paymentStatus
+          && request.resource.data.paymentRequested == resource.data.paymentRequested
+          && request.resource.data.total == resource.data.total
+          && request.resource.data.qrNonce == resource.data.qrNonce
+          && validNextStatus()
+        )
+        ||
+        (
+          get(merchantProfilePath()).data.ownerUid == request.auth.uid
+          && validMerchantPaymentRequest()
+        )
+        ||
+        validOrderPaymentSettlement()
+      );
       allow delete: if false;
     }
 
@@ -344,6 +438,23 @@ service cloud.firestore {
           )
           ||
           (
+            request.resource.data.kind == "SELF_CONSUMPTION_DEMO"
+            && request.resource.data.orderId is string
+            && request.resource.data.operationId == "orderpay_" + request.resource.data.orderId
+            && request.resource.data.recipientUid == request.auth.uid
+            && request.resource.data.balanceImpact == 0
+            && get(walletPath(request.auth.uid)).data.balance == getAfter(walletPath(request.auth.uid)).data.balance
+            && exists(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId))
+            && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.customerUid == request.auth.uid
+            && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.merchantUid == request.auth.uid
+            && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.status == "LISTO"
+            && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.paymentRequested == true
+            && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.paymentStatus == "PENDIENTE"
+            && request.resource.data.amount == get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.total
+            && getAfter(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.paymentStatus == "PAGADO"
+          )
+          ||
+          (
             request.resource.data.kind in ["TRANSFER", "QR_PAYMENT"]
             && request.resource.data.recipientUid is string
             && request.resource.data.recipientUid != request.auth.uid
@@ -438,26 +549,6 @@ service cloud.firestore {
         && (!("localDayOfWeek" in request.resource.data) || (request.resource.data.localDayOfWeek is int && request.resource.data.localDayOfWeek >= 1 && request.resource.data.localDayOfWeek <= 7))
         && (!("timezoneOffsetMinutes" in request.resource.data) || (request.resource.data.timezoneOffsetMinutes is int && request.resource.data.timezoneOffsetMinutes >= -840 && request.resource.data.timezoneOffsetMinutes <= 840))
         && (!("localDate" in request.resource.data) || (request.resource.data.localDate is string && request.resource.data.localDate.matches('^\\d{4}-\\d{2}-\\d{2}$')))
-      allow update, delete: if false;
-    }
-
-    match /appFeedback/{feedbackId} {
-      allow read: if isSystemAdmin();
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.message is string
-        && request.resource.data.message.size() <= 2000
-        && request.resource.data.createdAt is timestamp;
-      allow update, delete: if false;
-    }
-  }
-}
-)))
-        && request.resource.data.keys().hasOnly([
-          "uid", "module", "event", "appVersion", "createdAt", "campaignId",
-          "sessionId", "eventId", "platform", "schemaVersion", "data",
-          "localHour", "localDayOfWeek", "timezoneOffsetMinutes", "localDate"
-        ]);
       allow update, delete: if false;
     }
 

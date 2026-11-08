@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -175,6 +178,7 @@ fun WalletScreen(
     val receipts by viewModel.receipts.collectAsState()
     var selectedWalletTab by remember { mutableStateOf(0) } // 0: Movimientos, 1: Comprobantes & Tickets
     var selectedReceiptForModal by remember { mutableStateOf<com.example.model.DigitalReceipt?>(null) }
+    var selectedWalletTransaction by remember { mutableStateOf<WalletTransaction?>(null) }
 
     LazyColumn(
         modifier = modifier
@@ -452,7 +456,7 @@ fun WalletScreen(
             }
 
             items(wallet.transactions, key = { it.id }) { tx ->
-                WalletTransactionCard(transaction = tx)
+                WalletTransactionCard(transaction = tx, onClick = { selectedWalletTransaction = tx })
             }
         } else {
             // Pestaña de Comprobantes Digitales y Facturas
@@ -822,6 +826,35 @@ fun WalletScreen(
         )
     }
 
+    selectedWalletTransaction?.let { tx ->
+        AlertDialog(
+            onDismissRequest = { selectedWalletTransaction = null },
+            title = { Text(if (tx.type == TransactionType.QR_COBRO) "Ingreso recibido · OMNI Pay DEMO" else "Detalle de operación · DEMO") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("Importe: OM$ ${String.format("%,.2f", tx.amount)}", fontWeight = FontWeight.ExtraBold, color = EmeraldDark)
+                    Text("Concepto: ${tx.title}")
+                    Text("Contraparte: ${tx.storeOrEntityName}")
+                    if (tx.storeName.isNotBlank()) Text("Comercio: ${tx.storeName}")
+                    if (tx.customerName.isNotBlank()) Text("Cliente: ${tx.customerName}")
+                    if (tx.orderId != null) Text("Pedido: ${tx.orderId}")
+                    tx.itemDetails.forEach { Text(it, fontSize = 12.sp) }
+                    if (tx.fulfillmentDetails.isNotBlank()) Text(tx.fulfillmentDetails)
+                    Text("Fecha y hora: ${tx.dateText}")
+                    Text("Estado: ${tx.status}")
+                    Text("Entorno: ${tx.environment} · sin dinero real")
+                    Text("Identificador de operación: ${tx.id}", fontSize = 10.sp, color = Color.Gray)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { selectedWalletTransaction = null }) { Text("Cerrar") }
+            }
+        )
+    }
+
     // Modal de Comprobante Fiscal & Ticket Digital
     selectedReceiptForModal?.let { receipt ->
         AlertDialog(
@@ -1044,14 +1077,18 @@ fun PaymentCardItem(card: PaymentCard, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun WalletTransactionCard(transaction: WalletTransaction, modifier: Modifier = Modifier) {
+fun WalletTransactionCard(
+    transaction: WalletTransaction,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {}
+) {
     val isIncome = transaction.type == TransactionType.CARGA_SALDO || transaction.type == TransactionType.REINTEGRO_CASHBACK || transaction.type == TransactionType.TRANSFERENCIA_RECIBIDA || transaction.type == TransactionType.QR_COBRO
 
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier

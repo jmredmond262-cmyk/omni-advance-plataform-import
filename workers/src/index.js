@@ -565,7 +565,7 @@ async function handleAction(env, actor, action, data) {
             if (!row.document) continue;
             const payment = documentData(row.document);
             const orderId = String(payment.orderId || "");
-            if (payment.kind === "QR_PAYMENT" && orderId) {
+            if (["QR_PAYMENT", "SELF_CONSUMPTION_DEMO"].includes(payment.kind) && orderId) {
               paymentByOrder.set(orderId, payment.id);
             }
           }

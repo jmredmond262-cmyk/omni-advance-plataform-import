@@ -23,7 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,44 +46,12 @@ private val MapNavy = Color(0xFF06101F)
 private val MapCyan = Color(0xFF00E5FF)
 private val MapMuted = Color(0xFF91A7C1)
 
-private fun demoGeoActivity(): JSONArray {
-  val updatedAt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
-    timeZone = java.util.TimeZone.getTimeZone("UTC")
-  }.format(java.util.Date())
-  val samples = listOf(
-    Triple("DEMO-SF-001", -60.7000, -31.6333),
-    Triple("DEMO-SF-002", -60.6948, -31.6302),
-    Triple("DEMO-SF-003", -60.7061, -31.6374),
-    Triple("DEMO-SF-004", -60.6875, -31.6401),
-    Triple("DEMO-SF-005", -60.7132, -31.6258)
-  )
-  return JSONArray().apply {
-    samples.forEachIndexed { index, sample ->
-      put(JSONObject()
-        .put("uid", sample.first)
-        .put("userLabel", "Usuario de prueba ${index + 1}")
-        .put("latitude", sample.third)
-        .put("longitude", sample.second)
-        .put("accuracyMeters", 8 + index * 3)
-        .put("locality", "Santa Fe · marcador DEMO")
-        .put("province", "Santa Fe")
-        .put("country", "Argentina")
-        .put("updatedAt", updatedAt)
-        .put("locationTime", updatedAt)
-        .put("status", "demo")
-        .put("source", "DEMO"))
-    }
-  }
-}
-
 @Composable
 internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String, onRefresh: () -> Unit) {
-  // Prueba aislada: estos puntos son locales y no se leen ni escriben en Firestore.
-  val points = remember { demoGeoActivity() }
+  val points = remember(payload) { payload.optJSONArray("geoActivity") ?: JSONArray() }
+  val summary = payload.optJSONObject("geoActivitySummary")
   val pointsJson = points.toString()
-  val activeUsers = points.length()
-
-  // La demostración es local: no necesita refrescos de red ni consultas periódicas.
+  val activeUsers = summary?.optInt("activeUsers", points.length()) ?: points.length()
 
   Column(
     Modifier.fillMaxSize().background(MapNavy).padding(10.dp),
@@ -97,10 +67,15 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
     ) {
       Icon(Icons.Default.Public, contentDescription = null, tint = MapCyan)
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("OMNI LIVE MAP · DEMO", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
-        Text("Marcadores simulados · sin consultas a OMNI principal", color = MapMuted, fontSize = 9.sp)
+        Text("OMNI LIVE MAP · ACTIVIDAD REAL", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
+        Text("Ubicaciones GPS compartidas con consentimiento", color = MapMuted, fontSize = 9.sp)
       }
-      Text("$activeUsers PUNTOS DEMO", color = Color(0xFFFFC46B), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("$activeUsers USUARIOS", color = MapCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+        IconButton(onClick = onRefresh) {
+          Icon(Icons.Default.Refresh, contentDescription = "Actualizar ubicaciones", tint = MapCyan)
+        }
+      }
     }
     Box(
       Modifier.weight(1f).fillMaxWidth()
@@ -191,11 +166,14 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
       Icon(Icons.Default.MyLocation, contentDescription = null, tint = MapCyan)
       Column(Modifier.weight(1f)) {
         Text(
-          if (error.isNotBlank()) error else if (loading) "Actualizando posiciones…" else "$activeUsers posiciones de prueba ubicadas en coordenadas de Santa Fe",
+          if (error.isNotBlank()) error
+          else if (loading) "Consultando posiciones GPS reales…"
+          else if (activeUsers > 0) "$activeUsers usuarios con ubicación real y reciente"
+          else "No hay usuarios compartiendo ubicación ahora. Cada persona debe autorizar y activar el uso compartido.",
           color = if (error.isNotBlank()) Color(0xFFFF9B9B) else MapMuted,
           fontSize = 9.sp
         )
-        Text("SIMULACIÓN: no representa usuarios reales ni registra ubicaciones personales.", color = Color(0xFFFFC46B), fontSize = 8.sp)
+        Text("Solo se muestran ubicaciones recientes de cuentas que aceptaron compartir su GPS.", color = MapMuted, fontSize = 8.sp)
       }
     }
   }
@@ -222,7 +200,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
 #map .maplibregl-marker-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:4!important;pointer-events:none!important}
 #map .maplibregl-marker{z-index:5!important;pointer-events:auto!important;visibility:visible!important;opacity:1!important}
 #map .maplibregl-popup{z-index:7!important}
-.omni-demo-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff7df 0 10%,#ffe0a1 18%,#ffad33 52%,#b85d00 100%);border:2px solid #fff4d8;box-shadow:0 0 0 5px #ffad3335,0 0 12px #ffad33,0 0 25px #ff9b00;position:relative;box-sizing:border-box;cursor:pointer}.omni-demo-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #ffbd59;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}.omni-user-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffffff 0 10%,#8cffff 18%,#00e5ff 52%,#007caa 100%);border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 12px #00e5ff,0 0 25px #00dfff;position:relative;box-sizing:border-box;cursor:pointer}.omni-user-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}.omni-cluster-marker{width:38px;height:38px;border-radius:50%;border:2px solid #d9ffff;background:radial-gradient(circle at 35% 28%,#36faff 0,#00aeca 45%,#064c70 100%);color:#fff;font:900 13px Arial;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 7px #00e5ff35,0 0 16px #00e5ff,0 0 32px #00cfff;cursor:pointer;position:relative;text-shadow:0 0 7px #002b42;outline:none;padding:0}.omni-cluster-marker:after{content:'';position:absolute;inset:-9px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 2s ease-out infinite;pointer-events:none}.omni-demo-cluster-marker{background:radial-gradient(circle at 35% 28%,#fff0c9 0,#ffbd59 45%,#a94d00 100%);border-color:#fff0d2;box-shadow:0 0 0 7px #ffad3335,0 0 16px #ffad33,0 0 32px #ff9b00}.omni-demo-cluster-marker:after{border-color:#ffbd59}.omni-cluster-marker:active{transform:scale(.94)}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
+.omni-user-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffffff 0 10%,#8cffff 18%,#00e5ff 52%,#007caa 100%);border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 12px #00e5ff,0 0 25px #00dfff;position:relative;box-sizing:border-box;cursor:pointer}.omni-user-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}.omni-cluster-marker{width:38px;height:38px;border-radius:50%;border:2px solid #d9ffff;background:radial-gradient(circle at 35% 28%,#36faff 0,#00aeca 45%,#064c70 100%);color:#fff;font:900 13px Arial;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 7px #00e5ff35,0 0 16px #00e5ff,0 0 32px #00cfff;cursor:pointer;position:relative;text-shadow:0 0 7px #002b42;outline:none;padding:0}.omni-cluster-marker:after{content:'';position:absolute;inset:-9px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 2s ease-out infinite;pointer-events:none}.omni-cluster-marker:active{transform:scale(.94)}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
 </style>
 </head>
 <body>
@@ -295,17 +273,14 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      const label=window.omniEscapeHtml(point.userLabel||'Cuenta OMNI');
      const locality=window.omniEscapeHtml(point.locality||'Localidad no informada');
      const updated=window.omniEscapeHtml(point.updatedAt||'');
-     const isDemo=point.source==='DEMO';
-     const stateLabel=isDemo?'● MARCADOR DE PRUEBA':'● EN LÍNEA';
-     const stateColor=isDemo?'#ffc46b':'#65e9b7';
      const timeText=updated?new Date(updated).toLocaleString('es-AR'):'Sin hora informada';
      const lat=Number(point.latitude),lon=Number(point.longitude),accuracy=Number(point.accuracyMeters);
-     return '<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+lat.toFixed(6)+', '+lon.toFixed(6)+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:'+stateColor+'">'+stateLabel+'</span></div>';
-   };
-   window.omniAddUserMarker=function(point,offset){
+     return '<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+lat.toFixed(6)+', '+lon.toFixed(6)+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● UBICACIÓN REAL · EN LÍNEA</span></div>';
+    };
+    window.omniAddUserMarker=function(point,offset){
      const uid=String(point.uid||'');
      const element=document.createElement('div');
-     element.className=point.source==='DEMO'?'omni-demo-marker':'omni-user-marker';
+     element.className='omni-user-marker';
      element.setAttribute('aria-label',point.userLabel||'Usuario OMNI');
      const popup=new maplibregl.Popup({offset:18,closeButton:true,closeOnClick:false}).setHTML(window.omniPopupHtml(point));
      const marker=new maplibregl.Marker({element:element,anchor:'center',offset:offset||[0,0]})
@@ -317,7 +292,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      window.omniClearRenderedMarkers();
      const valid=window.omniPresenceData.filter(function(p){
        const lat=Number(p.latitude),lon=Number(p.longitude);
-       return String(p.uid||'')&&Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
+       return String(p.uid||'')&&p.status==='online'&&p.source!=='DEMO'&&Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
      });
      // Agrupar todos los puntos por proximidad visual, incluidos los DEMO.
      // Así la prueba reproduce el mismo comportamiento que tendrá el mapa real.
@@ -357,8 +332,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
        center[0]/=group.items.length;center[1]/=group.items.length;
        const element=document.createElement('button');
        element.type='button';
-       const demoOnly=group.items.every(function(item){return item.point.source==='DEMO';});
-       element.className=demoOnly?'omni-cluster-marker omni-demo-cluster-marker':'omni-cluster-marker';
+       element.className='omni-cluster-marker';
        element.textContent=String(group.items.length);
        element.setAttribute('aria-label',group.items.length+' usuarios agrupados');
        element.title=group.items.length+' usuarios detectados · acercar para separar';
@@ -376,8 +350,8 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      });
    };
    window.omniSetPresence=function(points){
-     points=Array.isArray(points)?points:[];
-     window.omniPresenceData=points.slice();
+     points=Array.isArray(points)?points.filter(function(point){return point&&point.source!=='DEMO'&&point.status==='online';}):[];
+      window.omniPresenceData=points.slice();
      if(!map)return;
      window.omniRenderPresence();
      if(!window.omniHasFitPresence && window.omniPresenceData.length){
