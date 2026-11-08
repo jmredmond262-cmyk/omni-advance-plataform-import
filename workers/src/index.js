@@ -370,7 +370,7 @@ async function dashboard(env) {
       return fallback;
     }
   }
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "queryDiagnostics", "moduleRegistry", "adminAuditLogs"];
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs"];
   // Ejecutar conteos de a uno evita ráfagas simultáneas contra Firestore.
   const countResults = [];
   for (const name of collections) {
