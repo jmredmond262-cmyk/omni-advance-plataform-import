@@ -35,6 +35,7 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.Timestamp
 import com.example.data.analytics.UsageAnalyticsRepository
+import com.example.data.analytics.QueryDiagnosticsRepository
 
 private data class OmniJobPost(
     val id: String,
@@ -109,8 +110,16 @@ fun JobBoardScreen(onBack: () -> Unit) {
     DisposableEffect(uid) {
         var registration: ListenerRegistration? = null
         if (uid.isNotBlank()) {
+            val queryStartedAt = System.currentTimeMillis()
+            var firstSnapshot = true
+            var serverSnapshotSeen = false
             registration = db.collection("omniProfessionalProfiles").document(uid)
                 .addSnapshotListener { snapshot, exception ->
+                    val fromCache = snapshot?.metadata?.isFromCache == true
+                    val readCount = if (snapshot == null || fromCache) 0 else if (!serverSnapshotSeen) 1 else snapshot.documentChanges.count { it.type != com.google.firebase.firestore.DocumentChange.Type.REMOVED }
+                    QueryDiagnosticsRepository.recordSnapshot(context, "conex_profiles", "omniProfessionalProfiles.get", readCount, fromCache, System.currentTimeMillis() - queryStartedAt, firstSnapshot, exception != null)
+                    if (snapshot != null && !fromCache) serverSnapshotSeen = true
+                    firstSnapshot = false
                     if (exception != null) {
                         profileLoading = false
                         feedback = exception.localizedMessage ?: "No se pudo cargar tu perfil profesional."
@@ -135,10 +144,18 @@ fun JobBoardScreen(onBack: () -> Unit) {
     DisposableEffect(uid) {
         var registration: ListenerRegistration? = null
         if (uid.isNotBlank()) {
+            val queryStartedAt = System.currentTimeMillis()
+            var firstSnapshot = true
+            var serverSnapshotSeen = false
             registration = db.collection("jobPosts")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(100)
                 .addSnapshotListener { snapshot, exception ->
+                    val fromCache = snapshot?.metadata?.isFromCache == true
+                    val readCount = if (snapshot == null || fromCache) 0 else if (!serverSnapshotSeen) snapshot.documents.size else snapshot.documentChanges.count { it.type != com.google.firebase.firestore.DocumentChange.Type.REMOVED }
+                    QueryDiagnosticsRepository.recordSnapshot(context, "conex_jobs", "jobPosts.listen", readCount, fromCache, System.currentTimeMillis() - queryStartedAt, firstSnapshot, exception != null)
+                    if (snapshot != null && !fromCache) serverSnapshotSeen = true
+                    firstSnapshot = false
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar las publicaciones."
                         loading = false
@@ -179,10 +196,18 @@ fun JobBoardScreen(onBack: () -> Unit) {
     DisposableEffect(uid) {
         var registration: ListenerRegistration? = null
         if (uid.isNotBlank()) {
+            val queryStartedAt = System.currentTimeMillis()
+            var firstSnapshot = true
+            var serverSnapshotSeen = false
             registration = db.collection("jobApplications")
                 .whereEqualTo("postOwnerUid", uid)
                 .limit(100)
                 .addSnapshotListener { snapshot, exception ->
+                    val fromCache = snapshot?.metadata?.isFromCache == true
+                    val readCount = if (snapshot == null || fromCache) 0 else if (!serverSnapshotSeen) snapshot.documents.size else snapshot.documentChanges.count { it.type != com.google.firebase.firestore.DocumentChange.Type.REMOVED }
+                    QueryDiagnosticsRepository.recordSnapshot(context, "conex_applications", "jobApplications.listen", readCount, fromCache, System.currentTimeMillis() - queryStartedAt, firstSnapshot, exception != null)
+                    if (snapshot != null && !fromCache) serverSnapshotSeen = true
+                    firstSnapshot = false
                     if (exception != null) {
                         error = exception.localizedMessage ?: "No se pudieron cargar las postulaciones."
                         applicationsLoading = false
