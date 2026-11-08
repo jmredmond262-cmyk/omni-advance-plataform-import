@@ -514,7 +514,8 @@ async function handleAction(env, actor, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
     case "geoPresence": {
-      const records = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200);
+      const activeCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+      const records = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200, "updatedAt", activeCutoff);
       const geo = aggregateGeoPresence(records, []);
       return {
         geoActivity: geo.points,
@@ -524,7 +525,7 @@ async function handleAction(env, actor, action, data) {
     }
     case "queryDiagnostics": {
       const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const records = await queryRecentDocuments(env, "queryDiagnostics", "updatedAt", 500, "updatedAt", cutoff);
+      const records = await queryRecentDocuments(env, "queryDiagnostics", "updatedAt", 100, "updatedAt", cutoff);
       const byModule = new Map();
       for (const item of records) {
         const moduleStats = item.modules && typeof item.modules === "object" ? item.modules : {};
