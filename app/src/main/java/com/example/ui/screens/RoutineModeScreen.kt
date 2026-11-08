@@ -9,6 +9,10 @@ import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import android.provider.Settings
+import android.net.Uri
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -33,6 +37,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -129,7 +136,11 @@ private object FlowBriefingScheduler {
             .minOrNull()
 
         if (nextBriefing != null) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextBriefing, pending)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextBriefing, pending)
+            } else {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextBriefing, pending)
+            }
         }
     }
 }
@@ -172,6 +183,22 @@ class FlowBriefingReceiver : BroadcastReceiver() {
 }
 
 private object RoutineAlarmScheduler {
+    fun hasExactAlarmAccess(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return manager.canScheduleExactAlarms()
+    }
+
+    fun requestExactAlarmAccess(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasExactAlarmAccess(context)) return
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+
     fun schedule(context: Context, routine: OmniRoutine) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, RoutineReminderReceiver::class.java).putExtra("routine_id", routine.id)
@@ -190,13 +217,26 @@ private object RoutineAlarmScheduler {
                 add(Calendar.DAY_OF_YEAR, 1); attempts++
             }
         }
-        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.timeInMillis, pending)
+        if (hasExactAlarmAccess(context)) {
+            if (routine.isWakeUp) {
+                val showIntent = PendingIntent.getActivity(
+                    context, routine.id.hashCode() + 70,
+                    Intent(context, com.example.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(next.timeInMillis, showIntent), pending)
+            } else {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.timeInMillis, pending)
+            }
+        } else {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.timeInMillis, pending)
+        }
     }
 }
 
 class RoutineBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+        if (intent.action in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED)) {
             val routines = RoutineStore.load(context)
             routines.forEach { RoutineAlarmScheduler.schedule(context, it) }
             FlowBriefingScheduler.schedule(context, routines)
@@ -239,16 +279,24 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 10 * 60 * 1000L, snoozePending)
+            val snoozeAt = System.currentTimeMillis() + 10 * 60 * 1000L
+            if (RoutineAlarmScheduler.hasExactAlarmAccess(context)) alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, snoozeAt, snoozePending)
+            else alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, snoozeAt, snoozePending)
             manager.cancel(id.hashCode())
             return
         }
-        val channelId = if (routine.mode == "SILENT" || routine.mode == "VOICE") "omni_routines_silent" else "omni_routines_sound"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val channelId = if (routine.mode == "SILENT" || routine.mode == "VOICE") "omni_routines_silent" else "omni_routines_alarm_v2"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(channelId) == null) {
             val importance = if (routine.mode == "SILENT" || routine.mode == "VOICE") NotificationManager.IMPORTANCE_LOW else NotificationManager.IMPORTANCE_HIGH
-            if (manager.getNotificationChannel(channelId) == null) {
-                manager.createNotificationChannel(NotificationChannel(channelId, "Recordatorios OMNI", importance))
+            val channel = NotificationChannel(channelId, if (routine.mode == "SOUND") "OMNI Rutina · Alarma" else "Recordatorios OMNI", importance)
+            if (routine.mode == "SOUND") {
+                channel.description = "Alarmas de rutina con sonido prioritario a la hora programada"
+                channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                channel.enableVibration(true)
+                channel.vibrationPattern = longArrayOf(0, 700, 350, 700, 350, 1000)
+                channel.lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
+            manager.createNotificationChannel(channel)
         }
         val snoozeIntent = Intent(context, RoutineReminderReceiver::class.java)
             .setAction("com.example.omni.ROUTINE_SNOOZE").putExtra("routine_id", id)
@@ -279,7 +327,10 @@ class RoutineReminderReceiver : BroadcastReceiver() {
             .setDeleteIntent(dismissPending)
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
-            .setPriority(if (routine.mode == "SILENT" || routine.mode == "VOICE") NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH)
+            .setCategory(if (routine.mode == "SOUND") NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setDefaults(if (routine.mode == "SOUND") NotificationCompat.DEFAULT_ALL else 0)
+            .setPriority(if (routine.mode == "SILENT" || routine.mode == "VOICE") NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MAX)
             .build()
         manager.notify(id.hashCode(), notification)
         if (!isSecondAlert && routine.mode == "SOUND" && prefs.getBoolean("double_alert_enabled", true)) {
@@ -291,11 +342,9 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                System.currentTimeMillis() + delaySeconds * 1000L,
-                secondPending
-            )
+            val secondAt = System.currentTimeMillis() + delaySeconds * 1000L
+            if (RoutineAlarmScheduler.hasExactAlarmAccess(context)) alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, secondAt, secondPending)
+            else alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, secondAt, secondPending)
         }
         if (routine.mode == "VOICE" && !isSecondAlert) {
             val pendingResult = goAsync()
@@ -341,6 +390,18 @@ class RoutineReminderReceiver : BroadcastReceiver() {
 @Composable
 fun RoutineModeScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val current = RoutineStore.load(context)
+                current.forEach { RoutineAlarmScheduler.schedule(context, it) }
+                FlowBriefingScheduler.schedule(context, current)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
@@ -370,6 +431,9 @@ fun RoutineModeScreen(onBack: () -> Unit) {
         val previousCount = routines.size
         routines = next
         RoutineStore.save(context, next)
+        if (next.any { it.enabled } && !RoutineAlarmScheduler.hasExactAlarmAccess(context)) {
+            RoutineAlarmScheduler.requestExactAlarmAccess(context)
+        }
         val action = when {
             next.size > previousCount -> "ROUTINE_CREATED"
             next.size < previousCount -> "ROUTINE_DELETED"
@@ -402,6 +466,16 @@ fun RoutineModeScreen(onBack: () -> Unit) {
             TextButton(onClick = onBack) { Text("Volver") }
         }
         Spacer(Modifier.height(14.dp))
+        if (!RoutineAlarmScheduler.hasExactAlarmAccess(context)) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF332615)), shape = RoundedCornerShape(13.dp)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Falta habilitar la alarma exacta", color = Color(0xFFFFD28A), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Android puede retrasar los avisos durante el ahorro de batería. Habilitá las alarmas y recordatorios exactos para que Rutina suene a la hora configurada.", color = Color(0xFFE7CDA7), fontSize = 10.sp)
+                    TextButton(onClick = { RoutineAlarmScheduler.requestExactAlarmAccess(context) }) { Text("Habilitar alarma exacta", color = Color(0xFFFFD28A)) }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
         Button(onClick = { openEditor() }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
             Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Crear rutina")
         }
