@@ -911,6 +911,13 @@ private val fieldLabels = mapOf(
   "cvu" to "CVU"
 )
 private fun friendlyEnum(value: String): String = when (value.uppercase()) {
+  "EN_REVISION" -> "Revisión de disponibilidad"
+  "ESPERA_CONFIRMACION_CLIENTE" -> "Esperando confirmación del cliente"
+  "DISPONIBILIDAD_CONFIRMADA" -> "Disponibilidad confirmada"
+  "CONFIRMADO_CLIENTE" -> "Propuesta aceptada por el cliente"
+  "LISTO" -> "Listo para habilitar el pago"
+  "PAGADO" -> "Pago acreditado · DEMO"
+  "NO_SOLICITADO" -> "Pago todavía no habilitado"
   "UNKNOWN" -> "Tipo de evento no informado"
   "TIPO_DE_EVENTO_NO_INFORMADO" -> "Tipo de evento no informado"
   "MODULO_NO_INFORMADO" -> "Módulo no informado"
