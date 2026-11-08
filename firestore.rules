@@ -194,8 +194,11 @@ service cloud.firestore {
       function validNextStatus() {
         return
           (resource.data.status == "RECIBIDO" && request.resource.data.status in ["ACEPTADO", "RECHAZADO"]) ||
-          (resource.data.status == "ACEPTADO" && request.resource.data.status in ["EN_PREPARACION", "CANCELADO"]) ||
-          (resource.data.status == "EN_PREPARACION" && request.resource.data.status in ["LISTO", "CANCELADO"]) ||
+          (resource.data.status == "ACEPTADO" && request.resource.data.status in ["EN_REVISION", "CANCELADO"]) ||
+          (resource.data.status in ["DISPONIBILIDAD_CONFIRMADA", "CONFIRMADO_CLIENTE"] && request.resource.data.status == "EN_PREPARACION"
+            && resource.data.availabilityReviewed == true) ||
+          (resource.data.status == "EN_PREPARACION" && request.resource.data.status in ["LISTO", "CANCELADO"]
+            && resource.data.availabilityReviewed == true) ||
           (resource.data.status == "LISTO" && request.resource.data.status in ["EN_CAMINO", "ENTREGADO"]
             && resource.data.paymentStatus == "PAGADO") ||
           (resource.data.status == "EN_CAMINO" && request.resource.data.status == "ENTREGADO"
@@ -232,6 +235,7 @@ service cloud.firestore {
             "paymentStatus", "paymentRequested", "paymentRequestedAt", "paymentRequestedBy", "updatedAt"
           ])
           && resource.data.status == "LISTO"
+          && resource.data.availabilityReviewed == true
           && resource.data.paymentStatus == "NO_SOLICITADO"
           && resource.data.paymentRequested == false
           && request.resource.data.paymentStatus == "PENDIENTE"
@@ -248,11 +252,13 @@ service cloud.firestore {
           && resource.data.paymentRequested == true
           && resource.data.paymentStatus == "PENDIENTE"
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            "paymentStatus", "paymentMethod", "paymentEnvironment", "paidAt"
+            "paymentStatus", "paymentMethod", "paymentEnvironment", "paidAt", "receiptId", "receiptData"
           ])
           && request.resource.data.paymentStatus == "PAGADO"
           && request.resource.data.paymentEnvironment == "DEMO"
           && request.resource.data.paidAt is timestamp
+          && request.resource.data.receiptId is string
+          && request.resource.data.receiptData is map
           && existsAfter(paymentOperation)
           && getAfter(paymentOperation).data.kind in ["QR_PAYMENT", "SELF_CONSUMPTION_DEMO"]
           && getAfter(paymentOperation).data.senderUid == resource.data.customerUid
@@ -280,9 +286,57 @@ service cloud.firestore {
           && request.resource.data.total == resource.data.total
           && request.resource.data.qrNonce == resource.data.qrNonce;
       }
+      function validMerchantAvailabilityReview() {
+        return resource.data.status == "EN_REVISION"
+          && request.resource.data.status in ["DISPONIBILIDAD_CONFIRMADA", "ESPERA_CONFIRMACION_CLIENTE"]
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status", "proposedItems", "proposedTotal", "availabilityMessage",
+            "availabilityReviewed", "availabilityReviewedBy", "availabilityReviewedAt",
+            "availabilityStatus", "updatedAt"
+          ])
+          && request.resource.data.proposedItems is list
+          && request.resource.data.proposedItems.size() <= resource.data.items.size()
+          && request.resource.data.proposedTotal is number
+          && request.resource.data.proposedTotal >= 0
+          && request.resource.data.proposedTotal <= resource.data.total
+          && request.resource.data.availabilityMessage is string
+          && request.resource.data.availabilityReviewed == true
+          && request.resource.data.availabilityReviewedBy == request.auth.uid
+          && request.resource.data.availabilityReviewedAt is timestamp
+          && (
+            (request.resource.data.status == "DISPONIBILIDAD_CONFIRMADA"
+              && request.resource.data.proposedItems == resource.data.items
+              && request.resource.data.proposedTotal == resource.data.total)
+            ||
+            (request.resource.data.status == "ESPERA_CONFIRMACION_CLIENTE"
+              && request.resource.data.availabilityStatus == "FALTANTES_INFORMADOS")
+          );
+      }
+      function validCustomerProposalDecision() {
+        return resource.data.status == "ESPERA_CONFIRMACION_CLIENTE"
+          && resource.data.availabilityReviewed == true
+          && resource.data.proposedItems is list
+          && resource.data.proposedItems.size() > 0
+          && resource.data.proposedTotal is number
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "items", "total", "status", "customerAcceptedBy", "customerAcceptedAt", "updatedAt"
+          ])
+          && request.resource.data.items == resource.data.proposedItems
+          && request.resource.data.total == resource.data.proposedTotal
+          && request.resource.data.status == "CONFIRMADO_CLIENTE"
+          && request.resource.data.customerAcceptedBy == request.auth.uid
+          && request.resource.data.customerAcceptedAt is timestamp
+          && request.auth.uid == resource.data.customerUid;
+      }
+      function validCustomerCancellation() {
+        return request.auth.uid == resource.data.customerUid
+          && resource.data.status in ["RECIBIDO", "ESPERA_CONFIRMACION_CLIENTE"]
+          && request.resource.data.status == "CANCELADO"
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"]);
+      }
       allow update: if signedIn() && (
         (
-          get(merchantProfilePath()).data.ownerUid == request.auth.uid
+          resource.data.merchantUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
           && request.resource.data.paymentStatus == resource.data.paymentStatus
           && request.resource.data.paymentRequested == resource.data.paymentRequested
@@ -292,7 +346,16 @@ service cloud.firestore {
         )
         ||
         (
-          get(merchantProfilePath()).data.ownerUid == request.auth.uid
+          resource.data.merchantUid == request.auth.uid
+          && validMerchantAvailabilityReview()
+        )
+        ||
+        validCustomerProposalDecision()
+        ||
+        validCustomerCancellation()
+        ||
+        (
+          resource.data.merchantUid == request.auth.uid
           && validMerchantPaymentRequest()
         )
         ||
