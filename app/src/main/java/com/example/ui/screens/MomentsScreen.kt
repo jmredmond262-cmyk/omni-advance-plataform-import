@@ -170,6 +170,7 @@ fun MomentsScreen(onBack: () -> Unit) {
             "status" to "ACTIVE", "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )).addOnSuccessListener {
+            QueryDiagnosticsRepository.recordWrite(context, "moments")
             val reminderWasEnabled = reminderEnabled
             if (reminderWasEnabled) {
                 MomentReminderScheduler.schedule(context, momentRef.id, personName.trim(), occasion, date.trim(),
