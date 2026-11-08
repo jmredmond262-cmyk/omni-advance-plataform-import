@@ -123,6 +123,7 @@ fun OrderCenterScreen(
     var reviewOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var missingProductIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var availabilityNote by remember { mutableStateOf("") }
+    var ordersInitialized by remember { mutableStateOf(false) }
 
     fun decodeOrder(doc: com.google.firebase.firestore.DocumentSnapshot): OmniStoreOrder? = runCatching {
         val lines = (doc.get("items") as? List<*>)?.mapNotNull { raw ->
@@ -227,11 +228,14 @@ fun OrderCenterScreen(
                         .filter { !merchantMode || it.storeId == store.id }
                         .sortedByDescending { it.id }
                     val previousOrders = orders.associateBy { it.id }
+                    val newOrder = if (ordersInitialized && merchantMode) loadedOrders.firstOrNull { it.id !in previousOrders } else null
                     val changedOrder = loadedOrders.firstOrNull { current ->
                         val previous = previousOrders[current.id]
                         previous != null && (previous.status != current.status || previous.paymentRequested != current.paymentRequested)
                     }
-                    if (changedOrder != null) {
+                    if (newOrder != null) {
+                        feedback = "Nuevo pedido recibido: " + newOrder.id + ". Revisá los productos y aceptalo o rechazalo desde el panel del comercio."
+                    } else if (changedOrder != null) {
                         feedback = when {
                             !merchantMode && changedOrder.status == "ESPERA_CONFIRMACION_CLIENTE" ->
                                 "El comercio informó faltantes en tu pedido " + changedOrder.id + ". Revisá la propuesta y confirmá el nuevo total antes de pagar."
@@ -239,11 +243,10 @@ fun OrderCenterScreen(
                                 "Tu pedido " + changedOrder.id + " está listo. El comercio habilitó el pago en OMNI Pay DEMO."
                             merchantMode && changedOrder.status == "CONFIRMADO_CLIENTE" ->
                                 "El cliente aceptó la propuesta del pedido " + changedOrder.id + ". Ya podés comenzar la preparación."
-                            merchantMode && changedOrder.status == "PAGADO" ->
-                                "El pedido " + changedOrder.id + " fue pagado en OMNI Pay DEMO."
                             else -> "El pedido " + changedOrder.id + " cambió de estado a " + changedOrder.status + "."
                         }
                     }
+                    ordersInitialized = true
                     orders = loadedOrders.map { current ->
                         if (current.id in paidOrderIds) current.copy(paymentStatus = "PAGADA · DEMO") else current
                     }
