@@ -3,7 +3,7 @@ name: OMNI Android Build 1.4
 
 on:
   push:
-    branches: [ "main", "omni-resto-mejoras", "omni-admin-app", "omni-admin-rebuild", "omni-v1.3-release-candidate", "omni-v1.3-integral", "omni-v1.4-integral", "feat/omni-flow-daily-briefing", "feat/omni-marketplace-demo-commerce-cycle" ]
+    branches: [ "main", "omni-resto-mejoras", "omni-admin-app", "omni-admin-rebuild", "omni-v1.3-release-candidate", "omni-v1.3-integral", "omni-v1.4-integral", "feat/omni-flow-daily-briefing", "feat/omni-marketplace-demo-commerce-cycle", "fix/admin-live-map-profile-names-diagnostics-1.4.17" ]
   pull_request:
     branches: [ "main", "omni-advance-1.4", "omni-resto-mejoras", "omni-v1.3-release-candidate", "omni-v1.3-integral", "omni-v1.4-integral", "feat/omni-order-qr-full-demo-cycle-1.4.5" ]
   workflow_dispatch:
@@ -126,6 +126,15 @@ jobs:
         env:
           OMNI_ADMIN_VERSION_CODE: ${{ github.run_number }}
         run: gradle :admin:assembleDebug
+      - name: Verify OMNI Admin package, version and signing identity
+        run: |
+          APK="admin/build/outputs/apk/debug/admin-debug.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.omni.adminpanel' versionCode='$GITHUB_RUN_NUMBER' versionName='1.4.18'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" > /tmp/omni-admin-apk-certs.txt
+          APK_SHA256="$(awk -F': ' '/certificate SHA-256 digest:/{print $2; exit}' /tmp/omni-admin-apk-certs.txt | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
+          test "$APK_SHA256" = "$EXPECTED_SHA256" || { echo "::error::OMNI Admin no conserva la firma autorizada."; cat /tmp/omni-admin-apk-certs.txt; exit 1; }
+          echo "APK OMNI Admin verificada: paquete, versión y firma correctos."
       - name: Upload OMNI Admin APK
         uses: actions/upload-artifact@v4
         with:

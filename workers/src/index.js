@@ -207,27 +207,53 @@ function attachUserLabels(events, profiles) {
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
 function aggregateGeoPresence(records, profiles) {
-  const labels = userLabels(profiles);
+  // El mapa muestra nombres del perfil de OMNI; nunca expone UID como etiqueta visible.
+  const labels = new Map(profiles.map(profile => {
+    const uid = String(profile.uid || profile.id || "");
+    const label = String(profile.displayName || profile.fullName || profile.name || "").trim();
+    return [uid, label && label.toLowerCase() !== "usuario omni" ? label : ""];
+  }).filter(([uid, label]) => uid && label));
   const now = Date.now();
   const points = [];
-  let activeUsers = 0;
+  const diagnostics = {
+    recordsReceived: records.length,
+    gpsRecords: 0,
+    consentedRecords: 0,
+    staleRecords: 0,
+    invalidCoordinateRecords: 0,
+    profilesResolved: labels.size,
+    profilesMissing: 0
+  };
+  const candidateUids = new Set();
   for (const record of records) {
+    if (record.source === "GPS_ANDROID") diagnostics.gpsRecords += 1;
     if (record.consent !== true || record.source !== "GPS_ANDROID") continue;
-    const updatedAt = Date.parse(record.updatedAt || "");
-    if (!Number.isFinite(updatedAt) || now - updatedAt > 3 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
+    diagnostics.consentedRecords += 1;
     const uid = String(record.uid || record.id || "");
+    if (uid) candidateUids.add(uid);
+    const updatedAt = Date.parse(record.updatedAt || "");
+    if (!Number.isFinite(updatedAt) || now - updatedAt > 3 * 60 * 1000 || updatedAt > now + 60 * 1000) {
+      diagnostics.staleRecords += 1;
+      continue;
+    }
     const latitude = Number(record.latitude);
     const longitude = Number(record.longitude);
     const accuracyMeters = Number(record.accuracyMeters);
     if (!uid || !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
         Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
-        !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000) continue;
+        !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000) {
+      diagnostics.invalidCoordinateRecords += 1;
+      continue;
+    }
     const locationTime = Number(record.locationTimeMillis || Date.parse(record.locationTime || record.updatedAt || ""));
-    if (!Number.isFinite(locationTime) || now - locationTime > 5 * 60 * 1000 || locationTime > now + 60 * 1000) continue;
-    activeUsers += 1;
+    if (!Number.isFinite(locationTime) || now - locationTime > 5 * 60 * 1000 || locationTime > now + 60 * 1000) {
+      diagnostics.staleRecords += 1;
+      continue;
+    }
+    if (!labels.has(uid)) diagnostics.profilesMissing += 1;
     points.push({
       uid,
-      userLabel: labels.get(uid) || ("Cuenta OMNI · " + uid.slice(0, 8)),
+      userLabel: labels.get(uid) || "Nombre no informado en el perfil OMNI",
       latitude,
       longitude,
       accuracyMeters: Math.round(accuracyMeters),
@@ -239,7 +265,8 @@ function aggregateGeoPresence(records, profiles) {
       status: "online"
     });
   }
-  return { points, activeUsers, freshnessMinutes: 3 };
+  diagnostics.profilesMissing = Math.max(diagnostics.profilesMissing, candidateUids.size - labels.size);
+  return { points, activeUsers: points.length, freshnessMinutes: 3, diagnostics };
 }
 
 function summarizeUsage(events) {
@@ -516,11 +543,43 @@ async function handleAction(env, actor, action, data) {
     case "geoPresence": {
       const activeCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
       const records = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200, "updatedAt", activeCutoff);
-      const geo = aggregateGeoPresence(records, []);
+      const profileUids = [...new Set(records
+        .filter(record => record.consent === true && record.source === "GPS_ANDROID")
+        .map(record => String(record.uid || record.id || "").trim())
+        .filter(Boolean))].slice(0, 200);
+      // Each active account has one profile document keyed by its Firebase UID.
+      // Fetch only profiles for active locations; do not scan the entire users collection.
+      const profileResults = await Promise.allSettled(profileUids.map(uid =>
+        getDocument(env, "users", uid).then(document => document.missing ? null : documentData(document))
+      ));
+      const profiles = profileResults
+        .map((result, index) => ({
+          result,
+          uid: profileUids[index]
+        }))
+        .filter(item => item.result.status === "fulfilled" && item.result.value)
+        .map(item => ({
+          ...item.result.value,
+          // Firestore document ID is the authoritative Firebase UID.
+          // The Auth profile persists displayName, not fullName.
+          uid: item.uid
+        }));
+      const profileLookupErrors = profileResults.filter(result => result.status === "rejected").length;
+      const geo = aggregateGeoPresence(records, profiles);
       return {
         geoActivity: geo.points,
-        geoActivitySummary: { activeUsers: geo.activeUsers, visibleMarkers: geo.points.length, freshnessMinutes: geo.freshnessMinutes, coordinatePrecision: "GPS sin redondeo", sampleComplete: false, sourceAvailable: true },
-        diagnostics: { source: "geoPresence", documentsRead: records.length, adminModule: "liveMap", refreshedAt: new Date().toISOString() }
+        geoActivitySummary: {
+          activeUsers: geo.activeUsers,
+          visibleMarkers: geo.points.length,
+          freshnessMinutes: geo.freshnessMinutes,
+          coordinatePrecision: "GPS sin redondeo",
+          sampleComplete: false,
+          sourceAvailable: true,
+          ...geo.diagnostics,
+          profilesRequested: profileUids.length,
+          profileLookupErrors
+        },
+        diagnostics: { source: "geoPresence", documentsRead: records.length + profiles.length, presenceDocumentsRead: records.length, profileDocumentsRead: profiles.length, adminModule: "liveMap", refreshedAt: new Date().toISOString() }
       };
     }
     case "queryDiagnostics": {

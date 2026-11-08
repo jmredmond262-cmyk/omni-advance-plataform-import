@@ -80,7 +80,7 @@ private val navGroups = listOf(
   AdminNavGroup("overview", "Panel", Icons.Default.Dashboard, listOf("dashboard")),
   AdminNavGroup("people", "Usuarios", Icons.Default.PeopleAlt, listOf("users", "feedback")),
   AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
-  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "queryDiagnostics", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
+  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("queryDiagnostics", "activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
   AdminNavGroup("geography", "Mapa", Icons.Default.Public, listOf("liveMap"))
 )
 
@@ -474,7 +474,8 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
     Triple("Opiniones", "feedback", Icons.Default.Forum), Triple("Estadísticas", "activity", Icons.Default.QueryStats),
     Triple("Movimientos", "operations", Icons.Default.SwapHoriz), Triple("Auditoría", "audit", Icons.Default.FactCheck),
     Triple("Módulos", "modules", Icons.Default.Extension), Triple("Finanzas DEMO", "finance", Icons.Default.Savings),
-    Triple("Accesos", "invitations", Icons.Default.VpnKey), Triple("Configuración", "settings", Icons.Default.Settings)
+    Triple("Accesos", "invitations", Icons.Default.VpnKey), Triple("Configuración", "settings", Icons.Default.Settings),
+    Triple("Diagnóstico y consumo", "queryDiagnostics", Icons.Default.QueryStats)
   )
   val accents = listOf(Color(0xFF00DFFC), Color(0xFF28DFA2), Color(0xFF9B78FF), Color(0xFFFFB547), Color(0xFFFF5C9A))
   val systemReady = diagnostics.optBoolean("diagnosticEventSeen")
@@ -536,7 +537,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
       }
     }
     item {
-      Row(verticalAlignment = Alignment.CenterVertically) { Text("MÓDULOS DEL ECOSISTEMA", color = White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = .9.sp); Spacer(Modifier.weight(1f)); Text("16 ACCESOS", color = Color(0xFF7188A6), fontSize = 8.sp, fontWeight = FontWeight.Bold) }
+      Row(verticalAlignment = Alignment.CenterVertically) { Text("MÓDULOS DEL ECOSISTEMA", color = White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = .9.sp); Spacer(Modifier.weight(1f)); Text("17 ACCESOS", color = Color(0xFF7188A6), fontSize = 8.sp, fontWeight = FontWeight.Bold) }
     }
     items(shortcuts.chunked(2)) { rowItems ->
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
