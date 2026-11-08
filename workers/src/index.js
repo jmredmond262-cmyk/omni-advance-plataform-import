@@ -376,12 +376,11 @@ async function dashboard(env) {
   for (const name of collections) {
     countResults.push(await safe("count:" + name, () => countDocuments(env, name), 0));
   }
-  const [walletPage, operations, userProfiles, usageEvents, geoRecords] = await Promise.all([
+  const [walletPage, operations, userProfiles, usageEvents] = await Promise.all([
     safe("walletAccounts:list", () => listDocumentsPage(env, "walletAccounts", 50), { items: [], nextPageToken: "" }),
     safe("walletOperations:recent", () => recentDocuments(env, "walletOperations", 8), []),
     safe("users:recent", () => recentDocuments(env, "users", 30), []),
-    safe("usageEvents:last7days", () => usageEventsLast7Days(env), []),
-    safe("geoPresence:recent", () => queryRecentDocuments(env, "geoPresence", "updatedAt", 200), null)
+    safe("usageEvents:last7days", () => usageEventsLast7Days(env), [])
   ]);
   const wallets = walletPage.items || [];
   const resolvedCounts = Object.fromEntries(collections.map((name, index) => [
@@ -404,7 +403,6 @@ async function dashboard(env) {
   }
   const usageTrend = dayKeys.map(day => ({ date: day.slice(8, 10) + "/" + day.slice(5, 7), count: usageByDay[day] }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoRecords || [], userProfiles);
   const result = {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
@@ -412,18 +410,9 @@ async function dashboard(env) {
     usageTrend,
     walletBalanceSample: wallets.reduce((sum, item) => sum + (Number(item.balance) || 0), 0),
     walletSampleSize: wallets.length,
-    usageSampleLimit: 750,
+    usageSampleLimit: 100,
     usageSampleComplete: usageEvents.length < 750,
     recentUsers, recentOperations: operations,
-    geoActivity: geoActivity.points,
-    geoActivitySummary: {
-      activeUsers: geoActivity.activeUsers,
-      visibleMarkers: geoActivity.points.length,
-      freshnessMinutes: geoActivity.freshnessMinutes,
-      coordinatePrecision: "GPS sin redondeo",
-      sampleComplete: false,
-      sourceAvailable: Array.isArray(geoRecords)
-    },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
     diagnostics: {
       usageEventsVisibleLast7Days: usageEvents.length,
