@@ -447,6 +447,7 @@ private fun QueryDiagnosticsContent(payload: JSONObject) {
             Text("Consultas: ${row["queryCount"] ?: 0} · Lecturas estimadas: ${row["estimatedDocumentReads"] ?: 0}", color = White, fontSize = 11.sp)
             Text("Servidor: ${row["serverSnapshots"] ?: 0} · Caché: ${row["cacheSnapshots"] ?: 0} · Errores: ${row["errorCount"] ?: 0}", color = Muted, fontSize = 10.sp)
             Text("Escrituras de la sección: ${row["writeCount"] ?: 0} · Escrituras de medición: ${row["flushWrites"] ?: 0}", color = Muted, fontSize = 10.sp)
+            Text("Última operación: ${row["lastOperation"] ?: "OPERACION_NO_INFORMADA"}", color = Color(0xFF9AB5D4), fontSize = 10.sp)
             Text("Última medición: ${row["lastUpdatedAt"] ?: "Sin fecha"}", color = Color(0xFF7188A6), fontSize = 9.sp)
           }
         }
