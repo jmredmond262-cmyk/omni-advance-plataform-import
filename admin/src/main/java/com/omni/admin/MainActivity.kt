@@ -107,7 +107,7 @@ private fun OmniAdminRoot() {
         val tab = tabs.first { it.id == selected }
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
-          "liveMap" -> AdminApi.call(token, "geoActivity")
+          "liveMap" -> AdminApi.call(token, "dashboard")
           "dashboard" -> AdminApi.call(token, "dashboard")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
