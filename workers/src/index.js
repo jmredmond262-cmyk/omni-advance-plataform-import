@@ -528,18 +528,22 @@ async function handleAction(env, actor, action, data) {
       const records = await queryRecentDocuments(env, "queryDiagnostics", "updatedAt", 500, "updatedAt", cutoff);
       const byModule = new Map();
       for (const item of records) {
-        const module = String(item.module || "MODULO_NO_INFORMADO");
-        const row = byModule.get(module) || { module, queryCount: 0, estimatedDocumentReads: 0, serverSnapshots: 0, cacheSnapshots: 0, writeCount: 0, errorCount: 0, flushWrites: 0, lastUpdatedAt: "" };
-        for (const key of ["queryCount", "estimatedDocumentReads", "serverSnapshots", "cacheSnapshots", "writeCount", "errorCount", "flushWrites"]) row[key] += Number(item[key]) || 0;
-        if (String(item.updatedAt || "") > row.lastUpdatedAt) row.lastUpdatedAt = String(item.updatedAt);
-        byModule.set(module, row);
+        const moduleStats = item.modules && typeof item.modules === "object" ? item.modules : {};
+        for (const [module, stats] of Object.entries(moduleStats)) {
+          const row = byModule.get(module) || { module, queryCount: 0, estimatedDocumentReads: 0, serverSnapshots: 0, cacheSnapshots: 0, writeCount: 0, errorCount: 0, flushWrites: 0, durationMsTotal: 0, lastUpdatedAt: "", lastOperation: "" };
+          for (const key of ["queryCount", "estimatedDocumentReads", "serverSnapshots", "cacheSnapshots", "writeCount", "errorCount", "flushWrites", "durationMsTotal"]) row[key] += Number(stats[key]) || 0;
+          if (String(item.updatedAt || "") > row.lastUpdatedAt) row.lastUpdatedAt = String(item.updatedAt);
+          row.lastOperation = String(stats.lastOperation || row.lastOperation);
+          byModule.set(module, row);
+        }
       }
       const modules = [...byModule.values()].sort((a, b) => b.estimatedDocumentReads - a.estimatedDocumentReads);
       const totals = modules.reduce((sum, row) => {
-        for (const key of ["queryCount", "estimatedDocumentReads", "serverSnapshots", "cacheSnapshots", "writeCount", "errorCount", "flushWrites"]) sum[key] += row[key];
+        for (const key of ["queryCount", "estimatedDocumentReads", "serverSnapshots", "cacheSnapshots", "writeCount", "errorCount", "flushWrites", "durationMsTotal"]) sum[key] += row[key];
         return sum;
-      }, { queryCount: 0, estimatedDocumentReads: 0, serverSnapshots: 0, cacheSnapshots: 0, writeCount: 0, errorCount: 0, flushWrites: 0 });
-      return { periodDays: 7, sampledDocuments: records.length, totals, modules, monitorSelfCost: { firestoreDocumentsRead: records.length, firestoreWrites: 0, note: "Las lecturas de esta consulta pertenecen al módulo Diagnóstico y consumo." }, refreshedAt: new Date().toISOString() };
+      }, { queryCount: 0, estimatedDocumentReads: 0, serverSnapshots: 0, cacheSnapshots: 0, writeCount: 0, errorCount: 0, flushWrites: 0, durationMsTotal: 0 });
+      const monitor = modules.find(row => row.module === "diagnostics");
+      return { periodDays: 7, sampledDocuments: records.length, totals, modules, monitorSelfCost: { firestoreDocumentsRead: records.length, firestoreWrites: monitor?.writeCount || 0, note: "Las lecturas de esta consulta pertenecen al módulo Diagnóstico y consumo; las escrituras de instrumentación figuran como módulo diagnostics." }, refreshedAt: new Date().toISOString() };
     }
     case "finance": return finance(env);
     case "list": {
