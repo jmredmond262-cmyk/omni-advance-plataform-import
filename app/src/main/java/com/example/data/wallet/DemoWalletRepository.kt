@@ -270,6 +270,7 @@ class DemoWalletRepository(
                 check(kotlin.math.abs(orderTotal - amount) < 0.005) { "El importe del pedido cambió. Volvé a revisar el total." }
                 check(orderSnapshot?.getString("paymentStatus") == "PENDIENTE") { "El pedido todavía no tiene un pago solicitado o ya fue pagado." }
                 check(orderSnapshot?.getString("status") == "LISTO") { "El comercio todavía no marcó el pedido como listo." }
+                check(orderSnapshot?.getBoolean("availabilityReviewed") == true) { "El comercio todavía no confirmó la disponibilidad del pedido." }
                 check(orderSnapshot?.getBoolean("paymentRequested") == true || orderSnapshot?.getTimestamp("paymentRequestedAt") != null) {
                     "El comercio todavía no solicitó el pago."
                 }
@@ -301,24 +302,57 @@ class DemoWalletRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 ))
             }
+            val orderDetails = if (orderId != null && orderSnapshot != null) {
+                val receiptId = "OMNI-" + orderId.takeLast(12).uppercase(Locale.ROOT)
+                val receiptData = mapOf(
+                    "receiptId" to receiptId,
+                    "receiptVersion" to 1,
+                    "orderId" to orderId,
+                    "storeId" to (orderSnapshot.getString("storeId") ?: ""),
+                    "storeName" to (orderSnapshot.getString("storeName") ?: "Comercio OMNI"),
+                    "storeAddress" to (orderSnapshot.getString("storeAddress") ?: ""),
+                    "storePhone" to (orderSnapshot.getString("storePhone") ?: ""),
+                    "merchantUid" to (orderSnapshot.getString("merchantUid") ?: ""),
+                    "customerUid" to senderUid,
+                    "customerName" to (orderSnapshot.getString("customerName") ?: "Cliente OMNI"),
+                    "customerPhone" to (orderSnapshot.getString("customerPhone") ?: ""),
+                    "items" to (orderSnapshot.get("items") as? List<*> ?: emptyList<Any>()),
+                    "total" to amount,
+                    "fulfillmentType" to (orderSnapshot.getString("fulfillmentType") ?: "RETIRO"),
+                    "deliveryAddress" to (orderSnapshot.getString("deliveryAddress") ?: ""),
+                    "paymentMethod" to if (selfConsumption) "AUTOCONSUMO_OMNI_PAY_DEMO" else "OMNI_PAY_DEMO",
+                    "paymentEnvironment" to "DEMO"
+                )
+                mapOf(
+                    "orderId" to orderId,
+                    "storeId" to (orderSnapshot.getString("storeId") ?: ""),
+                    "storeName" to (orderSnapshot.getString("storeName") ?: "Comercio OMNI"),
+                    "storeAddress" to (orderSnapshot.getString("storeAddress") ?: ""),
+                    "storePhone" to (orderSnapshot.getString("storePhone") ?: ""),
+                    "merchantUid" to (orderSnapshot.getString("merchantUid") ?: ""),
+                    "customerUid" to senderUid,
+                    "customerName" to (orderSnapshot.getString("customerName") ?: "Cliente OMNI"),
+                    "customerPhone" to (orderSnapshot.getString("customerPhone") ?: ""),
+                    "items" to (orderSnapshot.get("items") as? List<*> ?: emptyList<Any>()),
+                    "total" to amount,
+                    "fulfillmentType" to (orderSnapshot.getString("fulfillmentType") ?: "RETIRO"),
+                    "deliveryAddress" to (orderSnapshot.getString("deliveryAddress") ?: ""),
+                    "paymentEnvironment" to "DEMO",
+                    "receiptId" to receiptId,
+                    "receiptData" to receiptData
+                )
+            } else emptyMap<String, Any>()
             if (orderId != null) {
                 tx.update(orderRef!!, mapOf(
                     "paymentStatus" to "PAGADO",
                     "paymentMethod" to if (selfConsumption) "AUTOCONSUMO_OMNI_PAY_DEMO" else "OMNI_PAY_DEMO",
                     "paymentEnvironment" to "DEMO",
-                    "paidAt" to FieldValue.serverTimestamp()
+                    "paidAt" to FieldValue.serverTimestamp(),
+                    "receiptId" to "OMNI-" + orderId.takeLast(12).uppercase(Locale.ROOT),
+                    "receiptData" to orderDetails["receiptData"]!!
                 ))
             }
-            val orderDetails = if (orderId != null && orderSnapshot != null) mapOf(
-                "orderId" to orderId,
-                "storeId" to (orderSnapshot.getString("storeId") ?: ""),
-                "storeName" to (orderSnapshot.getString("storeName") ?: "Comercio OMNI"),
-                "customerName" to (orderSnapshot.getString("customerName") ?: "Cliente OMNI"),
-                "items" to (orderSnapshot.get("items") as? List<*> ?: emptyList<Any>()),
-                "fulfillmentType" to (orderSnapshot.getString("fulfillmentType") ?: "RETIRO"),
-                "deliveryAddress" to (orderSnapshot.getString("deliveryAddress") ?: ""),
-                "paymentEnvironment" to "DEMO"
-            ) else emptyMap()
+
             val operationData = mutableMapOf<String, Any>(
                 "operationId" to operationId,
                 "kind" to if (selfConsumption) "SELF_CONSUMPTION_DEMO" else if (isQr) "QR_PAYMENT" else "TRANSFER",
@@ -342,7 +376,9 @@ class DemoWalletRepository(
                 if (selfConsumption) "Autoconsumo de pedido OMNI · sin movimiento de saldo" else if (orderId != null) "Pago de pedido OMNI" else if (isQr) "Pago con QR" else "Transferencia enviada",
                 if (selfConsumption) "Tu propio comercio · DEMO" else recipientAlias,
                 amount,
-                orderDetails + if (selfConsumption) mapOf(
+                orderDetails + mapOf(
+                    "ticketAudience" to if (selfConsumption) "CLIENTE_Y_COMERCIO" else "CLIENTE"
+                ) + if (selfConsumption) mapOf(
                     "selfConsumption" to true,
                     "balanceImpact" to 0.0,
                     "status" to "AUTOCONSUMO REGISTRADO · DEMO"
@@ -351,7 +387,7 @@ class DemoWalletRepository(
             if (!selfConsumption) {
                 tx.set(recipientRef.collection("transactions").document(operationId), transactionData(
                     operationId, recipientType, if (orderId != null) "Cobro de pedido OMNI" else if (isQr) "Cobro con QR" else "Transferencia recibida",
-                    senderAlias, amount, orderDetails
+                    senderAlias, amount, orderDetails + mapOf("ticketAudience" to "COMERCIO")
                 ))
             }
             if (selfConsumption) "AUTOCONSUMO REGISTRADO · DEMO · SALDO SIN CAMBIOS"

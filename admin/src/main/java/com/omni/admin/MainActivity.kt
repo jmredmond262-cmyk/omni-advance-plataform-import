@@ -899,6 +899,9 @@ private val fieldLabels = mapOf(
   "amount" to "Importe", "peerName" to "Contraparte", "title" to "Concepto", "senderUid" to "Cuenta de origen", "recipientUid" to "Cuenta de destino", "kind" to "Tipo", "type" to "Tipo", "status" to "Estado",
   "storeName" to "Comercio", "orderNumber" to "Número de pedido", "localHour" to "Hora local del dispositivo", "localDayOfWeek" to "Día local de la semana", "timezoneOffsetMinutes" to "Diferencia horaria UTC (minutos)", "localDate" to "Fecha local del dispositivo", "sessionId" to "Sesión", "total" to "Total",
   "paymentStatus" to "Estado del pago", "paymentMethod" to "Medio de pago",
+  "availabilityStatus" to "Resultado de disponibilidad", "availabilityReviewed" to "Disponibilidad revisada",
+  "availabilityMessage" to "Detalle de faltantes informado", "proposedTotal" to "Total propuesto al cliente",
+  "receiptId" to "Identificador del ticket", "receiptData" to "Copia del ticket", "paymentOperationId" to "Operación de pago",
   "fulfillmentType" to "Entrega", "action" to "Acción", "target" to "Destino",
   "message" to "Mensaje", "description" to "Descripción", "enabled" to "Habilitado",
   "event" to "Evento", "module" to "Módulo", "eventName" to "Evento", "screen" to "Pantalla", "appVersion" to "Versión",
@@ -908,6 +911,13 @@ private val fieldLabels = mapOf(
   "cvu" to "CVU"
 )
 private fun friendlyEnum(value: String): String = when (value.uppercase()) {
+  "EN_REVISION" -> "Revisión de disponibilidad"
+  "ESPERA_CONFIRMACION_CLIENTE" -> "Esperando confirmación del cliente"
+  "DISPONIBILIDAD_CONFIRMADA" -> "Disponibilidad confirmada"
+  "CONFIRMADO_CLIENTE" -> "Propuesta aceptada por el cliente"
+  "LISTO" -> "Listo para habilitar el pago"
+  "PAGADO" -> "Pago acreditado · DEMO"
+  "NO_SOLICITADO" -> "Pago todavía no habilitado"
   "UNKNOWN" -> "Tipo de evento no informado"
   "TIPO_DE_EVENTO_NO_INFORMADO" -> "Tipo de evento no informado"
   "MODULO_NO_INFORMADO" -> "Módulo no informado"
@@ -985,7 +995,7 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "walletOperations" -> listOf("amount", "status", "createdAt")
     "walletTransactions" -> listOf("amount", "status", "peerName", "createdAt")
     "merchantProfiles" -> listOf("description", "category", "address", "status", "createdAt")
-    "storeOrders" -> listOf("total", "paymentStatus", "paymentFlow", "paymentEnvironment", "fulfillmentType", "createdAt")
+    "storeOrders" -> listOf("status", "availabilityStatus", "availabilityReviewed", "availabilityMessage", "proposedTotal", "total", "paymentStatus", "paymentFlow", "paymentEnvironment", "receiptId", "paymentOperationId", "fulfillmentType", "createdAt", "updatedAt")
     "appFeedback" -> listOf("message", "createdAt")
     "usageEvents" -> listOf("userLabel", "module", "appVersion", "createdAt")
     "omniEvents" -> listOf("description", "category", "status", "startAt", "createdAt")
