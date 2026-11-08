@@ -116,7 +116,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
             registration = db.collection("omniProfessionalProfiles").document(uid)
                 .addSnapshotListener { snapshot, exception ->
                     val fromCache = snapshot?.metadata?.isFromCache == true
-                    val readCount = if (snapshot == null || fromCache) 0 else if (!serverSnapshotSeen) 1 else snapshot.documentChanges.count { it.type != com.google.firebase.firestore.DocumentChange.Type.REMOVED }
+                    val readCount = if (snapshot == null || fromCache) 0 else 1
                     QueryDiagnosticsRepository.recordSnapshot(context, "conex_profiles", "omniProfessionalProfiles.get", readCount, fromCache, System.currentTimeMillis() - queryStartedAt, firstSnapshot, exception != null)
                     if (snapshot != null && !fromCache) serverSnapshotSeen = true
                     firstSnapshot = false
