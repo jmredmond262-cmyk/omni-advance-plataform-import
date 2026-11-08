@@ -279,6 +279,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
             "createdAt" to FieldValue.serverTimestamp(),
             "expiresAt" to Timestamp(java.util.Date(System.currentTimeMillis() + expiresInDays * 86400000L))
         )).addOnSuccessListener {
+            QueryDiagnosticsRepository.recordWrite(context, "conex_jobs")
             UsageAnalyticsRepository.trackEvent(uid, "jobs", "JOB_POST_PUBLISHED", mapOf("category" to postCategory, "success" to true))
             busy = false
             showPublish = false
@@ -313,6 +314,7 @@ fun JobBoardScreen(onBack: () -> Unit) {
             )
             if (!existing.exists()) data["createdAt"] = FieldValue.serverTimestamp()
             ref.set(data, SetOptions.merge()).addOnSuccessListener {
+                QueryDiagnosticsRepository.recordWrite(context, "conex_profiles")
                 busy = false
                 feedback = if (profilePublic) "Perfil profesional guardado y visible para usuarios autenticados." else "Perfil profesional guardado en modo privado."
                 UsageAnalyticsRepository.trackEvent(uid, "conex", "PROFESSIONAL_PROFILE_SAVED", mapOf("status" to if (profilePublic) "PUBLIC" else "PRIVATE", "success" to true))
