@@ -553,8 +553,17 @@ async function handleAction(env, actor, action, data) {
         getDocument(env, "users", uid).then(document => document.missing ? null : documentData(document))
       ));
       const profiles = profileResults
-        .filter(result => result.status === "fulfilled" && result.value)
-        .map(result => result.value);
+        .map((result, index) => ({
+          result,
+          uid: profileUids[index]
+        }))
+        .filter(item => item.result.status === "fulfilled" && item.result.value)
+        .map(item => ({
+          ...item.result.value,
+          // Firestore document ID is the authoritative Firebase UID.
+          // The Auth profile persists displayName, not fullName.
+          uid: item.uid
+        }));
       const profileLookupErrors = profileResults.filter(result => result.status === "rejected").length;
       const geo = aggregateGeoPresence(records, profiles);
       return {
