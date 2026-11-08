@@ -107,6 +107,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.MainViewModel
 import com.example.data.auth.AuthRepository
 import com.example.data.analytics.UsageAnalyticsRepository
+import com.example.data.analytics.QueryDiagnosticsRepository
 import com.example.data.wallet.DemoWalletRepository
 import com.example.ui.screens.AuthScreen
 import com.google.firebase.auth.FirebaseAuth
@@ -137,10 +138,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        FirebaseAuth.getInstance().currentUser?.uid?.let { uid -> UsageAnalyticsRepository.resumeSession(uid) }
+        FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
+            QueryDiagnosticsRepository.flush(this, uid)
+            UsageAnalyticsRepository.resumeSession(uid)
+        }
     }
 
     override fun onStop() {
+        FirebaseAuth.getInstance().currentUser?.uid?.let { uid -> QueryDiagnosticsRepository.flush(this, uid) }
         UsageAnalyticsRepository.endSession()
         super.onStop()
     }
