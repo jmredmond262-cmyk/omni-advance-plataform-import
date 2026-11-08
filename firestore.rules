@@ -302,11 +302,14 @@ service cloud.firestore {
           && request.resource.data.proposedTotal >= 0
           && request.resource.data.proposedTotal <= resource.data.total
           && request.resource.data.availabilityMessage is string
+          && request.resource.data.availabilityMessage.size() <= 500
+          && request.resource.data.updatedAt is timestamp
           && request.resource.data.availabilityReviewed == true
           && request.resource.data.availabilityReviewedBy == request.auth.uid
           && request.resource.data.availabilityReviewedAt is timestamp
           && (
             (request.resource.data.status == "DISPONIBILIDAD_CONFIRMADA"
+              && request.resource.data.availabilityStatus == "TODO_DISPONIBLE"
               && request.resource.data.proposedItems == resource.data.items
               && request.resource.data.proposedTotal == resource.data.total)
             ||
@@ -328,12 +331,14 @@ service cloud.firestore {
           && request.resource.data.status == "CONFIRMADO_CLIENTE"
           && request.resource.data.customerAcceptedBy == request.auth.uid
           && request.resource.data.customerAcceptedAt is timestamp
+          && request.resource.data.updatedAt is timestamp
           && request.auth.uid == resource.data.customerUid;
       }
       function validCustomerCancellation() {
         return request.auth.uid == resource.data.customerUid
           && resource.data.status in ["RECIBIDO", "ESPERA_CONFIRMACION_CLIENTE"]
           && request.resource.data.status == "CANCELADO"
+          && request.resource.data.updatedAt is timestamp
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"]);
       }
       allow update: if signedIn() && (
