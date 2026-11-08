@@ -1,6 +1,7 @@
 package com.example.data.analytics
 
 import android.content.Context
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -18,6 +19,22 @@ object QueryDiagnosticsRepository {
     private const val PREFS = "omni_query_diagnostics_pending"
     private const val PREFIX = "module_"
     private val lock = Any()
+
+    fun recordSnapshot(
+        module: String,
+        operation: String,
+        documentsRead: Int,
+        fromCache: Boolean,
+        durationMs: Long,
+        firstSnapshot: Boolean,
+        failed: Boolean
+    ) = recordSnapshot(
+        FirebaseApp.getInstance().applicationContext,
+        module, operation, documentsRead, fromCache, durationMs, firstSnapshot, failed
+    )
+
+    fun recordWrite(module: String, failed: Boolean = false) =
+        recordWrite(FirebaseApp.getInstance().applicationContext, module, failed)
 
     fun recordSnapshot(
         context: Context,
