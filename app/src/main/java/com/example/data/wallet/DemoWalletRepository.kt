@@ -270,6 +270,7 @@ class DemoWalletRepository(
                 check(kotlin.math.abs(orderTotal - amount) < 0.005) { "El importe del pedido cambió. Volvé a revisar el total." }
                 check(orderSnapshot?.getString("paymentStatus") == "PENDIENTE") { "El pedido todavía no tiene un pago solicitado o ya fue pagado." }
                 check(orderSnapshot?.getString("status") == "LISTO") { "El comercio todavía no marcó el pedido como listo." }
+                check(orderSnapshot?.getBoolean("availabilityReviewed") == true) { "El comercio todavía no confirmó la disponibilidad del pedido." }
                 check(orderSnapshot?.getBoolean("paymentRequested") == true || orderSnapshot?.getTimestamp("paymentRequestedAt") != null) {
                     "El comercio todavía no solicitó el pago."
                 }
