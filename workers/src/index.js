@@ -514,6 +514,33 @@ async function finance(env) {
 async function handleAction(env, actor, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
+    case "geoPresence": {
+      const records = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200);
+      const geo = aggregateGeoPresence(records, []);
+      return {
+        geoActivity: geo.points,
+        geoActivitySummary: { activeUsers: geo.activeUsers, visibleMarkers: geo.points.length, freshnessMinutes: geo.freshnessMinutes, coordinatePrecision: "GPS sin redondeo", sampleComplete: false, sourceAvailable: true },
+        diagnostics: { source: "geoPresence", documentsRead: records.length, adminModule: "liveMap", refreshedAt: new Date().toISOString() }
+      };
+    }
+    case "queryDiagnostics": {
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const records = await queryRecentDocuments(env, "queryDiagnostics", "updatedAt", 500, "updatedAt", cutoff);
+      const byModule = new Map();
+      for (const item of records) {
+        const module = String(item.module || "MODULO_NO_INFORMADO");
+        const row = byModule.get(module) || { module, queryCount: 0, estimatedDocumentReads: 0, serverSnapshots: 0, cacheSnapshots: 0, writeCount: 0, errorCount: 0, flushWrites: 0, lastUpdatedAt: "" };
+        for (const key of ["queryCount", "estimatedDocumentReads", "serverSnapshots", "cacheSnapshots", "writeCount", "errorCount", "flushWrites"]) row[key] += Number(item[key]) || 0;
+        if (String(item.updatedAt || "") > row.lastUpdatedAt) row.lastUpdatedAt = String(item.updatedAt);
+        byModule.set(module, row);
+      }
+      const modules = [...byModule.values()].sort((a, b) => b.estimatedDocumentReads - a.estimatedDocumentReads);
+      const totals = modules.reduce((sum, row) => {
+        for (const key of ["queryCount", "estimatedDocumentReads", "serverSnapshots", "cacheSnapshots", "writeCount", "errorCount", "flushWrites"]) sum[key] += row[key];
+        return sum;
+      }, { queryCount: 0, estimatedDocumentReads: 0, serverSnapshots: 0, cacheSnapshots: 0, writeCount: 0, errorCount: 0, flushWrites: 0 });
+      return { periodDays: 7, sampledDocuments: records.length, totals, modules, monitorSelfCost: { firestoreDocumentsRead: records.length, firestoreWrites: 0, note: "Las lecturas de esta consulta pertenecen al módulo Diagnóstico y consumo." }, refreshedAt: new Date().toISOString() };
+    }
     case "finance": return finance(env);
     case "list": {
       const collection = String(data.collection || "");
