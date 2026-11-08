@@ -236,7 +236,7 @@ private object RoutineAlarmScheduler {
 
 class RoutineBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED)) {
+        if (intent.action in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED, Intent.ACTION_MY_PACKAGE_REPLACED)) {
             val routines = RoutineStore.load(context)
             routines.forEach { RoutineAlarmScheduler.schedule(context, it) }
             FlowBriefingScheduler.schedule(context, routines)
