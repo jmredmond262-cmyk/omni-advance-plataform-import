@@ -249,6 +249,7 @@ service cloud.firestore {
       function validOrderPaymentSettlement() {
         let paymentOperation = operationPath("orderpay_" + orderId);
         return resource.data.status == "LISTO"
+          && resource.data.availabilityReviewed == true
           && resource.data.paymentRequested == true
           && resource.data.paymentStatus == "PENDIENTE"
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -511,6 +512,7 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.customerUid == request.auth.uid
             && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.merchantUid == request.auth.uid
             && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.status == "LISTO"
+            && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.availabilityReviewed == true
             && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.paymentRequested == true
             && get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.paymentStatus == "PENDIENTE"
             && request.resource.data.amount == get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data.total
