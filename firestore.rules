@@ -297,6 +297,7 @@ service cloud.firestore {
           ])
           && request.resource.data.proposedItems is list
           && request.resource.data.proposedItems.size() <= resource.data.items.size()
+          && resource.data.items.hasAll(request.resource.data.proposedItems)
           && request.resource.data.proposedTotal is number
           && request.resource.data.proposedTotal >= 0
           && request.resource.data.proposedTotal <= resource.data.total
