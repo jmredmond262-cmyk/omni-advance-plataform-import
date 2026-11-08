@@ -198,7 +198,8 @@ service cloud.firestore {
           (resource.data.status == "EN_PREPARACION" && request.resource.data.status in ["LISTO", "CANCELADO"]) ||
           (resource.data.status == "LISTO" && request.resource.data.status in ["EN_CAMINO", "ENTREGADO"]
             && resource.data.paymentStatus == "PAGADO") ||
-          (resource.data.status == "EN_CAMINO" && request.resource.data.status == "ENTREGADO");
+          (resource.data.status == "EN_CAMINO" && request.resource.data.status == "ENTREGADO"
+            && resource.data.paymentStatus == "PAGADO");
       }
       allow create: if signedIn()
         && request.resource.data.customerUid == request.auth.uid
