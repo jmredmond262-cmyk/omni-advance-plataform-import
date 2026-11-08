@@ -65,7 +65,7 @@ object QueryDiagnosticsRepository {
         if (uid.isBlank()) return
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val pending = synchronized(lock) {
-            prefs.all.filterKeys { it.startsWith(PREFIX) && it.valueOrNull() != null }
+            prefs.all.filterKeys { it.startsWith(PREFIX) }
                 .mapNotNull { (key, value) -> (value as? String)?.let { key to it } }
         }
         if (pending.isEmpty()) return
@@ -113,5 +113,4 @@ object QueryDiagnosticsRepository {
             }
     }
 
-    private fun Map<String, *>.valueOrNull(): Any? = this["value"]
 }
