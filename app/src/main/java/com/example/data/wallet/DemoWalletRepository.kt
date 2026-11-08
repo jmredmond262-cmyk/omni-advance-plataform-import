@@ -265,7 +265,7 @@ class DemoWalletRepository(
             }
             check(sender.exists()) { "Tu billetera DEMO no está disponible." }
             val senderBalance = (sender.get("balance") as? Number)?.toDouble() ?: 0.0
-            check(senderBalance >= amount) { "Saldo insuficiente para completar la operación." }
+            if (!selfConsumption) check(senderBalance >= amount) { "Saldo insuficiente para completar la operación." }
             val recipientAlias = "Cuenta OMNI Pay"
             val senderAlias = sender.getString("alias").orEmpty()
             val senderType = if (isQr) TransactionType.QR_PAGO else TransactionType.TRANSFERENCIA_ENVIADA
@@ -286,9 +286,11 @@ class DemoWalletRepository(
                     "lastOperationId" to operationId,
                     "updatedAt" to FieldValue.serverTimestamp()
                 ))
+            }
+            if (orderId != null) {
                 tx.update(orderRef!!, mapOf(
                     "paymentStatus" to "PAGADO",
-                    "paymentMethod" to "AUTOCONSUMO_OMNI_PAY_DEMO",
+                    "paymentMethod" to if (selfConsumption) "AUTOCONSUMO_OMNI_PAY_DEMO" else "OMNI_PAY_DEMO",
                     "paymentEnvironment" to "DEMO",
                     "paidAt" to FieldValue.serverTimestamp()
                 ))
