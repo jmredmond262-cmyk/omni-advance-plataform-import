@@ -226,6 +226,24 @@ fun OrderCenterScreen(
                     val loadedOrders = snapshot?.documents.orEmpty().mapNotNull(::decodeOrder)
                         .filter { !merchantMode || it.storeId == store.id }
                         .sortedByDescending { it.id }
+                    val previousOrders = orders.associateBy { it.id }
+                    val changedOrder = loadedOrders.firstOrNull { current ->
+                        val previous = previousOrders[current.id]
+                        previous != null && (previous.status != current.status || previous.paymentRequested != current.paymentRequested)
+                    }
+                    if (changedOrder != null) {
+                        feedback = when {
+                            !merchantMode && changedOrder.status == "ESPERA_CONFIRMACION_CLIENTE" ->
+                                "El comercio informó faltantes en tu pedido " + changedOrder.id + ". Revisá la propuesta y confirmá el nuevo total antes de pagar."
+                            !merchantMode && changedOrder.paymentRequested ->
+                                "Tu pedido " + changedOrder.id + " está listo. El comercio habilitó el pago en OMNI Pay DEMO."
+                            merchantMode && changedOrder.status == "CONFIRMADO_CLIENTE" ->
+                                "El cliente aceptó la propuesta del pedido " + changedOrder.id + ". Ya podés comenzar la preparación."
+                            merchantMode && changedOrder.status == "PAGADO" ->
+                                "El pedido " + changedOrder.id + " fue pagado en OMNI Pay DEMO."
+                            else -> "El pedido " + changedOrder.id + " cambió de estado a " + changedOrder.status + "."
+                        }
+                    }
                     orders = loadedOrders.map { current ->
                         if (current.id in paidOrderIds) current.copy(paymentStatus = "PAGADA · DEMO") else current
                     }
@@ -997,6 +1015,9 @@ private fun OrderStatusCard(
             order.items.forEach { Text("${it.quantity} × ${it.name}", color = Color(0xFFB8C8D9), fontSize = 10.sp) }
             if (!merchantMode && order.status == "ESPERA_CONFIRMACION_CLIENTE") {
                 Text("El comercio informó: " + order.availabilityMessage, color = Color(0xFFFFC978), fontSize = 10.sp)
+                order.proposedItems.forEach { proposed ->
+                    Text(proposed.quantity.toString() + " × " + proposed.name, color = Color(0xFFB8C8D9), fontSize = 10.sp)
+                }
                 Text("Nuevo total: OM$ " + String.format("%,.2f", order.proposedTotal ?: 0.0), color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
