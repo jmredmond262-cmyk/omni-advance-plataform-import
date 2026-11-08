@@ -653,9 +653,12 @@ async function handleAction(env, actor, action, data) {
           const paymentOperationId = paymentByOrder.get(String(item.id || ""));
           return {
             ...item,
-            paymentStatus: paymentOperationId ? "PAGADA · DEMO" : "PENDIENTE",
-            paymentEnvironment: "DEMO",
-            paymentOperationId: paymentOperationId || null
+            paymentStatus: paymentOperationId ? "PAGADA · DEMO" : (item.paymentStatus || "NO_SOLICITADO"),
+            paymentEnvironment: item.paymentEnvironment || (item.paymentFlow === "OMNI_PAY_DEMO" ? "DEMO" : null),
+            paymentOperationId: paymentOperationId || null,
+            receiptId: item.receiptId || null,
+            availabilityReviewed: item.availabilityReviewed === true,
+            availabilityStatus: item.availabilityStatus || "NO_REVISADA"
           };
         });
       }

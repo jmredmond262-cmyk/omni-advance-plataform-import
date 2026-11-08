@@ -64,7 +64,13 @@ private data class OmniStoreOrder(
     val deliveryAddress: String,
     val qrNonce: String,
     val isLocalDemo: Boolean = false,
-    val paymentRequested: Boolean = false
+    val paymentRequested: Boolean = false,
+    val proposedItems: List<OrderLine> = emptyList(),
+    val proposedTotal: Double? = null,
+    val availabilityMessage: String = "",
+    val availabilityReviewed: Boolean = false,
+    val storeAddress: String = "",
+    val storePhone: String = ""
 )
 
 @Composable
@@ -114,6 +120,10 @@ fun OrderCenterScreen(
     var showOrderReview by remember { mutableStateOf(false) }
     var selectedScannedOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var payingOrderId by remember { mutableStateOf<String?>(null) }
+    var reviewOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
+    var missingProductIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var availabilityNote by remember { mutableStateOf("") }
+    var ordersInitialized by remember { mutableStateOf(false) }
 
     fun decodeOrder(doc: com.google.firebase.firestore.DocumentSnapshot): OmniStoreOrder? = runCatching {
         val lines = (doc.get("items") as? List<*>)?.mapNotNull { raw ->
@@ -140,7 +150,17 @@ fun OrderCenterScreen(
             fulfillmentType = doc.getString("fulfillmentType").orEmpty(),
             deliveryAddress = doc.getString("deliveryAddress").orEmpty(),
             qrNonce = doc.getString("qrNonce").orEmpty(),
-            paymentRequested = doc.getBoolean("paymentRequested") == true || doc.getTimestamp("paymentRequestedAt") != null
+            paymentRequested = doc.getBoolean("paymentRequested") == true || doc.getTimestamp("paymentRequestedAt") != null,
+            proposedItems = (doc.get("proposedItems") as? List<*>)?.mapNotNull { raw ->
+                val item = raw as? Map<*, *> ?: return@mapNotNull null
+                OrderLine(item["productId"] as? String ?: "", item["name"] as? String ?: "",
+                    (item["price"] as? Number)?.toDouble() ?: 0.0, (item["quantity"] as? Number)?.toInt() ?: 0)
+            }.orEmpty(),
+            proposedTotal = (doc.get("proposedTotal") as? Number)?.toDouble(),
+            availabilityMessage = doc.getString("availabilityMessage").orEmpty(),
+            availabilityReviewed = doc.getBoolean("availabilityReviewed") == true,
+            storeAddress = doc.getString("storeAddress").orEmpty(),
+            storePhone = doc.getString("storePhone").orEmpty()
         )
     }.getOrNull()
 
@@ -207,6 +227,26 @@ fun OrderCenterScreen(
                     val loadedOrders = snapshot?.documents.orEmpty().mapNotNull(::decodeOrder)
                         .filter { !merchantMode || it.storeId == store.id }
                         .sortedByDescending { it.id }
+                    val previousOrders = orders.associateBy { it.id }
+                    val newOrder = if (ordersInitialized && merchantMode) loadedOrders.firstOrNull { it.id !in previousOrders } else null
+                    val changedOrder = loadedOrders.firstOrNull { current ->
+                        val previous = previousOrders[current.id]
+                        previous != null && (previous.status != current.status || previous.paymentRequested != current.paymentRequested)
+                    }
+                    if (newOrder != null) {
+                        feedback = "Nuevo pedido recibido: " + newOrder.id + ". Revisá los productos y aceptalo o rechazalo desde el panel del comercio."
+                    } else if (changedOrder != null) {
+                        feedback = when {
+                            !merchantMode && changedOrder.status == "ESPERA_CONFIRMACION_CLIENTE" ->
+                                "El comercio informó faltantes en tu pedido " + changedOrder.id + ". Revisá la propuesta y confirmá el nuevo total antes de pagar."
+                            !merchantMode && changedOrder.paymentRequested ->
+                                "Tu pedido " + changedOrder.id + " está listo. El comercio habilitó el pago en OMNI Pay DEMO."
+                            merchantMode && changedOrder.status == "CONFIRMADO_CLIENTE" ->
+                                "El cliente aceptó la propuesta del pedido " + changedOrder.id + ". Ya podés comenzar la preparación."
+                            else -> "El pedido " + changedOrder.id + " cambió de estado a " + changedOrder.status + "."
+                        }
+                    }
+                    ordersInitialized = true
                     orders = loadedOrders.map { current ->
                         if (current.id in paidOrderIds) current.copy(paymentStatus = "PAGADA · DEMO") else current
                     }
@@ -310,8 +350,10 @@ fun OrderCenterScreen(
                         "merchantUid" to merchantUid, "customerUid" to uid,
                         "customerName" to profile.fullName, "customerPhone" to profile.phone,
                         "items" to payloadItems, "total" to total,
+                        "storeAddress" to store.address, "storePhone" to store.phone,
                         "status" to "RECIBIDO", "paymentStatus" to "NO_SOLICITADO",
-                        "paymentRequested" to false,
+                        "paymentRequested" to false, "availabilityReviewed" to false,
+                        "availabilityStatus" to "PENDIENTE",
                         "paymentMethod" to "PAGO_AL_RETIRAR",
                     "paymentFlow" to "OMNI_PAY_DEMO",
                         "fulfillmentType" to fulfillmentType, "deliveryAddress" to deliveryAddress.trim(),
@@ -416,6 +458,68 @@ fun OrderCenterScreen(
         }
     }
 
+    fun submitAvailabilityReview(order: OmniStoreOrder) {
+        if (order.merchantUid != uid || order.status != "EN_REVISION") {
+            feedback = "Solo el comercio titular puede revisar la disponibilidad de este pedido."
+            return
+        }
+        val available = order.items.filterNot { it.productId in missingProductIds }
+        val proposedTotal = available.sumOf { it.price * it.quantity }
+        val hasMissing = missingProductIds.isNotEmpty()
+        if (hasMissing && availabilityNote.isBlank()) {
+            feedback = "Indicá qué productos faltan antes de enviar la revisión."
+            return
+        }
+        val proposedPayload = available.map { line -> mapOf(
+            "productId" to line.productId, "name" to line.name, "price" to line.price, "quantity" to line.quantity
+        ) }
+        val nextStatus = if (hasMissing) "ESPERA_CONFIRMACION_CLIENTE" else "DISPONIBILIDAD_CONFIRMADA"
+        val message = availabilityNote.trim().ifBlank { "El comercio confirmó la disponibilidad de todos los productos." }
+        db.collection("storeOrders").document(order.id).update(mapOf(
+            "status" to nextStatus, "proposedItems" to proposedPayload, "proposedTotal" to proposedTotal,
+            "availabilityMessage" to message, "availabilityReviewed" to true,
+            "availabilityReviewedBy" to uid, "availabilityReviewedAt" to FieldValue.serverTimestamp(),
+            "availabilityStatus" to if (hasMissing) "FALTANTES_INFORMADOS" else "TODO_DISPONIBLE",
+            "updatedAt" to FieldValue.serverTimestamp()
+        )).addOnSuccessListener {
+            UsageAnalyticsRepository.trackEvent(uid, "orders",
+                if (hasMissing) "ORDER_AVAILABILITY_ISSUE_REPORTED" else "ORDER_AVAILABILITY_CONFIRMED",
+                mapOf("operationId" to order.id, "correlationId" to order.id, "stage" to nextStatus,
+                    "resultCount" to available.size, "status" to nextStatus, "success" to true))
+            val updated = order.copy(status = nextStatus, proposedItems = available,
+                proposedTotal = proposedTotal, availabilityMessage = message, availabilityReviewed = true)
+            orders = orders.map { if (it.id == order.id) updated else it }
+            selectedScannedOrder = updated
+            reviewOrder = null; missingProductIds = emptySet(); availabilityNote = ""
+            feedback = if (hasMissing) "Se informó al cliente qué productos faltan. El pago sigue bloqueado hasta que acepte."
+                else "Disponibilidad confirmada. El comercio ya puede preparar el pedido."
+        }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo guardar la revisión de disponibilidad." }
+    }
+
+    fun acceptAvailabilityProposal(order: OmniStoreOrder) {
+        if (order.customerUid != uid || order.status != "ESPERA_CONFIRMACION_CLIENTE" ||
+            order.proposedItems.isEmpty() || (order.proposedTotal ?: 0.0) <= 0.0) {
+            feedback = "La propuesta no contiene productos disponibles para confirmar. Podés cancelar el pedido."
+            return
+        }
+        val finalItems = order.proposedItems.map { line -> mapOf(
+            "productId" to line.productId, "name" to line.name, "price" to line.price, "quantity" to line.quantity
+        ) }
+        val finalTotal = order.proposedTotal ?: 0.0
+        db.collection("storeOrders").document(order.id).update(mapOf(
+            "items" to finalItems, "total" to finalTotal, "status" to "CONFIRMADO_CLIENTE",
+            "customerAcceptedBy" to uid, "customerAcceptedAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )).addOnSuccessListener {
+            UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_AVAILABILITY_PROPOSAL_ACCEPTED",
+                mapOf("operationId" to order.id, "correlationId" to order.id,
+                    "stage" to "CUSTOMER_CONFIRMED_FINAL_TOTAL", "resultCount" to order.proposedItems.size, "status" to "CONFIRMADO_CLIENTE", "success" to true))
+            val updated = order.copy(items = order.proposedItems, total = finalTotal, status = "CONFIRMADO_CLIENTE")
+            orders = orders.map { if (it.id == order.id) updated else it }
+            feedback = "Aceptaste la disponibilidad y el total definitivo. El comercio ya puede preparar tu pedido."
+        }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo confirmar la propuesta del comercio." }
+    }
+
     fun advanceOrder(order: OmniStoreOrder, next: String) {
         if (next == "RECHAZADO" && order.paymentStatus.startsWith("PAGADA")) {
             feedback = "El pedido ya está pagado. No se puede rechazar desde el comercio; requiere una gestión de devolución DEMO."
@@ -425,18 +529,25 @@ fun OrderCenterScreen(
             feedback = "No se puede despachar ni entregar: el cliente debe autorizar primero el pago desde su OMNI Pay DEMO."
             return
         }
+        if (next == "LISTO" && (!order.availabilityReviewed || order.status != "EN_PREPARACION")) {
+            feedback = "Antes de marcar listo, el comercio debe revisar y confirmar la disponibilidad y preparar el pedido."
+            return
+        }
         db.collection("storeOrders").document(order.id).update(
             mapOf("status" to next, "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
-            UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next", mapOf("operationId" to order.id, "correlationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
-            orders = orders.map { current -> if (current.id == order.id) current.copy(status = next) else current }
-            if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next)
+            UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next",
+                mapOf("operationId" to order.id, "correlationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
+            val updated = order.copy(status = next)
+            orders = orders.map { current -> if (current.id == order.id) updated else current }
+            if (selectedScannedOrder?.id == order.id) selectedScannedOrder = updated
         }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo actualizar el estado." }
     }
 
     fun requestOrderPayment(order: OmniStoreOrder) {
-        if (order.merchantUid != uid || order.status != "LISTO" || order.paymentRequested || order.paymentStatus.startsWith("PAGADA")) {
-            feedback = "La solicitud de pago solo está disponible para el pedido listo que administra este comercio."
+        if (order.merchantUid != uid || order.status != "LISTO" || !order.availabilityReviewed ||
+            order.paymentRequested || order.paymentStatus.startsWith("PAGADA")) {
+            feedback = "El pago solo puede solicitarse cuando el pedido fue revisado, confirmado y marcado como listo."
             return
         }
         db.collection("storeOrders").document(order.id).update(
@@ -462,8 +573,8 @@ fun OrderCenterScreen(
     }
 
     fun cancelCustomerOrder(order: OmniStoreOrder) {
-        if (order.customerUid != uid || order.status != "RECIBIDO" || order.paymentStatus.startsWith("PAGADA")) {
-            feedback = "Solo podés cancelar un pedido propio sin pagar que todavía no fue aceptado."
+        if (order.customerUid != uid || order.status !in listOf("RECIBIDO", "ESPERA_CONFIRMACION_CLIENTE") || order.paymentStatus.startsWith("PAGADA")) {
+            feedback = "Solo podés cancelar un pedido propio sin pagar que todavía no fue cerrado."
             return
         }
         db.collection("storeOrders").document(order.id).update(
@@ -621,7 +732,8 @@ fun OrderCenterScreen(
                         OrderStatusCard(
                             order, merchantMode = true,
                             onAdvance = { next -> advanceOrder(order, next) },
-                            onRequestPayment = { requestOrderPayment(order) }
+                            onRequestPayment = { requestOrderPayment(order) },
+                            onReviewAvailability = { reviewOrder = order; missingProductIds = emptySet(); availabilityNote = "" }
                         )
                     }
                 }
@@ -635,6 +747,7 @@ fun OrderCenterScreen(
                         OrderStatusCard(
                             order, merchantMode = false,
                             onAdvance = { next -> if (next == "CANCELADO") cancelCustomerOrder(order) },
+                            onAcceptProposal = { acceptAvailabilityProposal(order) },
                             onPay = { payOrderDemo(order) },
                             paying = payingOrderId == order.id
                         )
@@ -669,13 +782,17 @@ fun OrderCenterScreen(
             confirmButton = {
                 val next = when (scanned.status) {
                     "RECIBIDO" -> "ACEPTADO"
-                    "ACEPTADO" -> "EN_PREPARACION"
+                    "ACEPTADO" -> "EN_REVISION"
+                    "DISPONIBILIDAD_CONFIRMADA", "CONFIRMADO_CLIENTE" -> "EN_PREPARACION"
                     "EN_PREPARACION" -> "LISTO"
                     "LISTO" -> if (scanned.fulfillmentType == "DELIVERY") "EN_CAMINO" else "ENTREGADO"
                     "EN_CAMINO" -> "ENTREGADO"
                     else -> ""
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (scanned.status == "EN_REVISION") {
+                        Button(onClick = { reviewOrder = scanned; missingProductIds = emptySet(); availabilityNote = "" }, modifier = Modifier.fillMaxWidth()) { Text("Revisar disponibilidad") }
+                    }
                     if (scanned.status == "LISTO" && !scanned.paymentRequested && !scanned.paymentStatus.startsWith("PAGADA")) {
                         Button(onClick = { requestOrderPayment(scanned) }, modifier = Modifier.fillMaxWidth()) {
                             Text("Solicitar pago al cliente")
@@ -686,6 +803,7 @@ fun OrderCenterScreen(
                         Button(onClick = { advanceOrder(scanned, next) }, enabled = !paymentBlocked, modifier = Modifier.fillMaxWidth()) {
                             Text(when(next) {
                                 "ACEPTADO" -> "Aceptar pedido"
+                                "EN_REVISION" -> "Revisar disponibilidad"
                                 "EN_PREPARACION" -> "Preparar pedido"
                                 "LISTO" -> "Marcar listo"
                                 "EN_CAMINO" -> "Enviar delivery"
@@ -699,13 +817,38 @@ fun OrderCenterScreen(
             },
             dismissButton = {
                 Row {
-                    if (scanned.status == "RECIBIDO") TextButton(onClick = {
+                    if (scanned.status in listOf("RECIBIDO", "ESPERA_CONFIRMACION_CLIENTE")) TextButton(onClick = {
                         advanceOrder(scanned, "RECHAZADO")
                         selectedScannedOrder = null
                     }) { Text("Rechazar") }
                     TextButton(onClick = { selectedScannedOrder = null }) { Text("Cerrar") }
                 }
             }
+        )
+    }
+
+    reviewOrder?.let { reviewing ->
+        AlertDialog(
+            onDismissRequest = { reviewOrder = null }, containerColor = Color(0xFF101B30),
+            title = { Text("Revisión de disponibilidad", color = Color.White) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("Desmarcá los productos que NO están disponibles. El cliente recibirá el detalle y total actualizado antes de pagar.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
+                    reviewing.items.forEach { line ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = line.productId !in missingProductIds, onCheckedChange = { available ->
+                                missingProductIds = if (available) missingProductIds - line.productId else missingProductIds + line.productId
+                            })
+                            Text(line.quantity.toString() + " × " + line.name, color = Color.White, fontSize = 11.sp)
+                        }
+                    }
+                    OutlinedTextField(value = availabilityNote, onValueChange = { availabilityNote = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Mensaje al cliente (obligatorio si falta algo)") }, minLines = 2)
+                    val availableTotal = reviewing.items.filterNot { it.productId in missingProductIds }.sumOf { it.price * it.quantity }
+                    Text("Total propuesto: OM$ " + String.format("%,.2f", availableTotal), color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold)
+                }
+            },
+            confirmButton = { Button(onClick = { submitAvailabilityReview(reviewing) }, modifier = Modifier.fillMaxWidth()) { Text(if (missingProductIds.isEmpty()) "Confirmar disponibilidad" else "Enviar propuesta al cliente") } },
+            dismissButton = { TextButton(onClick = { reviewOrder = null }) { Text("Volver") } }
         )
     }
 
@@ -834,12 +977,15 @@ private fun OrderStatusCard(
     onAdvance: (String) -> Unit,
     onPay: (() -> Unit)? = null,
     onRequestPayment: (() -> Unit)? = null,
+    onReviewAvailability: (() -> Unit)? = null,
+    onAcceptProposal: (() -> Unit)? = null,
     paying: Boolean = false
 ) {
     val context = LocalContext.current
     val next = when (order.status) {
         "RECIBIDO" -> "ACEPTADO"
-        "ACEPTADO" -> "EN_PREPARACION"
+        "ACEPTADO" -> "EN_REVISION"
+        "DISPONIBILIDAD_CONFIRMADA", "CONFIRMADO_CLIENTE" -> "EN_PREPARACION"
         "EN_PREPARACION" -> "LISTO"
         "LISTO" -> if (order.fulfillmentType == "DELIVERY") "EN_CAMINO" else "ENTREGADO"
         "EN_CAMINO" -> "ENTREGADO"
@@ -847,7 +993,11 @@ private fun OrderStatusCard(
     }
     val label = when (order.status) {
         "RECIBIDO" -> "Recibido"
-        "ACEPTADO" -> "Aceptado"
+        "ACEPTADO" -> "Aceptado · pendiente de revisión"
+        "EN_REVISION" -> "Revisión de disponibilidad"
+        "ESPERA_CONFIRMACION_CLIENTE" -> "Esperando tu confirmación"
+        "DISPONIBILIDAD_CONFIRMADA" -> "Disponibilidad confirmada"
+        "CONFIRMADO_CLIENTE" -> "Propuesta aceptada"
         "EN_PREPARACION" -> "En preparación"
         "LISTO" -> "Listo para retirar"
         "EN_CAMINO" -> "En camino"
@@ -866,12 +1016,20 @@ private fun OrderStatusCard(
                 Text("OM$ ${String.format("%,.2f", order.total)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
             order.items.forEach { Text("${it.quantity} × ${it.name}", color = Color(0xFFB8C8D9), fontSize = 10.sp) }
+            if (!merchantMode && order.status == "ESPERA_CONFIRMACION_CLIENTE") {
+                Text("El comercio informó: " + order.availabilityMessage, color = Color(0xFFFFC978), fontSize = 10.sp)
+                order.proposedItems.forEach { proposed ->
+                    Text(proposed.quantity.toString() + " × " + proposed.name, color = Color(0xFFB8C8D9), fontSize = 10.sp)
+                }
+                Text("Nuevo total: OM$ " + String.format("%,.2f", order.proposedTotal ?: 0.0), color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            }
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
             Text(
                 when {
                     order.paymentStatus.startsWith("PAGADA") -> "Pago: acreditado · DEMO"
                     order.paymentRequested && order.paymentStatus == "PENDIENTE" -> "Pago solicitado por el comercio · esperando al cliente"
                     order.status == "LISTO" -> "Pedido listo · esperando que el comercio solicite el pago"
+                    order.status == "ESPERA_CONFIRMACION_CLIENTE" -> "Pago bloqueado · falta tu confirmación de disponibilidad"
                     else -> "Pago bloqueado · se habilita cuando el comercio termina y solicita el cobro"
                 },
                 color = if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
@@ -894,10 +1052,16 @@ private fun OrderStatusCard(
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$phoneNumber"))) }
                 }) { Text("Contactar cliente por WhatsApp", color = Color(0xFF57DDF5), fontSize = 10.sp) }
             }
-            if (!merchantMode && order.status == "RECIBIDO") {
+            if (!merchantMode && order.status == "ESPERA_CONFIRMACION_CLIENTE" && order.proposedItems.isNotEmpty()) {
+                Button(onClick = { onAcceptProposal?.invoke() }, enabled = onAcceptProposal != null, modifier = Modifier.fillMaxWidth()) { Text("Aceptar propuesta y nuevo total") }
+            }
+            if (!merchantMode && order.status in listOf("RECIBIDO", "ESPERA_CONFIRMACION_CLIENTE")) {
                 OutlinedButton(onClick = { onAdvance("CANCELADO") }, modifier = Modifier.fillMaxWidth()) {
                     Text("Cancelar pedido", fontSize = 10.sp)
                 }
+            }
+            if (merchantMode && order.status == "EN_REVISION") {
+                Button(onClick = { onReviewAvailability?.invoke() }, enabled = onReviewAvailability != null, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) { Text("Revisar disponibilidad") }
             }
             if (merchantMode && order.status == "LISTO" && !order.paymentRequested && !order.paymentStatus.startsWith("PAGADA")) {
                 Button(onClick = { onRequestPayment?.invoke() }, enabled = onRequestPayment != null, modifier = Modifier.fillMaxWidth(),
