@@ -1,4 +1,4 @@
-# OMNI pedidos QR y ventas DEMO — contrato 1.4.7
+# OMNI pedidos QR y ventas DEMO — contrato 1.4.8
 
 ## Alcance
 
@@ -8,10 +8,10 @@ Flujo comercial completo dentro de OMNI Principal. OMNI Pay sigue siendo una sec
 
 1. El cliente arma el pedido desde Mercado OMNI y confirma el envío. Se crea un documento único en `storeOrders` con QR de identificación, nonce, artículos, cantidades, precios, comercio, cliente y modalidad de entrega.
 2. El comercio escanea el QR y valida que el pedido corresponde a su comercio y a su cuenta titular. El QR no autoriza ni ejecuta pagos.
-3. El comercio acepta el pedido y pasa a **Revisión de disponibilidad**. En esta etapa verifica cada artículo.
-4. Si todos los artículos están disponibles, confirma disponibilidad y comienza la preparación.
+3. El comercio toca **Aceptar pedido y revisar disponibilidad**. El pedido pasa directamente a **Revisión de disponibilidad**; no queda detenido en un estado intermedio sin acción.
+4. Si todos los artículos están disponibles, el pedido pasa automáticamente a **En preparación**.
 5. Si faltan artículos, informa cuáles no están disponibles y envía al cliente una propuesta con los productos restantes y el nuevo total. El cliente debe aceptar expresamente esa propuesta o cancelar. Mientras espera la decisión, OMNI Pay permanece bloqueado.
-6. Una vez confirmada la disponibilidad por el cliente y el comercio, el comercio comienza la preparación y marca el pedido como **LISTO**.
+6. Una vez confirmada la disponibilidad por el cliente y el comercio, el pedido pasa a **En preparación**. Cuando termina, el comercio usa una única acción **Marcar preparado y solicitar pago**, que registra atómicamente `LISTO` y la solicitud de pago.
 7. Recién cuando el pedido está LISTO, la disponibilidad fue revisada y el comercio solicita el pago, OMNI Pay se habilita en la cuenta del cliente.
 8. El cliente selecciona OMNI Pay DEMO y autoriza el pago. El servidor valida pedido, titular, comercio, total definitivo, disponibilidad revisada y solicitud de pago.
 9. Una transacción atómica crea un único movimiento `orderpay_<orderId>`, registra el débito ficticio del cliente y el crédito ficticio del comercio. Los reintentos no generan un segundo cobro.
@@ -20,11 +20,11 @@ Flujo comercial completo dentro de OMNI Principal. OMNI Pay sigue siendo una sec
 
 ## Estados del pedido
 
-`RECIBIDO → ACEPTADO → EN_REVISION → DISPONIBILIDAD_CONFIRMADA → EN_PREPARACION → LISTO → EN_CAMINO (delivery) → ENTREGADO`
+`RECIBIDO → EN_REVISION → EN_PREPARACION → LISTO (solicitud de pago enviada) → EN_CAMINO (delivery) → ENTREGADO`
 
 Si faltan artículos:
 
-`EN_REVISION → ESPERA_CONFIRMACION_CLIENTE → CONFIRMADO_CLIENTE → EN_PREPARACION`
+`EN_REVISION → ESPERA_CONFIRMACION_CLIENTE → EN_PREPARACION`
 
 También se contemplan `RECHAZADO` y `CANCELADO`. El cliente puede cancelar mientras el pedido está recibido o cuando debe responder una propuesta de disponibilidad.
 
@@ -44,3 +44,9 @@ También se contemplan `RECHAZADO` y `CANCELADO`. El cliente puede cancelar mien
 - El ID estable `orderpay_<orderId>` y la escritura atómica evitan dobles débitos y créditos.
 - Los tickets se guardan como copias inmutables de los datos comerciales al momento del pago.
 - Se mantiene el entorno exclusivamente DEMO, con el saldo ficticio de OMNI Pay.
+
+## Interfaz de pedidos
+
+- En **Mis pedidos**, cada pedido aparece inicialmente como tarjeta compacta con comercio, número, estado e importe.
+- Los artículos, dirección/modalidad y detalle de faltantes se despliegan al tocar **Ver artículos y detalles**.
+- En el panel comercial, aceptar inicia la revisión de disponibilidad; cuando el pedido está en preparación, una sola acción lo marca como preparado y solicita el pago al cliente.
