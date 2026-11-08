@@ -553,23 +553,13 @@ service cloud.firestore {
     }
 
     // Aggregated, privacy-safe client query telemetry. One document per user/day.
+    // Aggregated, privacy-safe client query telemetry. One document per user/day.
     match /queryDiagnostics/{diagnosticId} {
       allow read: if isSystemAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.day is string
-        && request.resource.data.day.matches('^\\d{8}
-      allow read: if isSystemAdmin();
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.message is string
-        && request.resource.data.message.size() <= 2000
-        && request.resource.data.createdAt is timestamp;
-      allow update, delete: if false;
-    }
-  }
-}
-)
+        && request.resource.data.day.size() == 8
         && diagnosticId == request.auth.uid + "_" + request.resource.data.day
         && request.resource.data.updatedAt is timestamp
         && request.resource.data.modules is map
