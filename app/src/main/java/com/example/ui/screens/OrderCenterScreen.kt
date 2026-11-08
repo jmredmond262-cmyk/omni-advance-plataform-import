@@ -1031,7 +1031,7 @@ private fun OrderStatusCard(
         "DISPONIBILIDAD_CONFIRMADA" -> "Disponibilidad confirmada"
         "CONFIRMADO_CLIENTE" -> "Propuesta aceptada"
         "EN_PREPARACION" -> "En preparación"
-        "LISTO" -> "Listo para retirar"
+        "LISTO" -> if (order.paymentRequested) "Preparado · pago solicitado" else "Listo para retirar"
         "EN_CAMINO" -> "En camino"
         "ENTREGADO" -> "Entregado"
         "RECHAZADO" -> "Rechazado"
