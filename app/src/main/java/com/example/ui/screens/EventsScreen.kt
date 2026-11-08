@@ -151,6 +151,7 @@ fun EventsScreen(onBack: () -> Unit) {
             eventData["createdAt"] = FieldValue.serverTimestamp()
         }
         eventRef.set(eventData, SetOptions.merge()).addOnSuccessListener {
+            QueryDiagnosticsRepository.recordWrite(context, "events")
             UsageAnalyticsRepository.trackAction(uid, if (isEditing) "EVENT_UPDATED" else "EVENT_PUBLISHED", "community")
             busy = false
             showPublish = false
