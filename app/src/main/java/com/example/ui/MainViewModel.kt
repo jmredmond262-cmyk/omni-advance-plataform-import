@@ -9,10 +9,12 @@ import kotlinx.coroutines.withTimeout
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.SampleData
+import com.example.data.PersonalDataRepository
 import com.example.data.analytics.UsageAnalyticsRepository
 import com.example.data.analytics.OmniTracker
 import com.example.data.merchant.MerchantProfileRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.ListenerRegistration
 import com.example.data.ArgentinaAttractions
 import com.example.data.api.RealLocationHelper
 import com.example.data.api.RealLocationResult
@@ -268,9 +270,100 @@ class MainViewModel : ViewModel() {
         return false
     }
 
-    // Contactos y Remises Barriales
+    // Contactos de directorio: solo se sincronizan favoritos y contactos personalizados del usuario.
     private val _contacts = MutableStateFlow<List<NeighborhoodContact>>(SampleData.sampleContacts)
     val contacts: StateFlow<List<NeighborhoodContact>> = _contacts.asStateFlow()
+    private val _customContacts = MutableStateFlow<List<NeighborhoodContact>>(emptyList())
+    private val _favoriteContactIds = MutableStateFlow<Set<String>>(emptySet())
+    private val personalDataRepository = PersonalDataRepository()
+    private var personalDataUid: String? = null
+    private val personalDataListeners = mutableListOf<ListenerRegistration>()
+
+    private fun publishPersonalContacts() {
+        val samples = SampleData.sampleContacts.map { contact ->
+            contact.copy(isFavorite = contact.id in _favoriteContactIds.value)
+        }
+        _contacts.value = samples + _customContacts.value
+    }
+
+    private fun startPersonalDataSync(uid: String) {
+        if (uid.isBlank() || personalDataUid == uid) return
+        personalDataListeners.forEach { it.remove() }
+        personalDataListeners.clear()
+        personalDataUid = uid
+
+        var firstTaskSnapshot = true
+        personalDataListeners += personalDataRepository.observeTasks(uid) { result ->
+            result.onSuccess { remote ->
+                if (firstTaskSnapshot) {
+                    firstTaskSnapshot = false
+                    if (remote.isEmpty() && _tasks.value.isNotEmpty()) {
+                        _tasks.value.forEach { personalDataRepository.saveTask(uid, it) }
+                    } else {
+                        _tasks.value = remote
+                    }
+                } else {
+                    _tasks.value = remote
+                }
+            }.onFailure { android.util.Log.w("MainViewModel", "Tasks sync failed", it) }
+        }
+
+        var firstShoppingSnapshot = true
+        personalDataListeners += personalDataRepository.observeShoppingItems(uid) { result ->
+            result.onSuccess { remote ->
+                if (firstShoppingSnapshot) {
+                    firstShoppingSnapshot = false
+                    if (remote.isEmpty() && _needs.value.isNotEmpty()) {
+                        personalDataRepository.replaceShoppingItems(uid, _needs.value)
+                    } else {
+                        _needs.value = remote
+                    }
+                } else {
+                    _needs.value = remote
+                }
+            }.onFailure { android.util.Log.w("MainViewModel", "Shopping list sync failed", it) }
+        }
+
+        personalDataListeners += personalDataRepository.observeCustomContacts(uid) { result ->
+            result.onSuccess {
+                _customContacts.value = it
+                publishPersonalContacts()
+            }.onFailure { android.util.Log.w("MainViewModel", "Custom contacts sync failed", it) }
+        }
+
+        personalDataListeners += personalDataRepository.observeContactFavorites(uid) { result ->
+            result.onSuccess { remote ->
+                val favorites = remote ?: SampleData.sampleContacts.filter { it.isFavorite }.map { it.id }.toSet()
+                _favoriteContactIds.value = favorites
+                publishPersonalContacts()
+                if (remote == null) personalDataRepository.saveContactFavorites(uid, favorites)
+            }.onFailure { android.util.Log.w("MainViewModel", "Contact favorites sync failed", it) }
+        }
+    }
+
+    private fun saveTaskForCurrentUser(task: DailyTask) {
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.saveTask(uid, task) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Task save failed", it) }
+            }
+        }
+    }
+
+    private fun saveNeedForCurrentUser(item: NeedItem) {
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.saveShoppingItem(uid, item) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Shopping item save failed", it) }
+            }
+        }
+    }
+
+    private fun replaceNeedsForCurrentUser(items: List<NeedItem>) {
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.replaceShoppingItems(uid, items) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Shopping list replacement failed", it) }
+            }
+        }
+    }
 
     // Sugerencias Inteligentes
     private val _suggestions = MutableStateFlow<List<SmartSuggestion>>(SampleData.sampleSuggestions)
@@ -303,6 +396,7 @@ class MainViewModel : ViewModel() {
             avatarUrl = photoUrl.trim()
         )
         UsageAnalyticsRepository.trackScreen(uid, _currentScreen.value.title)
+        startPersonalDataSync(uid)
     }
 
     // Modo Negocio / Comerciante (Mi Comercio Administrado: Redcom Romang)
