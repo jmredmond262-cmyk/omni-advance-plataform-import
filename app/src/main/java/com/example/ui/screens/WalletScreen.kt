@@ -860,7 +860,7 @@ fun WalletScreen(
         )
     }
 
-    // Modal de Comprobante Fiscal & Ticket Digital
+    // Modal de ticket digital DEMO
     selectedReceiptForModal?.let { receipt ->
         AlertDialog(
             onDismissRequest = { selectedReceiptForModal = null },
