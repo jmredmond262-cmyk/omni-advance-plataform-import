@@ -1,12 +1,10 @@
 package com.omni.admin
 
 import android.os.Bundle
-import androidx.compose.ui.viewinterop.AndroidView
-import android.webkit.WebViewClient
-import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.draw.clip
@@ -34,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -511,34 +509,26 @@ private fun CompactDashboardStat(label: String, value: String, icon: androidx.co
   }
 }
 
-private fun activityMapUrl(scope: String): String {
-  // Use the dedicated OSM embed page instead of the full website UI inside Android WebView.
-  val bounds = when (scope) {
-    "Santa Fe" -> listOf(-62.50, -32.50, -59.40, -29.00, -30.7069, -60.9500)
-    "Argentina" -> listOf(-73.50, -56.00, -53.50, -21.50, -38.4161, -63.6167)
-    else -> listOf(-60.82, -31.80, -60.58, -31.47, -31.6333, -60.7000)
-  }
-  val west = bounds[0]
-  val south = bounds[1]
-  val east = bounds[2]
-  val north = bounds[3]
-  val latitude = bounds[4]
-  val longitude = bounds[5]
-  val bbox = "$west%2C$south%2C$east%2C$north"
-  return "https://www.openstreetmap.org/export/embed.html?bbox=$bbox&layer=mapnik&marker=$latitude%2C$longitude"
-}
-
 @Composable
 private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh: () -> Unit, onDismiss: () -> Unit) {
-  var selectedScope by remember { mutableStateOf("Local") }
-  var mapStatus by remember { mutableStateOf("Conectando con OpenStreetMap…") }
-  var mapView by remember { mutableStateOf<WebView?>(null) }
-
-  LaunchedEffect(Unit) {
-    while (true) {
-      delay(120_000L)
-      onRefresh()
+  var selectedScope by remember { mutableStateOf("Zona local") }
+  val geoPoints = remember(points.toString()) {
+    (0 until points.length()).mapNotNull { index ->
+      val item = points.optJSONObject(index) ?: return@mapNotNull null
+      val latitude = item.optDouble("latitude", Double.NaN)
+      val longitude = item.optDouble("longitude", Double.NaN)
+      val count = item.optInt("count", 0)
+      if (!latitude.isFinite() || !longitude.isFinite() || count < 3) null
+      else Triple(latitude, longitude, count)
     }
+  }
+  val bounds = when (selectedScope) {
+    "Santa Fe" -> doubleArrayOf(-32.5, -29.0, -62.5, -59.4)
+    "Argentina" -> doubleArrayOf(-56.0, -21.5, -73.5, -53.5)
+    else -> doubleArrayOf(-31.9, -31.3, -61.0, -60.4)
+  }
+  val visiblePoints = geoPoints.filter { (lat, lon, _) ->
+    lat in bounds[0]..bounds[1] && lon in bounds[2]..bounds[3]
   }
 
   Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -546,31 +536,24 @@ private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh:
       Column(
         Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp))
           .border(1.dp, Color(0xFF168AC5), RoundedCornerShape(18.dp))
-          .background(Color(0xFF071321)).padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+          .background(Color(0xFF071321)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(Icons.Default.Map, null, tint = Mint, modifier = Modifier.size(24.dp))
           Spacer(Modifier.width(8.dp))
           Column(Modifier.weight(1f)) {
-            Text("Mapa geográfico OMNI", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("OpenStreetMap · calles, ciudades y rutas", color = Muted, fontSize = 10.sp)
+            Text("OMNI GEOACTIVITY", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Actividad agrupada · ubicación aproximada", color = Muted, fontSize = 10.sp)
           }
-          IconButton(onClick = {
-            mapStatus = "Actualizando cartografía…"
-            mapView?.reload()
-          }) { Icon(Icons.Default.Refresh, "Actualizar mapa", tint = Mint) }
+          IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Actualizar actividad", tint = Mint) }
           IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Cerrar mapa", tint = Mint) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          listOf("Local", "Santa Fe", "Argentina").forEach { level ->
+          listOf("Zona local", "Santa Fe", "Argentina").forEach { level ->
             FilterChip(
               selected = selectedScope == level,
-              onClick = {
-                selectedScope = level
-                mapStatus = "Cargando vista $level…"
-                mapView?.loadUrl(activityMapUrl(level))
-              },
+              onClick = { selectedScope = level },
               label = { Text(level, fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = Mint, selectedLabelColor = Navy,
@@ -579,69 +562,48 @@ private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh:
             )
           }
         }
-        Text(
-          mapStatus,
-          color = if (mapStatus.startsWith("Mapa cargado")) Color(0xFF65E9B7) else Muted,
-          fontSize = 10.sp
-        )
-        Text(
-          "${summary.optInt("consentedUsersFresh24h")} cuentas compartieron ubicación en las últimas 24 h · ${summary.optInt("visibleAreas")} áreas agrupadas · mínimo ${summary.optInt("privacyThreshold", 3)} cuentas por área",
-          color = Muted, fontSize = 9.sp, lineHeight = 13.sp
-        )
-        AndroidView(
-          modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(13.dp))
-            .border(1.dp, Color(0xFF12658C), RoundedCornerShape(13.dp)),
-          factory = { context ->
-            WebView(context).apply {
-              settings.javaScriptEnabled = true
-              settings.domStorageEnabled = true
-              settings.loadsImagesAutomatically = true
-              settings.useWideViewPort = true
-              settings.loadWithOverviewMode = true
-              settings.setSupportZoom(true)
-              settings.builtInZoomControls = true
-              settings.displayZoomControls = false
-              settings.allowFileAccess = false
-              settings.allowContentAccess = false
-              setBackgroundColor(android.graphics.Color.rgb(7, 19, 33))
-              webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
-                  super.onPageStarted(view, url, favicon)
-                  mapStatus = "Conectando con OpenStreetMap…"
-                }
-                override fun onPageFinished(view: WebView, url: String) {
-                  super.onPageFinished(view, url)
-                  mapStatus = "Mapa cargado · ${selectedScope}"
-                }
-                override fun onReceivedError(
-                  view: WebView,
-                  request: android.webkit.WebResourceRequest,
-                  error: android.webkit.WebResourceError
-                ) {
-                  super.onReceivedError(view, request, error)
-                  if (request.isForMainFrame) {
-                    mapStatus = "No se pudo cargar el mapa. Verificá la conexión e intentá actualizar."
-                  }
-                }
-                override fun onReceivedHttpError(
-                  view: WebView,
-                  request: android.webkit.WebResourceRequest,
-                  errorResponse: android.webkit.WebResourceResponse
-                ) {
-                  super.onReceivedHttpError(view, request, errorResponse)
-                  if (request.isForMainFrame && errorResponse.statusCode >= 400) {
-                    mapStatus = "OpenStreetMap respondió HTTP ${errorResponse.statusCode}."
-                  }
-                }
-              }
-              mapView = this
-              loadUrl(activityMapUrl(selectedScope))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          CompactDashboardStat("Cuentas activas 24 h", summary.optInt("consentedUsersFresh24h").toString(), Icons.Default.PeopleAlt, Modifier.weight(1f))
+          CompactDashboardStat("Áreas visibles", summary.optInt("visibleAreas").toString(), Icons.Default.MyLocation, Modifier.weight(1f))
+        }
+        Box(
+          Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(13.dp))
+            .background(Color(0xFF06101E))
+            .border(1.dp, Color(0xFF12658C), RoundedCornerShape(13.dp))
+        ) {
+          Canvas(Modifier.fillMaxSize()) {
+            val gridColor = Mint.copy(alpha = 0.12f)
+            val stepX = size.width / 8f
+            val stepY = size.height / 8f
+            for (i in 1..7) {
+              drawLine(gridColor, Offset(stepX * i, 0f), Offset(stepX * i, size.height), 1.dp.toPx())
+              drawLine(gridColor, Offset(0f, stepY * i), Offset(size.width, stepY * i), 1.dp.toPx())
             }
-          },
-          update = { mapView = it }
-        )
+            drawLine(Color(0xFF167A9A).copy(alpha = .5f), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), 1.dp.toPx())
+            drawLine(Color(0xFF167A9A).copy(alpha = .5f), Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), 1.dp.toPx())
+            visiblePoints.forEach { (lat, lon, count) ->
+              val x = ((lon - bounds[2]) / (bounds[3] - bounds[2])).toFloat() * size.width
+              val y = (1.0 - (lat - bounds[0]) / (bounds[1] - bounds[0])).toFloat() * size.height
+              val radius = (7f + count.coerceAtMost(20) * .45f).dp.toPx()
+              drawCircle(Color(0xFF00E5FF).copy(alpha = .14f), radius * 2.2f, Offset(x, y))
+              drawCircle(Color(0xFF00E5FF).copy(alpha = .85f), radius, Offset(x, y))
+              drawCircle(Color.White, 2.5.dp.toPx(), Offset(x, y))
+            }
+          }
+          Column(Modifier.align(Alignment.TopStart).padding(12.dp)) {
+            Text(selectedScope.uppercase(), color = Mint, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.2.sp)
+            Text("${visiblePoints.size} grupos que cumplen el umbral de privacidad", color = Muted, fontSize = 9.sp)
+          }
+          if (visiblePoints.isEmpty()) {
+            Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+              Icon(Icons.Default.Radar, null, tint = Color(0xFF3B7792), modifier = Modifier.size(42.dp))
+              Text("Todavía no hay grupos visibles en esta zona", color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              Text("Se muestran áreas únicamente cuando al menos ${summary.optInt("privacyThreshold", 3)} cuentas comparten ubicación aproximada y autorizada.", color = Muted, fontSize = 10.sp)
+            }
+          }
+        }
         Text(
-          "La cartografía base se muestra independientemente de la cantidad de usuarios. La actividad privada solo aparece cuando existen grupos autorizados que cumplen el umbral de privacidad.",
+          "Vista esquemática por coordenadas aproximadas; no representa calles ni rutas. Los puntos solo aparecen con consentimiento vigente y un mínimo de ${summary.optInt("privacyThreshold", 3)} cuentas por área.",
           color = Muted, fontSize = 9.sp, lineHeight = 13.sp
         )
       }
