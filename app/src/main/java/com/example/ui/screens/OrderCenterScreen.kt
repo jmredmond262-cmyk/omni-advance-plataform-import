@@ -314,9 +314,21 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     fun createSharedDemoOrder(merchant: com.google.firebase.firestore.DocumentSnapshot, merchantUid: String) {
+        if (!merchant.exists() || merchant.getString("environment") != "DEMO" ||
+            merchantUid.isBlank() || merchantUid == uid
+        ) {
+            sending = false
+            feedback = "El pedido compartido requiere un comercio DEMO habilitado y un titular distinto."
+            return
+        }
         val publishedInventory = (merchant.get("inventory") as? List<*>)?.mapNotNull { raw ->
             raw as? Map<*, *>
         }.orEmpty()
+        if (publishedInventory.isEmpty()) {
+            sending = false
+            feedback = "El comercio todavía no publicó productos para recibir pedidos compartidos."
+            return
+        }
         if (publishedInventory.isNotEmpty()) {
             val staleLine = cartLines.firstOrNull { line ->
                 val current = publishedInventory.firstOrNull { it["id"] == line.productId }
