@@ -930,30 +930,24 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
   }
 }
 @Composable
-private fun ConfigContent(config: JSONObject, onSave: (JSONObject) -> Unit) {
-  var maintenance by remember(config.toString()) { mutableStateOf(config.optBoolean("maintenanceMode", false)) }
-  var message by remember(config.toString()) { mutableStateOf(config.optString("maintenanceMessage", "")) }
-  var notice by remember(config.toString()) { mutableStateOf(config.optString("globalNotice", "")) }
-  var minVersion by remember(config.toString()) { mutableStateOf(config.optString("minimumVersion", "")) }
-  var recommended by remember(config.toString()) { mutableStateOf(config.optString("recommendedVersion", "")) }
+private fun ConfigContent(config: JSONObject) {
+  val rows = listOf(
+    "Modo mantenimiento" to if (config.optBoolean("maintenanceMode", false)) "ACTIVO" else "INACTIVO",
+    "Mensaje de mantenimiento" to config.optString("maintenanceMessage").ifBlank { "No configurado" },
+    "Aviso global" to config.optString("globalNotice").ifBlank { "No hay aviso global" },
+    "Versión mínima" to config.optString("minimumVersion").ifBlank { "No informada" },
+    "Versión recomendada" to config.optString("recommendedVersion").ifBlank { "No informada" }
+  )
   LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    item { Text("Configuración global", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold); Text("Los cambios se guardan en adminConfig/global y quedan auditados.", color = Muted, fontSize = 12.sp) }
     item {
-      Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.padding(16.dp)) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text("Modo mantenimiento", color = White, fontWeight = FontWeight.SemiBold); Text("Indicador global para OMNI.", color = Muted, fontSize = 11.sp) }
-            Switch(maintenance, { maintenance = it })
-          }
-          OutlinedTextField(message, { message = it }, Modifier.fillMaxWidth(), label = { Text("Mensaje de mantenimiento") })
-          Spacer(Modifier.height(10.dp))
-          OutlinedTextField(notice, { notice = it }, Modifier.fillMaxWidth(), label = { Text("Aviso global") })
-          Spacer(Modifier.height(10.dp))
-          OutlinedTextField(minVersion, { minVersion = it }, Modifier.fillMaxWidth(), label = { Text("Versión mínima") }, singleLine = true)
-          Spacer(Modifier.height(10.dp))
-          OutlinedTextField(recommended, { recommended = it }, Modifier.fillMaxWidth(), label = { Text("Versión recomendada") }, singleLine = true)
-          Spacer(Modifier.height(16.dp))
-          Button(onClick = { onSave(JSONObject().put("maintenanceMode", maintenance).put("maintenanceMessage", message).put("globalNotice", notice).put("minimumVersion", minVersion).put("recommendedVersion", recommended)) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar configuración") }
+      Text("Configuración global", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+      Text("Vista de consulta. Los parámetros no se modifican desde OMNI Admin.", color = Muted, fontSize = 12.sp)
+    }
+    items(rows) { (label, value) ->
+      Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(15.dp)) {
+        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+          Text(label, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+          Text(value, color = White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         }
       }
     }
@@ -972,7 +966,7 @@ private fun ModuleSummary(label: String, value: String, icon: androidx.compose.u
 }
 
 @Composable
-private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boolean) -> Unit) {
+private fun ModuleContent(array: JSONArray) {
   val records = jsonArrayToList(array)
   val enabledCount = records.count { it["enabled"] == true }
   LazyColumn(Modifier.fillMaxSize().padding(16.dp), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
@@ -980,7 +974,7 @@ private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boo
       Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(Color(0xFF123A5D), Panel, Color(0xFF0A1426)))).border(1.dp, Color(0xFF1679A6), RoundedCornerShape(22.dp)).padding(19.dp)) {
         Text("CENTRO DE FUNCIONES", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
         Text("Módulos de OMNI", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-        Text("Supervisión del catálogo registrado. Los cambios quedan auditados.", color = Muted, fontSize = 12.sp)
+        Text("Catálogo en modo consulta. La activación y configuración no se modifican desde este panel.", color = Muted, fontSize = 12.sp)
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           ModuleSummary("Registrados", records.size.toString(), Icons.Default.Apps, Modifier.weight(1f))
@@ -992,24 +986,25 @@ private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boo
     if (records.isEmpty()) item { EmptyState("No hay módulos registrados en moduleRegistry. No se muestran módulos inventados.") }
     items(records) { item ->
       val id = item["id"]?.toString() ?: return@items
-      var enabled by remember(id, item["enabled"]) { mutableStateOf(item["enabled"] == true) }
+      val enabled = item["enabled"] == true
       val title = item["title"]?.toString() ?: id
       val description = item["description"]?.toString()?.takeIf { it.isNotBlank() } ?: "Descripción no cargada para esta ficha de módulo."
       Card(Modifier.fillMaxWidth().border(1.dp, if (enabled) Color(0xFF17647A) else Color(0xFF34445B), RoundedCornerShape(18.dp)), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(if (enabled) Color(0xFF103B4B) else PanelSoft), contentAlignment = Alignment.Center) { Icon(Icons.Default.Extension, null, tint = if (enabled) Mint else Muted) }
-            Spacer(Modifier.width(11.dp))
-            Column(Modifier.weight(1f)) { Text(title, color = White, fontWeight = FontWeight.Bold, fontSize = 15.sp); Text(id, color = Muted, fontSize = 10.sp) }
-            Column(horizontalAlignment = Alignment.End) {
-              Text(if (enabled) "HABILITADO" else "PAUSADO", color = if (enabled) Mint else Muted, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
-              Switch(checked = enabled, onCheckedChange = { enabled = it })
+            Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(if (enabled) Color(0xFF103B4B) else PanelSoft), contentAlignment = Alignment.Center) {
+              Icon(Icons.Default.Extension, null, tint = if (enabled) Mint else Muted)
             }
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f)) {
+              Text(title, color = White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+              Text(id, color = Muted, fontSize = 10.sp)
+            }
+            Text(if (enabled) "HABILITADO" else "PAUSADO", color = if (enabled) Mint else Muted, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
           }
           Text(description, color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
           val updated = item["updatedAt"]?.toString().orEmpty()
           if (updated.isNotBlank()) Text("Última modificación: ${updated.take(16).replace("T", " ")}", color = Color(0xFF7890AA), fontSize = 10.sp)
-          Button(onClick = { onSave(id, title, description, enabled) }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text("Guardar cambio") }
         }
       }
     }
@@ -1017,23 +1012,14 @@ private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boo
 }
 
 @Composable
-private fun InvitationContent(array: JSONArray, onInvite: (String) -> Unit) {
-  var email by remember { mutableStateOf("") }
+private fun InvitationContent(array: JSONArray) {
   LazyColumn(Modifier.fillMaxSize().padding(16.dp), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
     item {
-      Text("Auditoría y accesos", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-      Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(15.dp)) {
-          Text("Invitar a la beta", color = White, fontWeight = FontWeight.SemiBold)
-          Spacer(Modifier.height(8.dp))
-          OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("Correo electrónico") }, singleLine = true)
-          Spacer(Modifier.height(8.dp))
-          Button(onClick = { onInvite(email); email = "" }, enabled = email.contains("@"), modifier = Modifier.fillMaxWidth()) { Text("Registrar invitación") }
-        }
-      }
-      Spacer(Modifier.height(8.dp)); Text("Registro de auditoría", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+      Text("Accesos de prueba", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+      Text("Registro de invitaciones en modo consulta. Las altas y cambios de acceso se gestionan fuera de OMNI Admin.", color = Muted, fontSize = 12.sp)
     }
-    items(jsonArrayToList(array)) { RecordCard(it, "adminAuditLogs") }
+    if (array.length() == 0) item { EmptyState("No hay invitaciones registradas.") }
+    items(jsonArrayToList(array)) { RecordCard(it, "betaInvitations") }
   }
 }
 
