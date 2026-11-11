@@ -762,7 +762,7 @@ class MainViewModel : ViewModel() {
         } else {
             val newItem = NeedItem(
                 id = UUID.randomUUID().toString(),
-                name = product.name,
+                name = productName,
                 category = product.category,
                 quantity = 1,
                 unit = productUnit,
