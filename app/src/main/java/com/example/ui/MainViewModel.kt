@@ -1337,6 +1337,32 @@ class MainViewModel : ViewModel() {
         persistManagedStore()
     }
 
+    fun updateCashbackPolicy(
+        enabled: Boolean,
+        percentage: Double,
+        capPerPurchase: Double?,
+        monthlyCap: Double?
+    ) {
+        require(percentage in 0.0..100.0 && (!enabled || percentage > 0.0)) {
+            "El porcentaje debe ser mayor que 0 y no superar el 100% cuando el cashback está activo."
+        }
+        require(capPerPurchase == null || capPerPurchase > 0.0) {
+            "El tope por compra debe ser mayor que cero."
+        }
+        require(monthlyCap == null || monthlyCap > 0.0) {
+            "El tope mensual debe ser mayor que cero."
+        }
+        trackUsageAction(if (enabled) "MERCHANT_CASHBACK_ENABLED" else "MERCHANT_CASHBACK_POLICY_UPDATED", "merchant")
+        val updated = _managedStore.value.copy(
+            cashbackEnabled = enabled,
+            cashbackPercent = percentage,
+            cashbackPerPurchaseCap = capPerPurchase,
+            cashbackMonthlyCap = monthlyCap
+        )
+        _managedStore.value = updated
+        updateManagedStoreInCollections(updated)
+        persistManagedStore()
+    }
     fun publishStoreNews(title: String, content: String, badge: String) {
         trackUsageAction("STORE_NEWS_PUBLISH", "merchant")
         val current = _managedStore.value
