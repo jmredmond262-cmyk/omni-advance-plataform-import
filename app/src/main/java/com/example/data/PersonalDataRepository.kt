@@ -89,15 +89,19 @@ class PersonalDataRepository(
             callback(Result.success(contacts))
         }
 
-    fun observeContactFavorites(uid: String, callback: (Result<Set<String>>) -> Unit): ListenerRegistration =
+    fun observeContactFavorites(uid: String, callback: (Result<Set<String>?>) -> Unit): ListenerRegistration =
         user(uid).collection("preferences").document("contactFavorites")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     callback(Result.failure(error))
                     return@addSnapshotListener
                 }
-                val ids = snapshot?.get("favoriteIds") as? List<*>
-                callback(Result.success(ids.orEmpty().filterIsInstance<String>().toSet()))
+                if (snapshot?.exists() != true) {
+                    callback(Result.success(null))
+                } else {
+                    val ids = snapshot.get("favoriteIds") as? List<*>
+                    callback(Result.success(ids.orEmpty().filterIsInstance<String>().toSet()))
+                }
             }
 
     fun saveTask(uid: String, task: DailyTask, callback: (Result<Unit>) -> Unit = {}) {
@@ -185,6 +189,16 @@ class PersonalDataRepository(
                 "updatedAt" to FieldValue.serverTimestamp()
             ), SetOptions.merge()
         ).addOnSuccessListener { callback(Result.success(Unit)) }
+            .addOnFailureListener { callback(Result.failure(it)) }
+    }
+
+    fun saveContactFavorites(uid: String, favoriteIds: Set<String>, callback: (Result<Unit>) -> Unit = {}) {
+        val ref = user(uid).collection("preferences").document("contactFavorites")
+        ref.set(mapOf(
+            "ownerUid" to uid,
+            "favoriteIds" to favoriteIds.toList(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        ), SetOptions.merge()).addOnSuccessListener { callback(Result.success(Unit)) }
             .addOnFailureListener { callback(Result.failure(it)) }
     }
 
