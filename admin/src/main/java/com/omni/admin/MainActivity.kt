@@ -106,7 +106,7 @@ private fun OmniAdminRoot() {
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
           "dashboard" -> AdminApi.call(token, "dashboard")
-          "liveMap" -> AdminApi.call(token, "geoActivity")
+          "liveMap" -> AdminApi.call(token, "geoPresence")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
