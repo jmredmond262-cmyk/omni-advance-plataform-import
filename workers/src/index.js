@@ -175,19 +175,6 @@ async function writeDocument(env, collection, id, data, merge = true) {
     method: "PATCH", body: JSON.stringify({ fields: encodeFields(data) })
   });
 }
-async function addDocument(env, collection, data) {
-  const id = crypto.randomUUID();
-  await firestore(env, "/" + encodeURIComponent(collection) + "?documentId=" + id, {
-    method: "POST", body: JSON.stringify({ fields: encodeFields(data) })
-  });
-  return id;
-}
-async function audit(env, actor, action, target, details = {}) {
-  await addDocument(env, "adminAuditLogs", {
-    actorUid: actor.uid, actorEmail: actor.email, action, target, details,
-    createdAt: new Date().toISOString()
-  });
-}
 function userLabels(profiles) {
   return new Map(profiles.map(profile => [
     String(profile.uid || profile.id || ""),
@@ -494,7 +481,7 @@ async function finance(env) {
   };
 }
 
-async function handleAction(env, actor, action, data) {
+async function handleAction(env, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
     case "finance": return finance(env);
@@ -547,33 +534,6 @@ async function handleAction(env, actor, action, data) {
     case "getConfig": {
       const snap = await getDocument(env, "adminConfig", "global");
       return { config: snap.missing ? {} : decodeFields(snap.fields || {}) };
-    }
-    case "saveConfig": {
-      if (actor.role !== "owner") throw new ApiError(403, "permission-denied", "Solo el propietario puede modificar la configuración global.");
-      const input = data.config && typeof data.config === "object" ? data.config : {};
-      const allowed = ["maintenanceMode", "maintenanceMessage", "minimumVersion", "recommendedVersion", "globalNotice", "featureFlags"];
-      const patch = Object.fromEntries(Object.entries(input).filter(([key]) => allowed.includes(key)));
-      if (!Object.keys(patch).length) throw new ApiError(400, "invalid-argument", "No hay parámetros válidos para guardar.");
-      await writeDocument(env, "adminConfig", "global", { ...patch, updatedAt: new Date().toISOString(), updatedBy: actor.uid });
-      await audit(env, actor, "CONFIG_UPDATED", "adminConfig/global", { fields: Object.keys(patch) });
-      return { saved: true };
-    }
-    case "saveModule": {
-      if (actor.role !== "owner") throw new ApiError(403, "permission-denied", "Solo el propietario puede modificar módulos.");
-      const id = String(data.id || "").trim();
-      if (!/^[A-Za-z0-9_-]{2,64}$/.test(id)) throw new ApiError(400, "invalid-argument", "Identificador de módulo inválido.");
-      const input = data.module && typeof data.module === "object" ? data.module : {};
-      const patch = { title: String(input.title || id).slice(0, 80), description: String(input.description || "").slice(0, 500), enabled: input.enabled === true, updatedAt: new Date().toISOString(), updatedBy: actor.uid };
-      await writeDocument(env, "moduleRegistry", id, patch);
-      await audit(env, actor, "MODULE_UPDATED", "moduleRegistry/" + id, { enabled: patch.enabled });
-      return { saved: true };
-    }
-    case "createInvitation": {
-      const email = String(data.email || "").trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError(400, "invalid-argument", "Ingresá un correo válido.");
-      const id = await addDocument(env, "betaInvitations", { email, role: "beta", status: "PENDING", createdAt: new Date().toISOString(), createdBy: actor.uid });
-      await audit(env, actor, "BETA_INVITATION_CREATED", "betaInvitations/" + id, { email });
-      return { id, created: true };
     }
     default: throw new ApiError(400, "invalid-argument", "Acción administrativa desconocida.");
   }
@@ -637,7 +597,7 @@ export default {
       const role = fields.role;
       if (fields.enabled !== true || !["owner", "admin"].includes(role)) throw new ApiError(403, "permission-denied", "Esta cuenta no está habilitada como administradora de OMNI.");
       const body = await request.json();
-      const result = await handleAction(env, { ...identity, role }, String(body.action || ""), body.data && typeof body.data === "object" ? body.data : {});
+      const result = await handleAction(env, String(body.action || ""), body.data && typeof body.data === "object" ? body.data : {});
       return json({ ok: true, result });
     } catch (error) {
       if (error instanceof ApiError) return json({ ok: false, error: error.code, message: error.message }, error.status);
