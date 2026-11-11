@@ -753,7 +753,7 @@ class MainViewModel : ViewModel() {
         val currentList = _needs.value
         val existing = currentList.firstOrNull { it.name.equals(product.name, ignoreCase = true) }
         if (existing != null) {
-            val updated = existing.copy(quantity = existing.quantity + 1)
+            val updated = existing.copy(quantity = (existing.quantity + 1).coerceAtMost(999))
             _needs.value = currentList.map { if (it.id == existing.id) updated else it }
             saveNeedForCurrentUser(updated)
         } else {
