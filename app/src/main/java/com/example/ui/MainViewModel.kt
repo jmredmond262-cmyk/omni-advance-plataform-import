@@ -1333,8 +1333,24 @@ class MainViewModel : ViewModel() {
 
     fun toggleContactFavorite(contactId: String) {
         trackUsageAction("CONTACT_FAVORITE_TOGGLE", "contacts")
-        _contacts.value = _contacts.value.map {
-            if (it.id == contactId) it.copy(isFavorite = !it.isFavorite) else it
+        val current = _contacts.value.firstOrNull { it.id == contactId } ?: return
+        val updated = current.copy(isFavorite = !current.isFavorite)
+        _contacts.value = _contacts.value.map { if (it.id == contactId) updated else it }
+        val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+        if (uid.isBlank()) return
+        if (updated.isCustom) {
+            personalDataRepository.saveCustomContact(uid, updated) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Custom contact update failed", it) }
+            }
+        } else {
+            _favoriteContactIds.value = if (updated.isFavorite) {
+                _favoriteContactIds.value + contactId
+            } else {
+                _favoriteContactIds.value - contactId
+            }
+            personalDataRepository.setContactFavorite(uid, contactId, updated.isFavorite) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Contact favorite update failed", it) }
+            }
         }
     }
 
@@ -1348,9 +1364,16 @@ class MainViewModel : ViewModel() {
             statusText = "Agendado por ti",
             rating = 5.0f,
             address = address.ifBlank { null },
-            isFavorite = true
+            isFavorite = true,
+            isCustom = true
         )
-        _contacts.value = listOf(newContact) + _contacts.value
+        _customContacts.value = listOf(newContact) + _customContacts.value
+        publishPersonalContacts()
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.saveCustomContact(uid, newContact) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Custom contact save failed", it) }
+            }
+        }
     }
 
     fun updateSearchRadius(meters: Int) {
