@@ -7,7 +7,8 @@ enum class TransactionType {
     TRANSFERENCIA_ENVIADA,
     TRANSFERENCIA_RECIBIDA,
     QR_PAGO,
-    QR_COBRO
+    QR_COBRO,
+    OPERACION_NO_RECONOCIDA
 }
 
 data class WalletTransaction(
