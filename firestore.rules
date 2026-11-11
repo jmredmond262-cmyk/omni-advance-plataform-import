@@ -174,7 +174,7 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.storeName is string
         && request.resource.data.environment == "DEMO"
-        && request.resource.data.cashback is map;
+        && validCashbackPolicy();
       allow update: if signedIn()
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid
