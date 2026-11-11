@@ -203,7 +203,7 @@ function aggregateGeoPresence(records, profiles = []) {
     if (record.consent !== true) continue;
     const updatedAt = Date.parse(record.updatedAt || "");
     // En línea = OMNI publicó una posición autorizada en los últimos tres minutos.
-    if (!Number.isFinite(updatedAt) || now - updatedAt > 3 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
+    if (!Number.isFinite(updatedAt) || now - updatedAt > 7 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
     const uid = String(record.uid || record.id || "");
     const latitude = Number(record.latitude);
     const longitude = Number(record.longitude);
@@ -237,7 +237,7 @@ function aggregateGeoPresence(records, profiles = []) {
     activeUsers: points.length,
     visibleAreas: visibleCells.size,
     privacyThreshold: 1,
-    freshnessMinutes: 3,
+    freshnessMinutes: 7,
     freshnessHours: 0.05
   };
 }
@@ -404,7 +404,7 @@ async function dashboard(env) {
     geoActivity: geoActivity.points,
     geoActivitySummary: {
       consentedUsersFresh24h: geoActivity.freshUsers,
-      visibleAreas: geoActivity.points.length,
+      visibleAreas: geoActivity.visibleAreas,
       privacyThreshold: geoActivity.privacyThreshold,
       freshnessHours: geoActivity.freshnessHours,
       sampleComplete: geoPresencePage.complete
