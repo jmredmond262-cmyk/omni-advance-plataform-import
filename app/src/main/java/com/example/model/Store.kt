@@ -63,7 +63,12 @@ data class Store(
     val scheduleNotes: String = "",
     val phone: String = "",
     val photoUrl: String? = null,
-    val googleMapsUri: String = ""
+    val googleMapsUri: String = "",
+    // Cashback propio del comercio. Sin configuración, el beneficio permanece apagado.
+    val cashbackEnabled: Boolean = false,
+    val cashbackPercent: Double = 0.0,
+    val cashbackPerPurchaseCap: Double? = null,
+    val cashbackMonthlyCap: Double? = null
 ) {
     val distanceText: String
         get() = if (distanceMeters < 1000) "${distanceMeters} m" else String.format("%.1f km", distanceMeters / 1000.0)
