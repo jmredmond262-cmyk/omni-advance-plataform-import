@@ -451,7 +451,7 @@ class MainViewModel : ViewModel() {
     private val _morningBriefing = MutableStateFlow(SampleData.sampleMorningBriefing)
     val morningBriefing: StateFlow<com.example.model.MorningBriefing> = _morningBriefing.asStateFlow()
 
-    // Comprobantes Digitales y Facturas
+    // Tickets digitales DEMO sin validez fiscal
     private val _receipts = MutableStateFlow(SampleData.sampleReceipts)
     val receipts: StateFlow<List<com.example.model.DigitalReceipt>> = _receipts.asStateFlow()
 
