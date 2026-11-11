@@ -632,24 +632,23 @@ service cloud.firestore {
     }
 
     match /adminConfig/{configId} {
-      allow read, write: if isSystemAdmin();
+      allow read: if isSystemAdmin();
+      allow create, update, delete: if false;
     }
 
     match /adminAuditLogs/{logId} {
       allow read: if isSystemAdmin();
-      allow create: if isSystemAdmin()
-        && request.resource.data.actorUid == request.auth.uid
-        && request.resource.data.action is string
-        && request.resource.data.createdAt is timestamp;
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /moduleRegistry/{moduleId} {
-      allow read, write: if isSystemAdmin();
+      allow read: if isSystemAdmin();
+      allow create, update, delete: if false;
     }
 
     match /betaInvitations/{invitationId} {
-      allow read, write: if isSystemAdmin();
+      allow read: if isSystemAdmin();
+      allow create, update, delete: if false;
     }
 
     // Approximate presence is opt-in, owner-writable, and administrator-readable only.
