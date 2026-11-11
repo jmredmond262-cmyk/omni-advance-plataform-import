@@ -268,36 +268,43 @@ class DemoWalletRepository(
             val sender = tx.get(senderRef)
             val recipient = tx.get(recipientRef)
             val existingOperation = tx.get(operationRef)
-            val existingSenderTransaction = if (orderId == null) tx.get(senderTransactionRef) else null
-            val existingRecipientTransaction = if (orderId == null) tx.get(recipientTransactionRef) else null
+            val existingSenderTransaction = tx.get(senderTransactionRef)
+            val existingRecipientTransaction = tx.get(recipientTransactionRef)
             if (orderId != null) {
                 check(orderSnapshot?.exists() == true) { "El pedido ya no está disponible." }
-                check(orderSnapshot?.getString("customerUid") == senderUid) { "Solo quien creó el pedido puede pagarlo." }
-                check(orderSnapshot?.getString("merchantUid") == recipientUid) { "El comercio del pedido no coincide." }
-                val orderTotal = (orderSnapshot?.get("total") as? Number)?.toDouble() ?: 0.0
+                check(orderSnapshot.getString("customerUid") == senderUid) { "Solo quien creó el pedido puede pagarlo." }
+                check(orderSnapshot.getString("merchantUid") == recipientUid) { "El comercio del pedido no coincide." }
+                val orderTotal = (orderSnapshot.get("total") as? Number)?.toDouble() ?: 0.0
                 check(kotlin.math.abs(orderTotal - amount) < 0.005) { "El importe del pedido cambió. Volvé a revisar el total." }
-                check(orderSnapshot?.getString("status") !in listOf("ENTREGADO", "RECHAZADO", "CANCELADO")) {
-                    "El pedido está cerrado y no admite pagos."
-                }
+
                 if (existingOperation.exists()) {
                     val previousAmount = (existingOperation.get("amount") as? Number)?.toDouble() ?: Double.NaN
-                    check(existingOperation.getString("senderUid") == senderUid &&
+                    check(existingOperation.getString("operationId") == stableOperationId &&
+                        existingOperation.getString("senderUid") == senderUid &&
                         existingOperation.getString("recipientUid") == recipientUid &&
                         existingOperation.getString("orderId") == orderId &&
                         existingOperation.getString("kind") == "QR_PAYMENT" &&
                         previousAmount.isFinite() &&
-                        kotlin.math.abs(previousAmount - amount) < 0.005
-                    ) { "El pedido tiene un movimiento asociado que no coincide. Contactá soporte DEMO." }
-                    if (orderSnapshot.getString("paymentStatus") == "PENDIENTE") {
-                        tx.update(orderRef!!, mapOf(
-                            "paymentStatus" to "PAGADA · DEMO",
-                            "paymentMethod" to "OMNI_PAY_DEMO",
-                            "updatedAt" to FieldValue.serverTimestamp()
-                        ))
-                    }
+                        kotlin.math.abs(previousAmount - amount) < 0.005 &&
+                        existingSenderTransaction.exists() &&
+                        existingRecipientTransaction.exists() &&
+                        existingSenderTransaction.getString("operationId") == stableOperationId &&
+                        existingRecipientTransaction.getString("operationId") == stableOperationId &&
+                        orderSnapshot.getString("paymentStatus") == "PAGADA · DEMO" &&
+                        orderSnapshot.getString("paymentMethod") == "OMNI_PAY_DEMO"
+                    ) { "El pedido tiene un movimiento asociado incompleto o inconsistente. Contactá soporte DEMO." }
                     return@runTransaction "PEDIDO YA PAGADO · DEMO"
                 }
+
                 check(orderSnapshot.getString("paymentStatus") == "PENDIENTE") { "El pedido ya figura pagado." }
+                check(orderSnapshot.getString("status") in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO")) {
+                    "El pedido está cerrado y no admite pagos."
+                }
+                val createdAtMillis = orderSnapshot.getTimestamp("createdAt")?.toDate()?.time ?: 0L
+                val nowMillis = System.currentTimeMillis()
+                check(createdAtMillis > 0L && nowMillis >= createdAtMillis &&
+                    nowMillis - createdAtMillis <= 24L * 60L * 60L * 1000L
+                ) { "El pedido venció. Solicitá al comercio que genere un pedido nuevo." }
             } else if (existingOperation.exists()) {
                 val previousAmount = (existingOperation.get("amount") as? Number)?.toDouble() ?: Double.NaN
                 val expectedKind = if (isQr) "QR_PAYMENT" else "TRANSFER"
@@ -305,10 +312,10 @@ class DemoWalletRepository(
                     existingOperation.getString("recipientUid") == recipientUid &&
                     existingOperation.getString("kind") == expectedKind &&
                     previousAmount.isFinite() && kotlin.math.abs(previousAmount - amount) < 0.005 &&
-                    existingSenderTransaction?.exists() == true &&
-                    existingRecipientTransaction?.exists() == true &&
-                    existingSenderTransaction?.getString("operationId") == stableOperationId &&
-                    existingRecipientTransaction?.getString("operationId") == stableOperationId
+                    existingSenderTransaction.exists() &&
+                    existingRecipientTransaction.exists() &&
+                    existingSenderTransaction.getString("operationId") == stableOperationId &&
+                    existingRecipientTransaction.getString("operationId") == stableOperationId
                 ) { "El identificador ya pertenece a otra operación o el registro está incompleto. Contactá soporte DEMO." }
                 return@runTransaction "OPERACIÓN YA PROCESADA · DEMO"
             }
