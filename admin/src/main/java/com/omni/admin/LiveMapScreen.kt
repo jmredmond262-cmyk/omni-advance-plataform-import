@@ -277,7 +277,7 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      const uidForColor=String(point.uid||'');
      let colorHash=0;
      for(let i=0;i<uidForColor.length;i++)colorHash=((colorHash*31)+uidForColor.charCodeAt(i))|0;
-     element.dataset.color=palette[Math.abs(colorHash)%palette.length];
+     element.dataset.color=palette[Math.abs(colorHash%palette.length)];
      element.setAttribute('aria-label',point.userLabel||'Usuario OMNI');
      const popup=new maplibregl.Popup({offset:18,closeButton:true,closeOnClick:false}).setHTML(window.omniPopupHtml(point));
      const marker=new maplibregl.Marker({element:element,anchor:'center',offset:offset||[0,0]})
