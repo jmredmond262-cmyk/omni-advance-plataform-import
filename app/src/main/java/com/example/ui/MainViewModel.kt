@@ -730,9 +730,9 @@ class MainViewModel : ViewModel() {
         val currentList = _needs.value
         val existing = currentList.firstOrNull { it.name.equals(product.name, ignoreCase = true) }
         if (existing != null) {
-            _needs.value = currentList.map {
-                if (it.id == existing.id) it.copy(quantity = it.quantity + 1) else it
-            }
+            val updated = existing.copy(quantity = existing.quantity + 1)
+            _needs.value = currentList.map { if (it.id == existing.id) updated else it }
+            saveNeedForCurrentUser(updated)
         } else {
             val newItem = NeedItem(
                 id = UUID.randomUUID().toString(),
@@ -743,11 +743,13 @@ class MainViewModel : ViewModel() {
                 isChecked = false
             )
             _needs.value = currentList + newItem
+            saveNeedForCurrentUser(newItem)
         }
     }
 
     fun loadFamilyBasket() {
         _needs.value = SampleData.initialNeeds
+        replaceNeedsForCurrentUser(_needs.value)
     }
 
     fun loadSampleBasket(option: Int) {
@@ -772,6 +774,7 @@ class MainViewModel : ViewModel() {
             else -> SampleData.initialNeeds
         }
         _needs.value = sampleItems
+        replaceNeedsForCurrentUser(_needs.value)
     }
 
     private fun OmniDirectoryPlace.toOmniStore(): Store {
@@ -1186,6 +1189,7 @@ class MainViewModel : ViewModel() {
         _tasks.value = _tasks.value.map {
             if (it.id == taskId) it.copy(isCompleted = !it.isCompleted) else it
         }
+        _tasks.value.firstOrNull { it.id == taskId }?.let(::saveTaskForCurrentUser)
     }
 
     fun addTask(title: String, category: TaskCategory, timeTag: String) {
@@ -1198,6 +1202,7 @@ class MainViewModel : ViewModel() {
             timeTag = timeTag.ifBlank { "09:00" }
         )
         _tasks.value = listOf(newTask) + _tasks.value
+        saveTaskForCurrentUser(newTask)
     }
 
     fun toggleNeed(needId: String) {
@@ -1205,6 +1210,7 @@ class MainViewModel : ViewModel() {
         _needs.value = _needs.value.map {
             if (it.id == needId) it.copy(isChecked = !it.isChecked) else it
         }
+        _needs.value.firstOrNull { it.id == needId }?.let(::saveNeedForCurrentUser)
     }
 
     fun addNeed(name: String, category: ProductCategory, quantity: Int, unit: String) {
@@ -1218,11 +1224,17 @@ class MainViewModel : ViewModel() {
             isChecked = false
         )
         _needs.value = _needs.value + newNeed
+        saveNeedForCurrentUser(newNeed)
     }
 
     fun deleteNeed(needId: String) {
         trackUsageAction("LIST_ITEM_DELETE", "smart_list")
         _needs.value = _needs.value.filter { it.id != needId }
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.deleteShoppingItem(uid, needId) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Shopping item delete failed", it) }
+            }
+        }
     }
 
     fun addSuggestionToNeeds(suggestion: SmartSuggestion) {
