@@ -795,7 +795,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         Text("Este comercio no tiene cashback activo para este pedido.", color = Color(0xFFB8C8D9), fontSize = 10.sp)
                     }
                     Text(if (fulfillmentType == "DELIVERY") "Entrega: ${deliveryAddress.trim()}" else "Modalidad: Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 11.sp)
-                    Text("Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    Text(if (demoMode) "La compra es ilustrativa: se genera un QR DEMO local, sin pedido compartido ni pago." else "Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
                 }
             },
             confirmButton = { Button(onClick = { showOrderReview = false; submitOrder() }, enabled = !sending) { Text(if (demoMode) "Generar QR DEMO" else "Confirmar y generar QR") } },
