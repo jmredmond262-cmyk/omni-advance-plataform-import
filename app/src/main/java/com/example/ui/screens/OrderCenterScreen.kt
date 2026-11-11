@@ -890,7 +890,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         AlertDialog(
             onDismissRequest = { createdOrder = null },
             containerColor = Color(0xFF101B30),
-            title = { Text(if (order.isLocalDemo) "QR DEMO generado" else "Pedido enviado", color = Color.White) },
+            title = { Text(if (order.isLocalDemo) "QR DEMO generado" else "Pedido DEMO enviado", color = Color.White) },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(if (order.isLocalDemo) "QR ilustrativo de la compra. No se envía al comercio ni genera un pedido compartido." else "Mostrá este QR en el comercio para identificar tu pedido.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
@@ -906,7 +906,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                                 val share = Intent(Intent.ACTION_SEND).apply {
                                     type = "image/png"
                                     putExtra(Intent.EXTRA_STREAM, uri)
-                                    putExtra(Intent.EXTRA_TEXT, if (order.isLocalDemo) "QR DEMO LOCAL OMNI\nNo es un pedido compartido.\nComercio de muestra: ${order.storeName}\nTotal ilustrativo: OM$ ${String.format("%,.2f", order.total)}" else "Pedido OMNI ${order.id}\nComercio: ${order.storeName}\nTotal: OM$ ${String.format("%,.2f", order.total)}\nPago pendiente al retirar o recibir.")
+                                    putExtra(Intent.EXTRA_TEXT, if (order.isLocalDemo) "QR DEMO LOCAL OMNI\nNo es un pedido compartido.\nComercio de muestra: ${order.storeName}\nTotal ilustrativo: OM$ ${String.format("%,.2f", order.total)}" else "PEDIDO OMNI · DEMO ${order.id}\nComercio: ${order.storeName}\nTotal ficticio: OM$ ${String.format("%,.2f", order.total)}\nPago pendiente al retirar o recibir. Sin dinero real.")
                                     clipData = ClipData.newUri(context.contentResolver, "QR Pedido OMNI", uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
