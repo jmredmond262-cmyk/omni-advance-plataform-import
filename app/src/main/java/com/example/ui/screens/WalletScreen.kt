@@ -108,6 +108,9 @@ fun WalletScreen(
     val orderDb = remember { FirebaseFirestore.getInstance() }
     var pendingOrderQr by remember { mutableStateOf<PendingOrderQRPayment?>(null) }
     var orderPaymentInProgress by remember { mutableStateOf(false) }
+    var qrPaymentInProgress by remember { mutableStateOf(false) }
+    var topUpInProgress by remember { mutableStateOf(false) }
+    var transferInProgress by remember { mutableStateOf(false) }
     var showMyQrDialog by remember { mutableStateOf(false) }
     var showQrPaymentDialog by remember { mutableStateOf(false) }
     var showAddFundsDialog by remember { mutableStateOf(false) }
@@ -656,7 +659,7 @@ fun WalletScreen(
 
     if (showQrPaymentDialog) {
         AlertDialog(
-            onDismissRequest = { showQrPaymentDialog = false },
+            onDismissRequest = { if (!qrPaymentInProgress) showQrPaymentDialog = false },
             title = { Text("Confirmar pago QR · DEMO") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -674,13 +677,17 @@ fun WalletScreen(
             },
             confirmButton = {
                 Button(
+                    enabled = !qrPaymentInProgress,
                     onClick = {
-                        val amount = qrPaymentAmount.toDoubleOrNull() ?: 0.0
-                        if (amount <= 0.0) {
-                            paymentSuccessMessage = "Ingresá un importe mayor que cero."
-                        } else {
-                            walletRepository.payDemoQr(qrPaymentPayload, amount) { result ->
-                                result.fold(
+                        if (!qrPaymentInProgress) {
+                            val amount = qrPaymentAmount.toDoubleOrNull() ?: 0.0
+                            if (amount <= 0.0 || !amount.isFinite()) {
+                                paymentSuccessMessage = "Ingresá un importe válido mayor que cero."
+                            } else {
+                                qrPaymentInProgress = true
+                                walletRepository.payDemoQr(qrPaymentPayload, amount) { result ->
+                                    qrPaymentInProgress = false
+                                    result.fold(
                                     onSuccess = {
                                         paymentSuccessMessage = "Pago QR aprobado en el entorno DEMO por OM$ ${String.format("%,.2f", amount)}. El saldo del destinatario se actualiza automáticamente."
                                         showQrPaymentDialog = false
@@ -688,14 +695,15 @@ fun WalletScreen(
                                     onFailure = { error ->
                                         paymentSuccessMessage = error.localizedMessage ?: "No se pudo completar el pago DEMO."
                                     }
-                                )
+                                    )
+                                }
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
-                ) { Text("Confirmar pago DEMO") }
+                ) { Text(if (qrPaymentInProgress) "Procesando…" else "Confirmar pago DEMO") }
             },
-            dismissButton = { TextButton(onClick = { showQrPaymentDialog = false }) { Text("Cancelar") } }
+            dismissButton = { TextButton(onClick = { if (!qrPaymentInProgress) showQrPaymentDialog = false }, enabled = !qrPaymentInProgress) { Text("Cancelar") } }
         )
     }
 
@@ -703,7 +711,7 @@ fun WalletScreen(
     if (showAddFundsDialog) {
         var addAmount by remember { mutableStateOf("10000") }
         AlertDialog(
-            onDismissRequest = { showAddFundsDialog = false },
+            onDismissRequest = { if (!topUpInProgress) showAddFundsDialog = false },
             title = { Text("Agregar saldo virtual de prueba") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -718,11 +726,17 @@ fun WalletScreen(
             },
             confirmButton = {
                 Button(
+                    enabled = !topUpInProgress,
                     onClick = {
-                        val amount = addAmount.toDoubleOrNull() ?: 0.0
-                        if (amount > 0) {
-                            walletRepository.topUpDemo(amount) { result ->
-                                result.fold(
+                        if (!topUpInProgress) {
+                            val amount = addAmount.toDoubleOrNull() ?: 0.0
+                            if (amount <= 0.0 || !amount.isFinite()) {
+                                paymentSuccessMessage = "Ingresá un importe válido mayor que cero."
+                            } else {
+                                topUpInProgress = true
+                                walletRepository.topUpDemo(amount) { result ->
+                                    topUpInProgress = false
+                                    result.fold(
                                     onSuccess = {
                                         showAddFundsDialog = false
                                         paymentSuccessMessage = "Carga DEMO aprobada por OM$ ${String.format("%,.2f", amount)}."
@@ -730,17 +744,18 @@ fun WalletScreen(
                                     onFailure = { error ->
                                         paymentSuccessMessage = error.localizedMessage ?: "No se pudo cargar saldo DEMO."
                                     }
-                                )
+                                    )
+                                }
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
                 ) {
-                    Text("Cargar")
+                    Text(if (topUpInProgress) "Procesando…" else "Cargar")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddFundsDialog = false }) {
+                TextButton(onClick = { if (!topUpInProgress) showAddFundsDialog = false }, enabled = !topUpInProgress) {
                     Text("Cancelar")
                 }
             }
@@ -750,7 +765,7 @@ fun WalletScreen(
     // Transferencia saliente entre identidades ficticias de prueba
     if (showTransferDialog) {
         AlertDialog(
-            onDismissRequest = { showTransferDialog = false },
+            onDismissRequest = { if (!transferInProgress) showTransferDialog = false },
             title = { Text("Transferir con OMNI Pay") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -774,13 +789,17 @@ fun WalletScreen(
             },
             confirmButton = {
                 Button(
+                    enabled = !transferInProgress,
                     onClick = {
-                        val amount = transferAmount.toDoubleOrNull() ?: 0.0
-                        if (amount <= 0.0 || !amount.isFinite() || transferRecipient.isBlank()) {
-                            paymentSuccessMessage = "Revisá el alias/CVU y el importe."
-                        } else {
-                            walletRepository.transferDemoFunds(transferRecipient, amount) { result ->
-                                result.fold(
+                        if (!transferInProgress) {
+                            val amount = transferAmount.toDoubleOrNull() ?: 0.0
+                            if (amount <= 0.0 || !amount.isFinite() || transferRecipient.isBlank()) {
+                                paymentSuccessMessage = "Revisá el alias/CVU y el importe."
+                            } else {
+                                transferInProgress = true
+                                walletRepository.transferDemoFunds(transferRecipient, amount) { result ->
+                                    transferInProgress = false
+                                    result.fold(
                                     onSuccess = {
                                         paymentSuccessMessage = "Transferencia DEMO aprobada por OM$ ${String.format("%,.2f", amount)}. La cuenta destinataria recibe el importe automáticamente."
                                         transferRecipient = ""
@@ -789,15 +808,16 @@ fun WalletScreen(
                                     onFailure = { error ->
                                         paymentSuccessMessage = error.localizedMessage ?: "No se pudo realizar la transferencia DEMO."
                                     }
-                                )
+                                    )
+                                }
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
-                ) { Text("Confirmar transferencia demo") }
+                ) { Text(if (transferInProgress) "Procesando…" else "Confirmar transferencia demo") }
             },
             dismissButton = {
-                TextButton(onClick = { showTransferDialog = false }) { Text("Cancelar") }
+                TextButton(onClick = { if (!transferInProgress) showTransferDialog = false }, enabled = !transferInProgress) { Text("Cancelar") }
             }
         )
     }
