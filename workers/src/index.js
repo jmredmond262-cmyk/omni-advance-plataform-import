@@ -194,6 +194,7 @@ function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
+// Live map feed: individual consented accounts, coarse ~1 km cells, seven-minute active heartbeat.
 function aggregateGeoPresence(records, profiles = []) {
   const labels = userLabels(profiles);
   const now = Date.now();
