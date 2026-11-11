@@ -1217,12 +1217,17 @@ class MainViewModel : ViewModel() {
 
     fun addTask(title: String, category: TaskCategory, timeTag: String) {
         trackUsageAction("TASK_CREATE", "daily")
+        val cleanTitle = title.trim().take(120)
+        if (cleanTitle.isBlank()) return
+        val cleanTime = timeTag.takeIf {
+            Regex("^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$").matches(it)
+        } ?: "09:00"
         val newTask = DailyTask(
             id = UUID.randomUUID().toString(),
-            title = title,
+            title = cleanTitle,
             category = category,
             isCompleted = false,
-            timeTag = timeTag.ifBlank { "09:00" }
+            timeTag = cleanTime
         )
         _tasks.value = listOf(newTask) + _tasks.value
         saveTaskForCurrentUser(newTask)
@@ -1238,12 +1243,14 @@ class MainViewModel : ViewModel() {
 
     fun addNeed(name: String, category: ProductCategory, quantity: Int, unit: String) {
         trackUsageAction("LIST_ITEM_ADD", "smart_list")
+        val cleanName = name.trim().take(120)
+        if (cleanName.isBlank()) return
         val newNeed = NeedItem(
             id = UUID.randomUUID().toString(),
-            name = name,
+            name = cleanName,
             category = category,
-            quantity = quantity,
-            unit = unit,
+            quantity = quantity.coerceIn(1, 999),
+            unit = unit.trim().take(24).ifBlank { "unid." },
             isChecked = false
         )
         _needs.value = _needs.value + newNeed
@@ -1382,14 +1389,16 @@ class MainViewModel : ViewModel() {
 
     fun addCustomContact(name: String, category: ContactCategory, phone: String, address: String) {
         trackUsageAction("CONTACT_CREATE", "contacts")
+        val cleanName = name.trim().take(100)
+        if (cleanName.isBlank()) return
         val newContact = NeighborhoodContact(
             id = UUID.randomUUID().toString(),
-            name = name,
+            name = cleanName,
             category = category,
-            phoneNumber = phone,
+            phoneNumber = phone.trim().take(40),
             statusText = "Agendado por ti",
             rating = 5.0f,
-            address = address.ifBlank { null },
+            address = address.trim().take(200).ifBlank { null },
             isFavorite = true,
             isCustom = true
         )
