@@ -1366,6 +1366,9 @@ class MainViewModel : ViewModel() {
         val current = _contacts.value.firstOrNull { it.id == contactId } ?: return
         val updated = current.copy(isFavorite = !current.isFavorite)
         _contacts.value = _contacts.value.map { if (it.id == contactId) updated else it }
+        if (updated.isCustom) {
+            _customContacts.value = _customContacts.value.map { if (it.id == contactId) updated else it }
+        }
         if (!updated.isCustom) {
             contactFavoritesTouched = true
             _favoriteContactIds.value = if (updated.isFavorite) {
