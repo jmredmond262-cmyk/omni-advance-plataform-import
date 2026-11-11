@@ -301,7 +301,7 @@ fun WalletScreen(
                                             }
                                         val total = (doc.get("total") as? Number)?.toDouble() ?: 0.0
                                         val createdAt = doc.getTimestamp("createdAt")?.toDate()?.time ?: 0L
-                                        val expired = createdAt == 0L || System.currentTimeMillis() - createdAt > 24L * 60L * 60L * 1000L
+                                        val expired = createdAt == 0L || System.currentTimeMillis() - createdAt >= 24L * 60L * 60L * 1000L
                                         val merchantUid = doc.getString("merchantUid").orEmpty()
                                         val valid = doc.exists() &&
                                             doc.getString("customerUid") == currentUid &&
