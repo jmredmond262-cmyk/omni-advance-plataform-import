@@ -13,6 +13,17 @@ OMNI Pay usa Firebase Authentication + Cloud Firestore. La lógica de transferen
 - Validación de saldo suficiente, límites y prevención de transferencias a la propia cuenta.
 - Historial de hasta 50 movimientos recientes por billetera.
 
+## Separación de comercios DEMO y directorio real
+
+- Los perfiles creados desde el panel de comercio de esta versión quedan marcados como `environment: "DEMO"`.
+- Los pedidos de prueba también se guardan con `environment: "DEMO"` y Firestore exige que el comercio asociado pertenezca a ese mismo entorno.
+- El catálogo DEMO no se mezcla con resultados del directorio real. Una ficha real no recibe productos, stock ni precios ficticios.
+- Los comercios del directorio real solo podrán publicar catálogo y operar pedidos cuando exista un perfil comercial real verificado y un circuito habilitado para ese entorno.
+
+## Tickets digitales DEMO
+
+Los tickets generados por los datos de muestra o por el flujo local de prueba son referencias internas. No son facturas, no tienen validez fiscal y no sustituyen comprobantes emitidos por un sistema autorizado por ARCA. Los descuentos de ejemplo tampoco representan cashback acreditado.
+
 ## Requisitos
 
 1. Firebase Authentication habilitado con el proveedor que usa la app.
