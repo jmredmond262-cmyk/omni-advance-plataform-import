@@ -1733,4 +1733,10 @@ class MainViewModel : ViewModel() {
         selectedStoreType = null
         _stores.value = _allStores.value
     }
+
+    override fun onCleared() {
+        personalDataListeners.forEach { it.remove() }
+        personalDataListeners.clear()
+        super.onCleared()
+    }
 }
