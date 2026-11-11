@@ -1,6 +1,7 @@
 package com.example
 
 import android.content.Context
+import com.google.firebase.FirebaseApp
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -32,6 +33,10 @@ class ExampleRobolectricTest {
 
     @Test
     fun `verify managed store schedule configuration`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        if (FirebaseApp.getApps(context).isEmpty()) {
+            checkNotNull(FirebaseApp.initializeApp(context)) { "Firebase test configuration is unavailable" }
+        }
         val viewModel = com.example.ui.MainViewModel()
         assertNotNull(viewModel.managedStore.value)
 
