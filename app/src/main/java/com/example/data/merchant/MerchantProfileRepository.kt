@@ -25,6 +25,24 @@ object MerchantProfileRepository {
                     val ownerUid = snapshot.getString("ownerUid").orEmpty()
                     if (ownerUid != uid) {
                         callback(Result.failure(IllegalStateException("Este comercio ya está vinculado a otra cuenta OMNI.")))
+                    } else if (snapshot.getString("environment") == "REAL") {
+                        callback(Result.failure(IllegalStateException("Este perfil pertenece al directorio de comercios reales y no puede convertirse en comercio DEMO.")))
+                    } else if (snapshot.getString("environment") == null) {
+                        ref.update(
+                            "environment", "DEMO",
+                            "cashback", mapOf(
+                                "enabled" to false,
+                                "percentage" to 0.0,
+                                "capPerPurchase" to null,
+                                "monthlyCap" to null
+                            )
+                        ).addOnSuccessListener {
+                            ref.get().addOnSuccessListener { migrated ->
+                                callback(Result.success(decode(migrated, store)))
+                            }.addOnFailureListener { callback(Result.failure(it)) }
+                        }.addOnFailureListener { callback(Result.failure(it)) }
+                    } else if (snapshot.getString("environment") != "DEMO") {
+                        callback(Result.failure(IllegalStateException("El entorno de este comercio no está habilitado para pedidos DEMO.")))
                     } else {
                         callback(Result.success(decode(snapshot, store)))
                     }
@@ -33,6 +51,13 @@ object MerchantProfileRepository {
                         "storeId" to store.id,
                         "ownerUid" to uid,
                         "storeName" to store.name,
+                        "environment" to "DEMO",
+                        "cashback" to mapOf(
+                            "enabled" to false,
+                            "percentage" to 0.0,
+                            "capPerPurchase" to null,
+                            "monthlyCap" to null
+                        ),
                         "createdAt" to FieldValue.serverTimestamp()
                     )).addOnSuccessListener {
                         callback(Result.success(store to emptyList()))
@@ -47,6 +72,7 @@ object MerchantProfileRepository {
             "storeId" to store.id,
             "ownerUid" to uid,
             "storeName" to store.name,
+            "environment" to "DEMO",
             "address" to store.address,
             "phone" to store.phone,
             "description" to store.description,
