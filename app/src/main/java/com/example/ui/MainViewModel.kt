@@ -279,6 +279,27 @@ class MainViewModel : ViewModel() {
     private val personalDataRepository = PersonalDataRepository()
     private var personalDataUid: String? = null
     private val personalDataListeners = mutableListOf<ListenerRegistration>()
+    private val personalAuth = FirebaseAuth.getInstance()
+    private val personalAuthListener = FirebaseAuth.AuthStateListener { auth ->
+        val activeUid = auth.currentUser?.uid
+        if (activeUid.isNullOrBlank()) {
+            clearPersonalDataForSignedOutUser()
+        } else if (personalDataUid != activeUid) {
+            startPersonalDataSync(activeUid)
+        }
+    }
+
+    private fun clearPersonalDataForSignedOutUser() {
+        personalDataListeners.forEach { it.remove() }
+        personalDataListeners.clear()
+        personalDataUid = null
+        _tasks.value = emptyList()
+        _needs.value = emptyList()
+        _customContacts.value = emptyList()
+        _favoriteContactIds.value = emptySet()
+        contactFavoritesTouched = false
+        publishPersonalContacts()
+    }
 
     private fun publishPersonalContacts() {
         val samples = SampleData.sampleContacts.map { contact ->
@@ -591,6 +612,7 @@ class MainViewModel : ViewModel() {
         }
 
     init {
+        personalAuth.addAuthStateListener(personalAuthListener)
         // Primera consulta y actualización automática del clima cada 15 minutos.
         fetchLiveWeatherAndAlerts(
             _userProfile.value.currentLatitude,
@@ -1740,6 +1762,7 @@ class MainViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        personalAuth.removeAuthStateListener(personalAuthListener)
         personalDataListeners.forEach { it.remove() }
         personalDataListeners.clear()
         super.onCleared()
