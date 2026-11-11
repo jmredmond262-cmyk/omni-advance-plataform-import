@@ -426,13 +426,20 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             return
         }
         cardPaymentInProgress = true
+        val selectedBrand = demoCardBrand
+        val shouldApprove = demoCardApproved
         demoCardGateway.simulateOrderPayment(
-            order.id, order.merchantUid, order.total, demoCardBrand, demoCardApproved
+            order.id, order.merchantUid, order.total, selectedBrand, shouldApprove
         ) { result ->
             cardPaymentInProgress = false
             result.fold(
                 onSuccess = { message ->
-                    if (demoCardApproved) {
+                    OmniTracker.track(
+                        "orders",
+                        if (shouldApprove) "DEMO_CARD_PAYMENT_APPROVED" else "DEMO_CARD_PAYMENT_DECLINED",
+                        mapOf("operationId" to order.id, "cardBrand" to selectedBrand, "success" to shouldApprove)
+                    )
+                    if (shouldApprove) {
                         orders = orders.map { current ->
                             if (current.id == order.id) current.copy(
                                 paymentStatus = "PAGADA · DEMO",
@@ -651,13 +658,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     Text("Pedido: ${order.id.take(9)} · OM$ ${String.format("%,.2f", order.total)}", fontWeight = FontWeight.Bold)
                     Text("Elegí una tarjeta ficticia y el resultado que querés probar. No ingreses números, vencimiento ni CVV reales.", fontSize = 11.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = demoCardBrand == "VISA", onClick = { demoCardBrand = "VISA" }, label = { Text("Visa DEMO") })
-                        FilterChip(selected = demoCardBrand == "MASTERCARD", onClick = { demoCardBrand = "MASTERCARD" }, label = { Text("Mastercard DEMO") })
+                        FilterChip(selected = demoCardBrand == "VISA", onClick = { demoCardBrand = "VISA" }, enabled = !cardPaymentInProgress, label = { Text("Visa DEMO") })
+                        FilterChip(selected = demoCardBrand == "MASTERCARD", onClick = { demoCardBrand = "MASTERCARD" }, enabled = !cardPaymentInProgress, label = { Text("Mastercard DEMO") })
                     }
                     Text("Resultado de prueba", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = demoCardApproved, onClick = { demoCardApproved = true }, label = { Text("Aprobada") })
-                        FilterChip(selected = !demoCardApproved, onClick = { demoCardApproved = false }, label = { Text("Rechazada") })
+                        FilterChip(selected = demoCardApproved, onClick = { demoCardApproved = true }, enabled = !cardPaymentInProgress, label = { Text("Aprobada") })
+                        FilterChip(selected = !demoCardApproved, onClick = { demoCardApproved = false }, enabled = !cardPaymentInProgress, label = { Text("Rechazada") })
                     }
                     Text("La simulación solo registra una autorización ficticia. No cobra ni acredita fondos.", color = Color(0xFFFFC978), fontSize = 10.sp)
                 }
