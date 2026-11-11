@@ -226,7 +226,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
 
     DisposableEffect(merchantMode, merchantReady, store.id, uid, demoMode) {
         var listener: ListenerRegistration? = null
-        if (!demoMode && uid.isNotBlank() && (!merchantMode || merchantReady)) {
+        if (uid.isNotBlank() && (!merchantMode || merchantReady)) {
             val query = if (merchantMode) {
                 db.collection("storeOrders").whereEqualTo("merchantUid", uid)
             } else {
@@ -269,36 +269,137 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
     val total = cartLines.sumOf { it.price * it.quantity }
 
+    fun createLocalDemoOrder() {
+        val demoId = "DEMO-" + UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
+        val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
+        createdOrder = OmniStoreOrder(
+            id = demoId,
+            storeId = store.id,
+            storeName = store.name,
+            merchantUid = "",
+            customerUid = uid,
+            customerName = profile.fullName,
+            customerPhone = profile.phone,
+            items = cartLines,
+            total = total,
+            status = "SIMULACIÓN LOCAL",
+            paymentStatus = "NO APLICA · DEMO",
+            fulfillmentType = fulfillmentType,
+            deliveryAddress = deliveryAddress.trim(),
+            qrNonce = nonce,
+            isLocalDemo = true
+        )
+        updateCart(emptyMap())
+        sending = false
+    }
+
+    fun createSharedDemoOrder(merchant: com.google.firebase.firestore.DocumentSnapshot, merchantUid: String) {
+        val publishedInventory = (merchant.get("inventory") as? List<*>)?.mapNotNull { raw ->
+            raw as? Map<*, *>
+        }.orEmpty()
+        if (publishedInventory.isNotEmpty()) {
+            val staleLine = cartLines.firstOrNull { line ->
+                val current = publishedInventory.firstOrNull { it["id"] == line.productId }
+                val currentPrice = (current?.get("price") as? Number)?.toDouble()
+                current == null || current["inStock"] == false ||
+                    currentPrice == null || !currentPrice.isFinite() ||
+                    kotlin.math.abs(currentPrice - line.price) >= 0.005
+            }
+            if (staleLine != null) {
+                sending = false
+                feedback = "Cambió el precio o la disponibilidad de ${staleLine.name}. Actualizá el catálogo y revisá el pedido."
+                return
+            }
+        }
+        val cashbackPolicy = decodeCashbackTerms(merchant.get("cashback"))
+        if (cashbackPolicy != reviewCashbackTerms) {
+            reviewCashbackTerms = cashbackPolicy
+            sending = false
+            feedback = "El comercio actualizó las condiciones de cashback. Revisalas antes de confirmar."
+            showOrderReview = true
+            return
+        }
+        val cashbackPolicyData = mapOf(
+            "enabled" to cashbackPolicy.enabled,
+            "percentage" to cashbackPolicy.percentage,
+            "capPerPurchase" to cashbackPolicy.capPerPurchase,
+            "monthlyCap" to cashbackPolicy.monthlyCap
+        )
+        val ref = db.collection("storeOrders").document()
+        val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
+        val payloadItems = cartLines.map { line ->
+            mapOf(
+                "productId" to line.productId, "name" to line.name,
+                "price" to line.price, "quantity" to line.quantity
+            )
+        }
+        ref.set(mapOf(
+            "storeId" to store.id, "storeName" to store.name,
+            "environment" to "DEMO",
+            "merchantUid" to merchantUid, "customerUid" to uid,
+            "customerName" to profile.fullName, "customerPhone" to profile.phone,
+            "items" to payloadItems, "total" to total,
+            "cashbackPolicy" to cashbackPolicyData,
+            "status" to "RECIBIDO", "paymentStatus" to "PENDIENTE",
+            "paymentMethod" to "PAGO_AL_RETIRAR",
+            "fulfillmentType" to fulfillmentType, "deliveryAddress" to deliveryAddress.trim(),
+            "qrNonce" to nonce,
+            "operationId" to ref.id,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )).addOnSuccessListener {
+            UsageAnalyticsRepository.trackEvent(uid, "orders", "STORE_ORDER_CREATED", mapOf(
+                "operationId" to ref.id, "stage" to "FIRESTORE_WRITE_CONFIRMED", "success" to true
+            ))
+            sending = false
+            createdOrder = OmniStoreOrder(
+                ref.id, store.id, store.name, merchantUid, uid,
+                profile.fullName, profile.phone, cartLines, total,
+                "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
+                cashbackPolicy
+            )
+            updateCart(emptyMap())
+        }.addOnFailureListener { error ->
+            sending = false
+            feedback = error.localizedMessage ?: "No se pudo registrar el pedido. Revisá las reglas de Firestore."
+        }
+    }
+
     fun submitOrder() {
-        if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 || total <= 0.0 || total > 50000.0 || (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())) {
+        if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 ||
+            total <= 0.0 || total > 50000.0 ||
+            (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())
+        ) {
             feedback = "Revisá el pedido: máximo 30 productos distintos, total hasta OM$ 50.000 y dirección obligatoria para delivery."
             return
         }
         sending = true
         if (demoMode) {
-            val demoId = "DEMO-" + UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
-            val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
-            createdOrder = OmniStoreOrder(
-                id = demoId,
-                storeId = store.id,
-                storeName = store.name,
-                merchantUid = "",
-                customerUid = uid,
-                customerName = profile.fullName,
-                customerPhone = profile.phone,
-                items = cartLines,
-                total = total,
-                status = "SIMULACIÓN LOCAL",
-                paymentStatus = "NO APLICA · DEMO",
-                fulfillmentType = fulfillmentType,
-                deliveryAddress = deliveryAddress.trim(),
-                qrNonce = nonce,
-                isLocalDemo = true
-            )
-            updateCart(emptyMap())
-            sending = false
+            // El catálogo DEMO siempre permite probar el QR local. Si existe un titular
+            // DEMO distinto, se crea además un pedido compartido y visible para ambas cuentas.
+            if (uid.isBlank()) {
+                createLocalDemoOrder()
+                return
+            }
+            db.collection("merchantProfiles").document(store.id).get()
+                .addOnSuccessListener { merchant ->
+                    val merchantUid = merchant.getString("ownerUid").orEmpty()
+                    val isOtherDemoMerchant = merchant.exists() &&
+                        merchant.getString("environment") == "DEMO" &&
+                        merchantUid.isNotBlank() && merchantUid != uid
+                    if (isOtherDemoMerchant) {
+                        createSharedDemoOrder(merchant, merchantUid)
+                    } else {
+                        createLocalDemoOrder()
+                    }
+                }
+                .addOnFailureListener {
+                    // La experiencia de muestra no se bloquea por una lectura remota.
+                    createLocalDemoOrder()
+                }
             return
         }
+
         db.collection("merchantProfiles").document(store.id).get()
             .addOnSuccessListener { merchant ->
                 val merchantUid = merchant.getString("ownerUid").orEmpty()
@@ -306,75 +407,12 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     sending = false
                     feedback = "Este comercio todavía no habilitó pedidos QR para clientes."
                 } else {
-                    val publishedInventory = (merchant.get("inventory") as? List<*>)?.mapNotNull { raw ->
-                        raw as? Map<*, *>
-                    }.orEmpty()
-                    if (publishedInventory.isNotEmpty()) {
-                        val staleLine = cartLines.firstOrNull { line ->
-                            val current = publishedInventory.firstOrNull { it["id"] == line.productId }
-                            val currentPrice = (current?.get("price") as? Number)?.toDouble()
-                            current == null || current["inStock"] == false ||
-                                currentPrice == null || !currentPrice.isFinite() ||
-                                kotlin.math.abs(currentPrice - line.price) >= 0.005
-                        }
-                        if (staleLine != null) {
-                            sending = false
-                            feedback = "Cambió el precio o la disponibilidad de ${staleLine.name}. Actualizá el catálogo y revisá el pedido."
-                            return@addOnSuccessListener
-                        }
-                    }
-                    val cashbackPolicy = decodeCashbackTerms(merchant.get("cashback"))
-                    if (cashbackPolicy != reviewCashbackTerms) {
-                        reviewCashbackTerms = cashbackPolicy
-                        sending = false
-                        feedback = "El comercio actualizó las condiciones de cashback. Revisalas antes de confirmar."
-                        showOrderReview = true
-                        return@addOnSuccessListener
-                    }
-                    val cashbackPolicyData = mapOf(
-                        "enabled" to cashbackPolicy.enabled,
-                        "percentage" to cashbackPolicy.percentage,
-                        "capPerPurchase" to cashbackPolicy.capPerPurchase,
-                        "monthlyCap" to cashbackPolicy.monthlyCap
-                    )
-                    val ref = db.collection("storeOrders").document()
-                    val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
-                    val payloadItems = cartLines.map { mapOf(
-                        "productId" to it.productId, "name" to it.name,
-                        "price" to it.price, "quantity" to it.quantity
-                    ) }
-                    ref.set(mapOf(
-                        "storeId" to store.id, "storeName" to store.name,
-                        "environment" to "DEMO",
-                        "merchantUid" to merchantUid, "customerUid" to uid,
-                        "customerName" to profile.fullName, "customerPhone" to profile.phone,
-                        "items" to payloadItems, "total" to total,
-                        "cashbackPolicy" to cashbackPolicyData,
-                        "status" to "RECIBIDO", "paymentStatus" to "PENDIENTE",
-                        "paymentMethod" to "PAGO_AL_RETIRAR",
-                        "fulfillmentType" to fulfillmentType, "deliveryAddress" to deliveryAddress.trim(),
-                        "qrNonce" to nonce,
-                        "operationId" to ref.id,
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )).addOnSuccessListener {
-                        UsageAnalyticsRepository.trackEvent(uid, "orders", "STORE_ORDER_CREATED", mapOf("operationId" to ref.id, "stage" to "FIRESTORE_WRITE_CONFIRMED", "success" to true))
-                        sending = false
-                        createdOrder = OmniStoreOrder(
-                            ref.id, store.id, store.name, merchantUid, uid,
-                            profile.fullName, profile.phone, cartLines, total,
-                            "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
-                            cashbackPolicy
-                        )
-                        updateCart(emptyMap())
-                    }.addOnFailureListener { e ->
-                        sending = false
-                        feedback = e.localizedMessage ?: "No se pudo registrar el pedido. Revisá las reglas de Firestore."
-                    }
+                    createSharedDemoOrder(merchant, merchantUid)
                 }
-            }.addOnFailureListener { e ->
+            }
+            .addOnFailureListener { error ->
                 sending = false
-                feedback = e.localizedMessage ?: "No se pudo verificar el comercio."
+                feedback = error.localizedMessage ?: "No se pudo verificar el comercio."
             }
     }
 
