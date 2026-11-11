@@ -172,11 +172,15 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.storeId == storeId
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.storeName is string;
+        && request.resource.data.storeName is string
+        && request.resource.data.environment == "DEMO"
+        && request.resource.data.cashback is map;
       allow update: if signedIn()
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.environment == "DEMO"
+        && (!("environment" in resource.data.keys()) || request.resource.data.environment == resource.data.environment)
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["cashback"])
           || validCashbackPolicy());
       allow delete: if false;
@@ -229,6 +233,7 @@ service cloud.firestore {
         && request.resource.data.merchantUid is string
         && request.resource.data.merchantUid != request.auth.uid
         && request.resource.data.storeId is string
+        && request.resource.data.environment == "DEMO"
         && request.resource.data.status == "RECIBIDO"
         && request.resource.data.paymentStatus == "PENDIENTE"
         && request.resource.data.paymentMethod == "PAGO_AL_RETIRAR"
@@ -246,6 +251,7 @@ service cloud.firestore {
         && request.resource.data.qrNonce.size() >= 20
         && get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.ownerUid
           == request.resource.data.merchantUid
+        && get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.environment == "DEMO"
         && validCashbackSnapshot();
       // Queries must constrain customerUid or merchantUid to the signed-in user.
       // merchantUid is copied from the claimed merchant profile at order creation.
