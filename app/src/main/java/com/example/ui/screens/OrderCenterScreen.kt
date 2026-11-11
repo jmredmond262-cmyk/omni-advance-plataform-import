@@ -239,6 +239,23 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     sending = false
                     feedback = "Este comercio todavía no habilitó pedidos QR para clientes."
                 } else {
+                    val publishedInventory = (merchant.get("inventory") as? List<*>)?.mapNotNull { raw ->
+                        raw as? Map<*, *>
+                    }.orEmpty()
+                    if (publishedInventory.isNotEmpty()) {
+                        val staleLine = cartLines.firstOrNull { line ->
+                            val current = publishedInventory.firstOrNull { it["id"] == line.productId }
+                            val currentPrice = (current?.get("price") as? Number)?.toDouble()
+                            current == null || current["inStock"] == false ||
+                                currentPrice == null || !currentPrice.isFinite() ||
+                                kotlin.math.abs(currentPrice - line.price) >= 0.005
+                        }
+                        if (staleLine != null) {
+                            sending = false
+                            feedback = "Cambió el precio o la disponibilidad de ${staleLine.name}. Actualizá el catálogo y revisá el pedido."
+                            return@addOnSuccessListener
+                        }
+                    }
                     val ref = db.collection("storeOrders").document()
                     val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
                     val payloadItems = cartLines.map { mapOf(
