@@ -275,6 +275,7 @@ class MainViewModel : ViewModel() {
     val contacts: StateFlow<List<NeighborhoodContact>> = _contacts.asStateFlow()
     private val _customContacts = MutableStateFlow<List<NeighborhoodContact>>(emptyList())
     private val _favoriteContactIds = MutableStateFlow<Set<String>>(emptySet())
+    private var contactFavoritesTouched = false
     private val personalDataRepository = PersonalDataRepository()
     private var personalDataUid: String? = null
     private val personalDataListeners = mutableListOf<ListenerRegistration>()
@@ -343,8 +344,10 @@ class MainViewModel : ViewModel() {
 
         personalDataListeners += personalDataRepository.observeContactFavorites(uid) { result ->
             result.onSuccess { remote ->
-                val favorites = remote ?: SampleData.sampleContacts.filter { it.isFavorite }.map { it.id }.toSet()
+                val defaultFavorites = SampleData.sampleContacts.filter { it.isFavorite }.map { it.id }.toSet()
+                val favorites = remote ?: if (contactFavoritesTouched) _favoriteContactIds.value else defaultFavorites
                 _favoriteContactIds.value = favorites
+                contactFavoritesTouched = true
                 publishPersonalContacts()
                 if (remote == null) personalDataRepository.saveContactFavorites(uid, favorites)
             }.onFailure { android.util.Log.w("MainViewModel", "Contact favorites sync failed", it) }
@@ -1347,6 +1350,7 @@ class MainViewModel : ViewModel() {
         val updated = current.copy(isFavorite = !current.isFavorite)
         _contacts.value = _contacts.value.map { if (it.id == contactId) updated else it }
         if (!updated.isCustom) {
+            contactFavoritesTouched = true
             _favoriteContactIds.value = if (updated.isFavorite) {
                 _favoriteContactIds.value + contactId
             } else {
