@@ -750,8 +750,11 @@ class MainViewModel : ViewModel() {
     }
 
     fun addCatalogProductToNeeds(product: com.example.model.CatalogProduct) {
+        val productName = product.name.trim().take(120)
+        if (productName.isBlank()) return
+        val productUnit = product.unit.trim().take(24).ifBlank { "unid." }
         val currentList = _needs.value
-        val existing = currentList.firstOrNull { it.name.equals(product.name, ignoreCase = true) }
+        val existing = currentList.firstOrNull { it.name.equals(productName, ignoreCase = true) }
         if (existing != null) {
             val updated = existing.copy(quantity = (existing.quantity + 1).coerceAtMost(999))
             _needs.value = currentList.map { if (it.id == existing.id) updated else it }
@@ -762,7 +765,7 @@ class MainViewModel : ViewModel() {
                 name = product.name,
                 category = product.category,
                 quantity = 1,
-                unit = product.unit,
+                unit = productUnit,
                 isChecked = false
             )
             _needs.value = currentList + newItem
