@@ -124,6 +124,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var feedback by remember { mutableStateOf<String?>(null) }
     var createdOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var showOrderReview by remember { mutableStateOf(false) }
+    var reviewCashbackTerms by remember(store.id) {
+        mutableStateOf(CashbackTerms(
+            store.cashbackEnabled, store.cashbackPercent,
+            store.cashbackPerPurchaseCap, store.cashbackMonthlyCap
+        ))
+    }
+    var loadingCashbackReview by remember { mutableStateOf(false) }
     var selectedScannedOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var payingOrderId by remember { mutableStateOf<String?>(null) }
 
@@ -279,6 +286,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         }
                     }
                     val cashbackPolicy = decodeCashbackTerms(merchant.get("cashback"))
+                    if (cashbackPolicy != reviewCashbackTerms) {
+                        reviewCashbackTerms = cashbackPolicy
+                        sending = false
+                        feedback = "El comercio actualizó las condiciones de cashback. Revisalas antes de confirmar."
+                        showOrderReview = true
+                        return@addOnSuccessListener
+                    }
                     val cashbackPolicyData = mapOf(
                         "enabled" to cashbackPolicy.enabled,
                         "percentage" to cashbackPolicy.percentage,
@@ -530,8 +544,29 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             OutlinedTextField(deliveryAddress, { deliveryAddress = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Dirección de entrega") }, singleLine = true)
                         }
                         Text("Podés seguir agregando productos. El QR se genera únicamente cuando confirmás el pedido.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
-                        Button(onClick = { showOrderReview = true }, enabled = !sending, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
-                            Text("Revisar carrito")
+                        Button(
+                            onClick = {
+                                loadingCashbackReview = true
+                                db.collection("merchantProfiles").document(store.id).get()
+                                    .addOnSuccessListener { merchant ->
+                                        loadingCashbackReview = false
+                                        if (!merchant.exists() || merchant.getString("environment") != "DEMO") {
+                                            feedback = "Este comercio no tiene un perfil DEMO habilitado para pedidos."
+                                        } else {
+                                            reviewCashbackTerms = decodeCashbackTerms(merchant.get("cashback"))
+                                            showOrderReview = true
+                                        }
+                                    }
+                                    .addOnFailureListener {
+                                        loadingCashbackReview = false
+                                        feedback = "No se pudieron actualizar las condiciones del comercio. Intentá nuevamente."
+                                    }
+                            },
+                            enabled = !sending && !loadingCashbackReview,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))
+                        ) {
+                            Text(if (loadingCashbackReview) "Actualizando condiciones…" else "Revisar carrito")
                         }
                     }
                 }
@@ -630,14 +665,16 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         Text("${line.quantity} × ${line.name} · OM$ ${String.format("%,.2f", line.price * line.quantity)}", color = Color.White, fontSize = 11.sp)
                     }
                     Text("Total: OM$ ${String.format("%,.2f", total)}", color = Color.White, fontWeight = FontWeight.Bold)
-                    if (store.cashbackEnabled && store.cashbackPercent > 0.0) {
+                    if (reviewCashbackTerms.enabled) {
                         Text(
-                            "Política del comercio: ${store.cashbackPercent}% de cashback configurado" +
-                                (store.cashbackPerPurchaseCap?.let { " · Tope por compra OM$ ${String.format("%,.2f", it)}" } ?: "") +
-                                (store.cashbackMonthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
+                            "Política vigente del comercio: ${reviewCashbackTerms.percentage}% de cashback configurado" +
+                                (reviewCashbackTerms.capPerPurchase?.let { " · Tope por compra OM$ ${String.format("%,.2f", it)}" } ?: "") +
+                                (reviewCashbackTerms.monthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
                             color = Color(0xFF65E6A5), fontSize = 10.sp
                         )
                         Text("El crédito automático todavía no está habilitado; esta compra no recibirá un reintegro en saldo.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    } else {
+                        Text("Este comercio no tiene cashback activo para este pedido.", color = Color(0xFFB8C8D9), fontSize = 10.sp)
                     }
                     Text(if (fulfillmentType == "DELIVERY") "Entrega: ${deliveryAddress.trim()}" else "Modalidad: Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 11.sp)
                     Text("Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
