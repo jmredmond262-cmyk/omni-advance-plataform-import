@@ -185,7 +185,7 @@ fun WalletScreen(
     }
 
     val receipts by viewModel.receipts.collectAsState()
-    var selectedWalletTab by remember { mutableStateOf(0) } // 0: Movimientos, 1: Comprobantes & Tickets
+    var selectedWalletTab by remember { mutableStateOf(0) } // 0: Movimientos, 1: Tickets DEMO
     var selectedReceiptForModal by remember { mutableStateOf<com.example.model.DigitalReceipt?>(null) }
 
     LazyColumn(
