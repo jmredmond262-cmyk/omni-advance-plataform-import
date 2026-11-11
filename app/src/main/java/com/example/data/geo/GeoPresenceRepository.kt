@@ -21,7 +21,7 @@ import java.net.URL
  */
 object GeoPresenceRepository {
     private const val TAG = "OmniGeoPresence"
-    private const val PREFS = "omni_geo_privacy"
+    private const val PREFS = "omni_geo_privacy_precise_v2"
     private const val API_URL = "https://omni-admin-api.jmredmond262.workers.dev/geo-presence"
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
