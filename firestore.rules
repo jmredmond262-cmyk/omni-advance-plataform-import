@@ -187,6 +187,32 @@ service cloud.firestore {
       function merchantProfilePath() {
         return /databases/$(database)/documents/merchantProfiles/$(resource.data.storeId);
       }
+      function validCashbackSnapshot() {
+        let profile = get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data;
+        let snapshot = request.resource.data.cashbackPolicy;
+        return snapshot is map
+          && snapshot.keys().hasAll(["enabled", "percentage", "capPerPurchase", "monthlyCap"])
+          && snapshot.keys().hasOnly(["enabled", "percentage", "capPerPurchase", "monthlyCap"])
+          && snapshot.enabled is bool
+          && snapshot.percentage is number
+          && snapshot.percentage >= 0
+          && snapshot.percentage <= 100
+          && (!snapshot.enabled || snapshot.percentage > 0)
+          && (snapshot.capPerPurchase == null
+            || (snapshot.capPerPurchase is number && snapshot.capPerPurchase > 0))
+          && (snapshot.monthlyCap == null
+            || (snapshot.monthlyCap is number && snapshot.monthlyCap > 0))
+          && (
+            (profile.cashback is map && snapshot == profile.cashback)
+            || (
+              !("cashback" in profile.keys())
+              && snapshot.enabled == false
+              && snapshot.percentage == 0
+              && snapshot.capPerPurchase == null
+              && snapshot.monthlyCap == null
+            )
+          );
+      }
       function validNextStatus() {
         return
           (resource.data.status == "RECIBIDO" && request.resource.data.status == "ACEPTADO") ||
@@ -219,7 +245,8 @@ service cloud.firestore {
         && request.resource.data.qrNonce is string
         && request.resource.data.qrNonce.size() >= 20
         && get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.ownerUid
-          == request.resource.data.merchantUid;
+          == request.resource.data.merchantUid
+        && validCashbackSnapshot();
       // Queries must constrain customerUid or merchantUid to the signed-in user.
       // merchantUid is copied from the claimed merchant profile at order creation.
       allow read: if isSystemAdmin() || (signedIn()
