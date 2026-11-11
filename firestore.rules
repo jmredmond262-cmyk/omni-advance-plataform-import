@@ -355,7 +355,9 @@ service cloud.firestore {
           && (snapshot.monthlyCap == null
             || (snapshot.monthlyCap is number && snapshot.monthlyCap > 0))
           && (
-            (profile.cashback is map && snapshot == profile.cashback)
+            (("cashback" in profile.keys())
+              && profile.cashback is map
+              && snapshot == profile.cashback)
             || (
               !("cashback" in profile.keys())
               && snapshot.enabled == false
