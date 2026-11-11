@@ -48,6 +48,12 @@ import java.util.UUID
 import org.json.JSONObject
 
 private data class OrderLine(val productId: String, val name: String, val price: Double, val quantity: Int)
+private data class CashbackTerms(
+    val enabled: Boolean = false,
+    val percentage: Double = 0.0,
+    val capPerPurchase: Double? = null,
+    val monthlyCap: Double? = null
+)
 private data class OmniStoreOrder(
     val id: String,
     val storeId: String,
@@ -62,8 +68,23 @@ private data class OmniStoreOrder(
     val paymentStatus: String,
     val fulfillmentType: String,
     val deliveryAddress: String,
-    val qrNonce: String
+    val qrNonce: String,
+    val cashbackPolicy: CashbackTerms = CashbackTerms()
 )
+
+private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
+    val map = raw as? Map<*, *> ?: return CashbackTerms()
+    val percentage = (map["percentage"] as? Number)?.toDouble() ?: 0.0
+    val purchaseCap = (map["capPerPurchase"] as? Number)?.toDouble()
+    val monthlyCap = (map["monthlyCap"] as? Number)?.toDouble()
+    val enabled = map["enabled"] == true && percentage.isFinite() && percentage in 0.000001..100.0
+    return CashbackTerms(
+        enabled = enabled,
+        percentage = if (enabled) percentage else 0.0,
+        capPerPurchase = purchaseCap?.takeIf { it.isFinite() && it > 0.0 },
+        monthlyCap = monthlyCap?.takeIf { it.isFinite() && it > 0.0 }
+    )
+}
 
 @Composable
 fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: () -> Unit) {
@@ -130,7 +151,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             paymentStatus = doc.getString("paymentStatus").orEmpty(),
             fulfillmentType = doc.getString("fulfillmentType").orEmpty(),
             deliveryAddress = doc.getString("deliveryAddress").orEmpty(),
-            qrNonce = doc.getString("qrNonce").orEmpty()
+            qrNonce = doc.getString("qrNonce").orEmpty(),
+            cashbackPolicy = decodeCashbackTerms(doc.get("cashbackPolicy"))
         )
     }.getOrNull()
 
@@ -256,6 +278,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             return@addOnSuccessListener
                         }
                     }
+                    val cashbackPolicy = decodeCashbackTerms(merchant.get("cashback"))
+                    val cashbackPolicyData = mapOf(
+                        "enabled" to cashbackPolicy.enabled,
+                        "percentage" to cashbackPolicy.percentage,
+                        "capPerPurchase" to cashbackPolicy.capPerPurchase,
+                        "monthlyCap" to cashbackPolicy.monthlyCap
+                    )
                     val ref = db.collection("storeOrders").document()
                     val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
                     val payloadItems = cartLines.map { mapOf(
@@ -267,6 +296,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         "merchantUid" to merchantUid, "customerUid" to uid,
                         "customerName" to profile.fullName, "customerPhone" to profile.phone,
                         "items" to payloadItems, "total" to total,
+                        "cashbackPolicy" to cashbackPolicyData,
                         "status" to "RECIBIDO", "paymentStatus" to "PENDIENTE",
                         "paymentMethod" to "PAGO_AL_RETIRAR",
                         "fulfillmentType" to fulfillmentType, "deliveryAddress" to deliveryAddress.trim(),
@@ -280,7 +310,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         createdOrder = OmniStoreOrder(
                             ref.id, store.id, store.name, merchantUid, uid,
                             profile.fullName, profile.phone, cartLines, total,
-                            "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce
+                            "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
+                            cashbackPolicy
                         )
                         updateCart(emptyMap())
                     }.addOnFailureListener { e ->
@@ -598,6 +629,15 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         Text("${line.quantity} × ${line.name} · OM$ ${String.format("%,.2f", line.price * line.quantity)}", color = Color.White, fontSize = 11.sp)
                     }
                     Text("Total: OM$ ${String.format("%,.2f", total)}", color = Color.White, fontWeight = FontWeight.Bold)
+                    if (store.cashbackEnabled && store.cashbackPercent > 0.0) {
+                        Text(
+                            "Política del comercio: ${store.cashbackPercent}% de cashback configurado" +
+                                (store.cashbackPerPurchaseCap?.let { " · Tope por compra OM$ ${String.format("%,.2f", it)}" } ?: "") +
+                                (store.cashbackMonthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
+                            color = Color(0xFF65E6A5), fontSize = 10.sp
+                        )
+                        Text("El crédito automático todavía no está habilitado; esta compra no recibirá un reintegro en saldo.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    }
                     Text(if (fulfillmentType == "DELIVERY") "Entrega: ${deliveryAddress.trim()}" else "Modalidad: Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 11.sp)
                     Text("Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
                 }
@@ -720,6 +760,15 @@ private fun OrderStatusCard(
             }
             order.items.forEach { Text("${it.quantity} × ${it.name}", color = Color(0xFFB8C8D9), fontSize = 10.sp) }
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+            if (order.cashbackPolicy.enabled) {
+                Text(
+                    "Condiciones registradas al crear el pedido: ${order.cashbackPolicy.percentage}% de cashback" +
+                        (order.cashbackPolicy.capPerPurchase?.let { " · Tope por compra OM$ ${String.format("%,.2f", it)}" } ?: "") +
+                        (order.cashbackPolicy.monthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
+                    color = Color(0xFF65E6A5), fontSize = 9.sp
+                )
+                Text("No acreditable todavía: circuito DEMO de reintegro pendiente.", color = Color(0xFFFFC978), fontSize = 9.sp)
+            }
             Text(
                 if (order.paymentStatus.startsWith("PAGADA")) "Pago: acreditado · DEMO"
                 else "Pago: pendiente · OMNI Pay DEMO o al retirar/recibir",
