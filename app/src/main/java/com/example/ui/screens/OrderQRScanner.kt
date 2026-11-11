@@ -27,7 +27,8 @@ data class OrderQRPayload(
     val merchantName: String,
     val totalAmount: Double,
     val items: List<OrderQRItem>,
-    val qrNonce: String
+    val qrNonce: String,
+    val isLocalDemo: Boolean = false
 )
 
 object OrderQRCodec {
@@ -36,7 +37,8 @@ object OrderQRCodec {
         merchantName: String,
         totalAmount: Double,
         items: List<OrderQRItem>,
-        qrNonce: String
+        qrNonce: String,
+        isLocalDemo: Boolean = false
     ): String {
         val jsonItems = org.json.JSONArray()
         items.forEach { item ->
@@ -52,6 +54,7 @@ object OrderQRCodec {
             .put("totalAmount", totalAmount)
             .put("items", jsonItems)
             .put("qrNonce", qrNonce)
+            .put("mode", if (isLocalDemo) "LOCAL_DEMO" else "LIVE")
             .toString()
     }
 
@@ -74,7 +77,7 @@ object OrderQRCodec {
         require(orderId.isNotBlank() && merchantName.isNotBlank() && nonce.isNotBlank())
         require(totalAmount.isFinite() && totalAmount > 0.0)
         require(items.isNotEmpty() && items.all { it.name.isNotBlank() && it.price.isFinite() && it.price >= 0.0 && it.quantity > 0 })
-        OrderQRPayload(orderId, merchantName, totalAmount, items, nonce)
+        OrderQRPayload(orderId, merchantName, totalAmount, items, nonce, json.optString("mode") == "LOCAL_DEMO")
     }.getOrNull()
 }
 
@@ -82,6 +85,7 @@ object OrderQRCodec {
 fun OrderQRScanner(
     onOrderScanned: (OrderQRPayload) -> Unit,
     onLegacyWalletQr: (String) -> Unit = {},
+    onDemoOrderScanned: (OrderQRPayload) -> Unit = {},
     onError: (String) -> Unit,
     modifier: Modifier = Modifier,
     buttonLabel: String = "Escanear QR de pedido",
@@ -95,6 +99,7 @@ fun OrderQRScanner(
                     val raw = barcode.rawValue.orEmpty().trim()
                     val payload = OrderQRCodec.decode(raw)
                     when {
+                        payload != null && payload.isLocalDemo -> onDemoOrderScanned(payload)
                         payload != null -> onOrderScanned(payload)
                         raw.startsWith("OMNI-DEMO|") -> onLegacyWalletQr(raw)
                         else -> onError("El QR no contiene un pedido OMNI válido.")
