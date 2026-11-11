@@ -3,11 +3,13 @@ package com.example.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.QrCode2
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,100 +18,134 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.SampleData
+import com.example.model.Store
+import com.example.ui.MainViewModel
 
-private val DemoBg = Color(0xFF070A14)
-private val DemoCard = Color(0xFF111D32)
-private val DemoCyan = Color(0xFF57DDF5)
-private val DemoViolet = Color(0xFFB69CFF)
-private val DemoMuted = Color(0xFFB8C8D9)
+private val MarketBg = Color(0xFF070A14)
+private val MarketCard = Color(0xFF111D32)
+private val MarketCyan = Color(0xFF57DDF5)
+private val MarketViolet = Color(0xFFB69CFF)
+private val MarketMuted = Color(0xFFB8C8D9)
 
 @Composable
 fun DemoMarketplaceScreen(
+    viewModel: MainViewModel,
     onBack: () -> Unit,
     onOpenOrders: () -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().background(DemoBg).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    val stores = SampleData.sampleStores
+
+    Column(Modifier.fillMaxSize().background(MarketBg)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Volver", tint = Color.White)
             }
             Column(Modifier.weight(1f)) {
-                Text("EXPERIENCIA DE PRUEBA", color = DemoViolet, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                Text("Mercado OMNI", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                Text("ENTORNO DE PRUEBA", color = MarketViolet, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Mercado OMNI", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
             }
-            Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = DemoCyan, modifier = Modifier.size(25.dp))
+            Icon(Icons.Default.ShoppingBag, contentDescription = null, tint = MarketCyan, modifier = Modifier.size(25.dp))
         }
 
         Surface(
-            color = Color(0xFF201B35),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
+            color = Color(0xFF10243A),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)
         ) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("ENTORNO DEMO · SIN DINERO REAL", color = DemoViolet, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
+            Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("COMERCIOS DEMO · OMNI PAY", color = MarketCyan, fontWeight = FontWeight.Bold, fontSize = 10.sp)
                 Text(
-                    "Elegí entre los comercios de muestra, armá tu carrito y generá un QR DEMO para recorrer la experiencia de compra. No se utiliza dinero real.",
+                    "Elegí entre los comercios de muestra, explorá sus catálogos y armá una compra. Los comercios DEMO están separados del directorio real y no se utiliza dinero real.",
                     color = Color.White, fontSize = 11.sp
                 )
+                Text(
+                    "Si un comercio tiene una cuenta DEMO vinculada desde otra cuenta OMNI, el pedido puede compartirse para probar el circuito entre cliente y comercio. Si no tiene titular vinculado, se genera un QR local de muestra.",
+                    color = MarketMuted, fontSize = 10.sp
+                )
             }
         }
 
-        Card(
-            colors = CardDefaults.cardColors(containerColor = DemoCard),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, DemoCyan.copy(alpha = 0.28f)),
-            modifier = Modifier.fillMaxWidth()
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(
-                Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(11.dp)
+            item {
+                Text(
+                    "${stores.size} COMERCIOS DE MUESTRA DISPONIBLES",
+                    color = MarketCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold
+                )
+            }
+            items(stores, key = { it.id }) { store ->
+                DemoStoreCard(
+                    store = store,
+                    onSelect = {
+                        viewModel.selectStoreForOrders(store)
+                        onOpenOrders()
+                    }
+                )
+            }
+            item {
+                Text(
+                    "CATÁLOGOS FICTICIOS · PRECIOS DE PRUEBA · SIN COBROS REALES",
+                    color = MarketMuted, fontSize = 9.sp,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DemoStoreCard(store: Store, onSelect: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MarketCard),
+        shape = RoundedCornerShape(15.dp),
+        border = BorderStroke(1.dp, MarketCyan.copy(alpha = 0.24f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Storefront, contentDescription = null, tint = MarketCyan, modifier = Modifier.size(23.dp))
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(store.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(store.address, color = MarketMuted, fontSize = 10.sp)
+                }
+                Surface(color = Color(0xFF123D46), shape = RoundedCornerShape(7.dp)) {
+                    Text(
+                        "${store.inventory.count { it.inStock }} artículos",
+                        color = MarketCyan, fontSize = 9.sp,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            Text(store.description, color = MarketMuted, fontSize = 10.sp, maxLines = 2)
+            store.inventory.filter { it.inStock }.take(4).forEach { product ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        product.name, color = Color.White, fontSize = 10.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        "OM$ ${String.format("%,.2f", product.price)}",
+                        color = MarketCyan, fontWeight = FontWeight.Bold, fontSize = 10.sp
+                    )
+                }
+            }
+            Button(
+                onClick = onSelect,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087D98))
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.QrCode2, contentDescription = null, tint = DemoCyan, modifier = Modifier.size(25.dp))
-                    Text("Pedidos y compras OMNI", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                        modifier = Modifier.padding(start = 9.dp))
-                }
-                Text(
-                    "Elegí un comercio de muestra, agregá productos y confirmá para generar un QR DEMO. El catálogo de prueba está separado del directorio de comercios reales.",
-                    color = DemoMuted, fontSize = 12.sp
-                )
-                Text(
-                    "El QR permite visualizar el resumen de compra y compartir la muestra. Esta ruta no crea pedidos compartidos ni mueve saldos.",
-                    color = DemoMuted, fontSize = 11.sp
-                )
-                Button(
-                    onClick = onOpenOrders,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087D98))
-                ) {
-                    Icon(Icons.Default.ShoppingCart, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Abrir comercios y realizar pedido")
-                }
+                Icon(Icons.Default.ShoppingBag, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("Ver catálogo y comprar")
             }
         }
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = DemoCard.copy(alpha = 0.72f)),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("¿Qué representa el QR DEMO?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Text(
-                    "Es un QR ilustrativo que contiene el identificador de muestra, comercio, importe y productos. No es una orden aceptada por el comercio ni un comprobante de pago.",
-                    color = DemoMuted, fontSize = 10.sp
-                )
-            }
-        }
-
-        Spacer(Modifier.weight(1f))
-        Text(
-            "Compras de prueba · Billetera ficticia · Sin cobros reales",
-            color = DemoMuted, fontSize = 9.sp, modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
     }
 }
