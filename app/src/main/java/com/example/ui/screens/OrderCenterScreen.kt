@@ -202,10 +202,23 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             val profileRef = db.collection("merchantProfiles").document(store.id)
             profileRef.get().addOnSuccessListener { doc ->
                 if (doc.exists()) {
-                    if (doc.getString("ownerUid") == uid) {
+                    if (doc.getString("ownerUid") != uid) {
+                        merchantError = "Este comercio ya está asociado a otra cuenta. No podés administrar sus pedidos."
+                    } else if (doc.getString("environment") == "REAL") {
+                        merchantError = "Este perfil pertenece al directorio real y no puede utilizarse como comercio DEMO."
+                    } else if (doc.getString("environment") == "DEMO") {
                         merchantReady = true
                     } else {
-                        merchantError = "Este comercio ya está asociado a otra cuenta. No podés administrar sus pedidos."
+                        profileRef.update(
+                            "environment", "DEMO",
+                            "cashback", mapOf(
+                                "enabled" to false,
+                                "percentage" to 0.0,
+                                "capPerPurchase" to null,
+                                "monthlyCap" to null
+                            )
+                        ).addOnSuccessListener { merchantReady = true }
+                            .addOnFailureListener { merchantError = it.localizedMessage ?: "No se pudo habilitar el perfil DEMO." }
                     }
                 } else {
                     profileRef.set(mapOf(
@@ -214,6 +227,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         "address" to store.address,
                         "contactPhone" to store.phone,
                         "ownerUid" to uid,
+                        "environment" to "DEMO",
+                        "cashback" to mapOf(
+                            "enabled" to false,
+                            "percentage" to 0.0,
+                            "capPerPurchase" to null,
+                            "monthlyCap" to null
+                        ),
                         "createdAt" to FieldValue.serverTimestamp()
                     )).addOnSuccessListener { merchantReady = true }
                         .addOnFailureListener { merchantError = it.localizedMessage ?: "No se pudo habilitar el panel de pedidos." }
@@ -671,7 +691,11 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                                 db.collection("merchantProfiles").document(store.id).get()
                                     .addOnSuccessListener { merchant ->
                                         loadingCashbackReview = false
-                                        if (!merchant.exists() || merchant.getString("environment") != "DEMO") {
+                                        if (demoMode) {
+                                            reviewCashbackTerms = if (merchant.exists() && merchant.getString("environment") == "DEMO")
+                                                decodeCashbackTerms(merchant.get("cashback")) else CashbackTerms()
+                                            showOrderReview = true
+                                        } else if (!merchant.exists() || merchant.getString("environment") != "DEMO") {
                                             feedback = "Este comercio no tiene un perfil DEMO habilitado para pedidos."
                                         } else {
                                             reviewCashbackTerms = decodeCashbackTerms(merchant.get("cashback"))
@@ -680,7 +704,12 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                                     }
                                     .addOnFailureListener {
                                         loadingCashbackReview = false
-                                        feedback = "No se pudieron actualizar las condiciones del comercio. Intentá nuevamente."
+                                        if (demoMode) {
+                                            reviewCashbackTerms = CashbackTerms()
+                                            showOrderReview = true
+                                        } else {
+                                            feedback = "No se pudieron actualizar las condiciones del comercio. Intentá nuevamente."
+                                        }
                                     }
                             },
                             enabled = !sending && !loadingCashbackReview,
@@ -833,7 +862,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         Text("Este comercio no tiene cashback activo para este pedido.", color = Color(0xFFB8C8D9), fontSize = 10.sp)
                     }
                     Text(if (fulfillmentType == "DELIVERY") "Entrega: ${deliveryAddress.trim()}" else "Modalidad: Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 11.sp)
-                    Text(if (demoMode) "La compra es ilustrativa: se genera un QR DEMO local, sin pedido compartido ni pago." else "Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    Text(if (demoMode) "Si hay un titular DEMO distinto, el pedido se comparte con su comercio; si no, se genera un QR local de muestra. No se mueve dinero real." else "Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
                 }
             },
             confirmButton = { Button(onClick = { showOrderReview = false; submitOrder() }, enabled = !sending) { Text(if (demoMode) "Generar QR DEMO" else "Confirmar y generar QR") } },
