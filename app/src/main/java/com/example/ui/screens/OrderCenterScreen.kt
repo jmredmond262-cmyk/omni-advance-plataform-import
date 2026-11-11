@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Store
 import com.example.data.wallet.DemoWalletRepository
+import com.example.data.wallet.DemoCardGatewayRepository
 import com.example.model.StoreProduct
 import com.example.model.ProductCategory
 import com.example.ui.MainViewModel
@@ -69,7 +70,9 @@ private data class OmniStoreOrder(
     val fulfillmentType: String,
     val deliveryAddress: String,
     val qrNonce: String,
-    val cashbackPolicy: CashbackTerms = CashbackTerms()
+    val cashbackPolicy: CashbackTerms = CashbackTerms(),
+    val paymentMethod: String = "PAGO_AL_RETIRAR",
+    val environment: String = "DEMO"
 )
 
 private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
@@ -97,6 +100,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     val store = if (merchantMode) managedStore else (selectedStore ?: managedStore)
     val db = remember { FirebaseFirestore.getInstance() }
     val walletRepository = remember { DemoWalletRepository() }
+    val demoCardGateway = remember { DemoCardGatewayRepository() }
 
     var merchantReady by remember { mutableStateOf(false) }
     var merchantError by remember { mutableStateOf<String?>(null) }
@@ -133,6 +137,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var loadingCashbackReview by remember { mutableStateOf(false) }
     var selectedScannedOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var payingOrderId by remember { mutableStateOf<String?>(null) }
+    var selectedCardOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
+    var cardPaymentInProgress by remember { mutableStateOf(false) }
+    var demoCardBrand by remember { mutableStateOf("VISA") }
+    var demoCardApproved by remember { mutableStateOf(true) }
 
     fun decodeOrder(doc: com.google.firebase.firestore.DocumentSnapshot): OmniStoreOrder? = runCatching {
         val lines = (doc.get("items") as? List<*>)?.mapNotNull { raw ->
@@ -159,7 +167,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             fulfillmentType = doc.getString("fulfillmentType").orEmpty(),
             deliveryAddress = doc.getString("deliveryAddress").orEmpty(),
             qrNonce = doc.getString("qrNonce").orEmpty(),
-            cashbackPolicy = decodeCashbackTerms(doc.get("cashbackPolicy"))
+            cashbackPolicy = decodeCashbackTerms(doc.get("cashbackPolicy")),
+            paymentMethod = doc.getString("paymentMethod") ?: "PAGO_AL_RETIRAR",
+            environment = doc.getString("environment") ?: "DEMO"
         )
     }.getOrNull()
 
@@ -409,6 +419,37 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         }
     }
 
+    fun payOrderWithDemoCard(order: OmniStoreOrder) {
+        if (cardPaymentInProgress) return
+        if (order.customerUid != uid || order.paymentStatus != "PENDIENTE" || order.environment != "DEMO") {
+            feedback = "Este pedido no está habilitado para pago con tarjeta DEMO."
+            return
+        }
+        cardPaymentInProgress = true
+        demoCardGateway.simulateOrderPayment(
+            order.id, order.merchantUid, order.total, demoCardBrand, demoCardApproved
+        ) { result ->
+            cardPaymentInProgress = false
+            result.fold(
+                onSuccess = { message ->
+                    if (demoCardApproved) {
+                        orders = orders.map { current ->
+                            if (current.id == order.id) current.copy(
+                                paymentStatus = "PAGADA · DEMO",
+                                paymentMethod = "TARJETA_DEMO"
+                            ) else current
+                        }
+                    }
+                    selectedCardOrder = null
+                    feedback = "$message. No se ingresaron datos reales ni se movió dinero."
+                },
+                onFailure = { error ->
+                    feedback = error.localizedMessage ?: "No se pudo simular el pago con tarjeta."
+                }
+            )
+        }
+    }
+
     fun advanceOrder(order: OmniStoreOrder, next: String) {
         if (next in listOf("RECHAZADO", "CANCELADO") && order.paymentStatus != "PENDIENTE") {
             feedback = "No se puede rechazar ni cancelar un pedido ya pagado sin un circuito de devolución DEMO."
@@ -601,6 +642,40 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         }
     }
 
+    selectedCardOrder?.let { order ->
+        AlertDialog(
+            onDismissRequest = { if (!cardPaymentInProgress) selectedCardOrder = null },
+            title = { Text("Pasarela de tarjeta · DEMO") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("Pedido: ${order.id.take(9)} · OM$ ${String.format("%,.2f", order.total)}", fontWeight = FontWeight.Bold)
+                    Text("Elegí una tarjeta ficticia y el resultado que querés probar. No ingreses números, vencimiento ni CVV reales.", fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = demoCardBrand == "VISA", onClick = { demoCardBrand = "VISA" }, label = { Text("Visa DEMO") })
+                        FilterChip(selected = demoCardBrand == "MASTERCARD", onClick = { demoCardBrand = "MASTERCARD" }, label = { Text("Mastercard DEMO") })
+                    }
+                    Text("Resultado de prueba", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = demoCardApproved, onClick = { demoCardApproved = true }, label = { Text("Aprobada") })
+                        FilterChip(selected = !demoCardApproved, onClick = { demoCardApproved = false }, label = { Text("Rechazada") })
+                    }
+                    Text("La simulación solo registra una autorización ficticia. No cobra ni acredita fondos.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !cardPaymentInProgress,
+                    onClick = { payOrderWithDemoCard(order) }
+                ) { Text(if (cardPaymentInProgress) "Simulando…" else "Ejecutar simulación") }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (!cardPaymentInProgress) selectedCardOrder = null }, enabled = !cardPaymentInProgress) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
     selectedScannedOrder?.let { scanned ->
         AlertDialog(
             onDismissRequest = { selectedScannedOrder = null },
@@ -765,6 +840,7 @@ private fun OrderStatusCard(
     merchantMode: Boolean,
     onAdvance: (String) -> Unit,
     onPay: (() -> Unit)? = null,
+    onPayWithDemoCard: (() -> Unit)? = null,
     paying: Boolean = false
 ) {
     val context = LocalContext.current
@@ -808,8 +884,8 @@ private fun OrderStatusCard(
                 Text("No acreditable todavía: circuito DEMO de reintegro pendiente.", color = Color(0xFFFFC978), fontSize = 9.sp)
             }
             Text(
-                if (order.paymentStatus.startsWith("PAGADA")) "Pago: acreditado · DEMO"
-                else "Pago: pendiente · OMNI Pay DEMO o al retirar/recibir",
+                if (order.paymentStatus.startsWith("PAGADA")) "Pago: acreditado · ${if (order.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"}"
+                else "Pago: pendiente · OMNI Pay DEMO, tarjeta DEMO o al retirar/recibir",
                 color = if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
                 fontSize = 9.sp
             )
@@ -822,6 +898,11 @@ private fun OrderStatusCard(
                     }
                 } else {
                     Text("El total supera el límite de OMNI Pay DEMO (OM$ 50.000). Podés pagar al retirar o recibir.", color = Color(0xFFFFC978), fontSize = 9.sp)
+                }
+                if (onPayWithDemoCard != null) {
+                    OutlinedButton(onClick = onPayWithDemoCard, enabled = !paying, modifier = Modifier.fillMaxWidth()) {
+                        Text("Simular pago con tarjeta DEMO", fontSize = 10.sp)
+                    }
                 }
             }
             if (merchantMode && order.customerPhone.isNotBlank()) {
