@@ -293,6 +293,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     ) }
                     ref.set(mapOf(
                         "storeId" to store.id, "storeName" to store.name,
+                        "environment" to "DEMO",
                         "merchantUid" to merchantUid, "customerUid" to uid,
                         "customerName" to profile.fullName, "customerPhone" to profile.phone,
                         "items" to payloadItems, "total" to total,
