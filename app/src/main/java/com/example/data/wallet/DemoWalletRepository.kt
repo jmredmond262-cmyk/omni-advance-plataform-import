@@ -271,10 +271,11 @@ class DemoWalletRepository(
             val existingSenderTransaction = tx.get(senderTransactionRef)
             val existingRecipientTransaction = tx.get(recipientTransactionRef)
             if (orderId != null) {
-                check(orderSnapshot?.exists() == true) { "El pedido ya no está disponible." }
-                check(orderSnapshot.getString("customerUid") == senderUid) { "Solo quien creó el pedido puede pagarlo." }
-                check(orderSnapshot.getString("merchantUid") == recipientUid) { "El comercio del pedido no coincide." }
-                val orderTotal = (orderSnapshot.get("total") as? Number)?.toDouble() ?: 0.0
+                val orderDoc = orderSnapshot ?: throw IllegalStateException("El pedido ya no está disponible.")
+                check(orderDoc.exists()) { "El pedido ya no está disponible." }
+                check(orderDoc.getString("customerUid") == senderUid) { "Solo quien creó el pedido puede pagarlo." }
+                check(orderDoc.getString("merchantUid") == recipientUid) { "El comercio del pedido no coincide." }
+                val orderTotal = (orderDoc.get("total") as? Number)?.toDouble() ?: 0.0
                 check(kotlin.math.abs(orderTotal - amount) < 0.005) { "El importe del pedido cambió. Volvé a revisar el total." }
 
                 if (existingOperation.exists()) {
@@ -290,17 +291,17 @@ class DemoWalletRepository(
                         existingRecipientTransaction.exists() &&
                         existingSenderTransaction.getString("operationId") == stableOperationId &&
                         existingRecipientTransaction.getString("operationId") == stableOperationId &&
-                        orderSnapshot.getString("paymentStatus") == "PAGADA · DEMO" &&
-                        orderSnapshot.getString("paymentMethod") == "OMNI_PAY_DEMO"
+                        orderDoc.getString("paymentStatus") == "PAGADA · DEMO" &&
+                        orderDoc.getString("paymentMethod") == "OMNI_PAY_DEMO"
                     ) { "El pedido tiene un movimiento asociado incompleto o inconsistente. Contactá soporte DEMO." }
                     return@runTransaction "PEDIDO YA PAGADO · DEMO"
                 }
 
-                check(orderSnapshot.getString("paymentStatus") == "PENDIENTE") { "El pedido ya figura pagado." }
-                check(orderSnapshot.getString("status") in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO")) {
+                check(orderDoc.getString("paymentStatus") == "PENDIENTE") { "El pedido ya figura pagado." }
+                check(orderDoc.getString("status") in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO")) {
                     "El pedido está cerrado y no admite pagos."
                 }
-                val createdAtMillis = orderSnapshot.getTimestamp("createdAt")?.toDate()?.time ?: 0L
+                val createdAtMillis = orderDoc.getTimestamp("createdAt")?.toDate()?.time ?: 0L
                 val nowMillis = System.currentTimeMillis()
                 check(createdAtMillis > 0L && nowMillis >= createdAtMillis &&
                     nowMillis - createdAtMillis <= 24L * 60L * 60L * 1000L
