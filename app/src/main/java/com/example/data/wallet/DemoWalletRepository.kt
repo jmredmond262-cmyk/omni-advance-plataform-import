@@ -109,6 +109,14 @@ class DemoWalletRepository(
                     val type = runCatching {
                         TransactionType.valueOf(document.getString("type").orEmpty())
                     }.getOrDefault(TransactionType.CARGA_SALDO)
+                    val storedAmount = (document.get("amount") as? Number)?.toDouble() ?: 0.0
+                    // Firestore stores a positive magnitude; the UI model uses sign to show direction.
+                    val displayAmount = when (type) {
+                        TransactionType.TRANSFERENCIA_ENVIADA,
+                        TransactionType.QR_PAGO,
+                        TransactionType.COMPRA_LOCAL -> -kotlin.math.abs(storedAmount)
+                        else -> kotlin.math.abs(storedAmount)
+                    }
                     val dateText = document.getTimestamp("createdAt")?.toDate()?.let {
                         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(it)
                     } ?: "Procesando…"
@@ -116,7 +124,7 @@ class DemoWalletRepository(
                         id = document.getString("operationId") ?: document.id,
                         title = document.getString("title").orEmpty(),
                         storeOrEntityName = document.getString("peerName").orEmpty(),
-                        amount = (document.get("amount") as? Number)?.toDouble() ?: 0.0,
+                        amount = displayAmount,
                         type = type, dateText = dateText,
                         status = document.getString("status") ?: "APROBADA · DEMO"
                     )
