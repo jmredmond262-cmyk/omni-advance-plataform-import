@@ -1146,55 +1146,48 @@ class MainViewModel : ViewModel() {
     }
 
     // Funciones de Billetera Virtual (OmniPay)
-    fun payWithWallet(storeName: String, amount: Double, cashbackPercent: Double = 5.0): Boolean {
+    @Suppress("UNUSED_PARAMETER")
+    fun payWithWallet(storeName: String, amount: Double, cashbackPercent: Double = 0.0): Boolean {
         if (!amount.isFinite() || amount <= 0.0) return false
         val currentBalance = _wallet.value.balance
         if (currentBalance < amount) return false
 
-        val cashbackAmount = amount * (cashbackPercent / 100.0)
-        val newBalance = currentBalance - amount + cashbackAmount
-
+        // Legacy local demo path: no cashback is credited until the secure order circuit exists.
         val newTransactions = listOf(
             WalletTransaction(
                 id = UUID.randomUUID().toString(),
-                title = "Pago con QR en $storeName",
+                title = "Pago DEMO en $storeName",
                 storeOrEntityName = storeName,
                 amount = -amount,
                 type = TransactionType.COMPRA_LOCAL,
                 dateText = "Recién",
-                cashbackEarned = cashbackAmount
-            ),
-            WalletTransaction(
-                id = UUID.randomUUID().toString(),
-                title = "Reintegro Barrial ($cashbackPercent%)",
-                storeOrEntityName = "OmniPay Cashback",
-                amount = cashbackAmount,
-                type = TransactionType.REINTEGRO_CASHBACK,
-                dateText = "Recién"
+                cashbackEarned = 0.0
             )
         ) + _wallet.value.transactions
 
         _wallet.value = _wallet.value.copy(
-            balance = newBalance,
-            totalCashbackEarned = _wallet.value.totalCashbackEarned + cashbackAmount,
+            balance = currentBalance - amount,
             transactions = newTransactions
         )
 
-        // Generación automática de comprobante fiscal digital
-        val ticketNum = "T-" + (1000..9999).random() + "-" + (1000000..9999999).random()
+        // Ticket interno de prueba: no es factura ni comprobante fiscal.
+        val ticketNum = "DEMO-T-" + (1000..9999).random() + "-" + (1000000..9999999).random()
         val newReceipt = com.example.model.DigitalReceipt(
             id = UUID.randomUUID().toString(),
             receiptNumber = ticketNum,
             storeName = storeName,
             dateText = "Hoy, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) + " hs",
             items = listOf(
-                com.example.model.ReceiptItem("Compra en comercio / Pago QR", 1, amount, amount)
+                com.example.model.ReceiptItem("Compra en comercio / Pago QR DEMO", 1, amount, amount)
             ),
             subtotal = amount,
-            discountApplied = cashbackAmount,
-            total = amount - cashbackAmount,
-            paymentMethod = "OmniPay QR (5% Cashback Acreditado)",
-            qrVerificationCode = "OMNI-VALID-" + (10000..99999).random()
+            discountApplied = 0.0,
+            total = amount,
+            paymentMethod = "OMNI Pay local · DEMO (simulado)",
+            qrVerificationCode = "DEMO-REF-" + (10000..99999).random(),
+            environment = "DEMO",
+            fiscalValidity = false,
+            validationStatus = "SIMULATED"
         )
         _receipts.value = listOf(newReceipt) + _receipts.value
         trackUsageAction("DEMO_WALLET_PURCHASE", "wallet")
