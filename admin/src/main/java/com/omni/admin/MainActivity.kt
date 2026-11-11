@@ -167,44 +167,21 @@ private fun OmniAdminRoot() {
     )
   } else {
     AdminHome(
-      email = user?.email ?: "Administrador", selected = selected, payload = payload,
-      loading = loading, error = error, onSelect = { selected = it }, onRefresh = ::refresh, onLoadMore = ::loadMore, hasMore = hasMore,
+      email = user?.email ?: "Administrador",
+      selected = selected,
+      payload = payload,
+      loading = loading,
+      error = error,
+      onSelect = { selected = it },
+      onRefresh = ::refresh,
+      onLoadMore = ::loadMore,
+      hasMore = hasMore,
       onSignOut = {
-        auth.signOut(); user = null; payload = JSONObject(); error = ""; selected = "dashboard"
-      },
-      onSaveConfig = { config ->
-        scope.launch {
-          loading = true; error = ""
-          try {
-            val token = auth.currentUser?.getIdToken(true)?.await()?.token ?: throw IllegalStateException("Sesión vencida.")
-            AdminApi.call(token, "saveConfig", JSONObject().put("config", config))
-            error = "Configuración guardada correctamente."; refresh()
-          } catch (ex: Exception) { error = ex.message ?: "No se pudo guardar." }
-          finally { loading = false }
-        }
-      },
-      onSaveModule = { id, title, description, enabled ->
-        scope.launch {
-          loading = true; error = ""
-          try {
-            val token = auth.currentUser?.getIdToken(true)?.await()?.token ?: throw IllegalStateException("Sesión vencida.")
-            val module = JSONObject().put("title", title).put("description", description).put("enabled", enabled)
-            AdminApi.call(token, "saveModule", JSONObject().put("id", id).put("module", module))
-            error = "Módulo actualizado."; refresh()
-          } catch (ex: Exception) { error = ex.message ?: "No se pudo actualizar el módulo." }
-          finally { loading = false }
-        }
-      },
-      onInvite = { email ->
-        scope.launch {
-          loading = true; error = ""
-          try {
-            val token = auth.currentUser?.getIdToken(true)?.await()?.token ?: throw IllegalStateException("Sesión vencida.")
-            AdminApi.call(token, "createInvitation", JSONObject().put("email", email))
-            error = "Invitación registrada."; selected = "audit"
-          } catch (ex: Exception) { error = ex.message ?: "No se pudo crear la invitación." }
-          finally { loading = false }
-        }
+        auth.signOut()
+        user = null
+        payload = JSONObject()
+        error = ""
+        selected = "dashboard"
       }
     )
   }
@@ -248,9 +225,7 @@ private fun AdminLogin(onLogin: (String, String) -> Unit, onReset: (String) -> U
 @Composable
 private fun AdminHome(
   email: String, selected: String, payload: JSONObject, loading: Boolean, error: String,
-  onSelect: (String) -> Unit, onRefresh: () -> Unit, onLoadMore: () -> Unit, hasMore: Boolean, onSignOut: () -> Unit,
-  onSaveConfig: (JSONObject) -> Unit, onSaveModule: (String, String, String, Boolean) -> Unit,
-  onInvite: (String) -> Unit
+  onSelect: (String) -> Unit, onRefresh: () -> Unit, onLoadMore: () -> Unit, hasMore: Boolean, onSignOut: () -> Unit
 ) {
   val activeGroup = navGroups.firstOrNull { selected in it.tabIds } ?: navGroups.first()
   val activeTab = tabs.firstOrNull { it.id == selected }
@@ -364,9 +339,9 @@ private fun AdminHome(
       when (selected) {
         "dashboard" -> DashboardContent(payload, onSelect, onRefresh)
         "finance" -> FinanceContent(payload)
-        "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray(), onSaveModule)
-        "settings" -> ConfigContent(payload.optJSONObject("config") ?: JSONObject(), onSaveConfig)
-        "invitations" -> InvitationContent(payload.optJSONArray("items") ?: JSONArray(), onInvite)
+        "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray())
+        "settings" -> ConfigContent(payload.optJSONObject("config") ?: JSONObject())
+        "invitations" -> InvitationContent(payload.optJSONArray("items") ?: JSONArray())
         else -> RecordsContent(selected, payload.optJSONArray("items") ?: JSONArray(), hasMore, onLoadMore)
       }
     }
