@@ -493,12 +493,30 @@ async function finance(env) {
 async function handleAction(env, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
+    case "geoPresence":
     case "geoActivity": {
-      const [records, profiles] = await Promise.all([
-        queryRecentDocuments(env, "geoPresence", "updatedAt", 500),
-        recentDocuments(env, "users", 500)
-      ]);
+      const activeCutoff = Date.now() - 3 * 60 * 1000;
+      const received = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200);
+      const records = received.filter(record => {
+        const updatedAt = Date.parse(record.updatedAt || "");
+        return Number.isFinite(updatedAt) && updatedAt >= activeCutoff && updatedAt <= Date.now() + 60 * 1000;
+      });
+      const profileUids = [...new Set(records
+        .filter(record => record.consent === true && (!record.source || record.source === "GPS_ANDROID"))
+        .map(record => String(record.uid || record.id || "").trim())
+        .filter(Boolean))].slice(0, 200);
+      // Resolver perfiles por UID evita perder marcadores cuando el listado general de usuarios
+      // no incluye los documentos más recientes o usa una paginación distinta.
+      const profileResults = await Promise.allSettled(profileUids.map(uid =>
+        getDocument(env, "users", uid).then(document => document.missing ? null : documentData(document))
+      ));
+      const profiles = profileResults
+        .map((result, index) => ({ result, uid: profileUids[index] }))
+        .filter(item => item.result.status === "fulfilled" && item.result.value)
+        .map(item => ({ ...item.result.value, uid: item.uid }));
+      const profileLookupErrors = profileResults.filter(result => result.status === "rejected").length;
       const geo = aggregateGeoPresence(records, profiles);
+      const consented = records.filter(record => record.consent === true);
       return {
         geoActivity: geo.points,
         geoActivitySummary: {
@@ -506,8 +524,22 @@ async function handleAction(env, action, data) {
           visibleMarkers: geo.points.length,
           freshnessMinutes: geo.freshnessMinutes,
           coordinatePrecision: "GPS individual con consentimiento explícito",
-          sampleComplete: records.length < 500,
-          sourceAvailable: true
+          sampleComplete: received.length < 200,
+          sourceAvailable: true,
+          recordsReceived: received.length,
+          recentRecords: records.length,
+          consentedRecords: consented.length,
+          profilesRequested: profileUids.length,
+          profilesResolved: profiles.length,
+          profileLookupErrors,
+          invalidOrStaleRecords: Math.max(0, consented.length - geo.points.length)
+        },
+        diagnostics: {
+          source: "geoPresence",
+          presenceDocumentsRead: received.length,
+          profileDocumentsRead: profiles.length,
+          adminModule: "liveMap",
+          refreshedAt: new Date().toISOString()
         }
       };
     }
@@ -598,6 +630,7 @@ async function handleGeoPresenceRequest(request, env) {
     province: String(data.province || "").trim().slice(0, 80) || "Provincia no informada",
     country: String(data.country || "").trim().slice(0, 80) || "País no informado",
     consent: true,
+    source: "GPS_ANDROID",
     updatedAt: new Date().toISOString()
   });
   return json({ ok: true, result: { saved: true, precision: "gps-exact", accuracyMeters: Math.round(accuracyMeters) } });
