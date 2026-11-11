@@ -62,6 +62,12 @@ object MerchantProfileRepository {
             "minSpendDiscountThreshold" to store.minSpendDiscountThreshold,
             "minSpendDiscountPercent" to store.minSpendDiscountPercent,
             "specialOfferText" to store.specialOfferText,
+            "cashback" to mapOf(
+                "enabled" to store.cashbackEnabled,
+                "percentage" to store.cashbackPercent,
+                "capPerPurchase" to store.cashbackPerPurchaseCap,
+                "monthlyCap" to store.cashbackMonthlyCap
+            ),
             "comboDeals" to store.comboDeals.map { deal ->
                 mapOf(
                     "title" to deal.title,
@@ -180,6 +186,10 @@ object MerchantProfileRepository {
             minSpendDiscountThreshold = snapshot.getDouble("minSpendDiscountThreshold") ?: base.minSpendDiscountThreshold,
             minSpendDiscountPercent = (snapshot.getLong("minSpendDiscountPercent") ?: base.minSpendDiscountPercent.toLong()).toInt(),
             specialOfferText = snapshot.getString("specialOfferText") ?: base.specialOfferText,
+            cashbackEnabled = (snapshot.get("cashback") as? Map<*, *>)?.get("enabled") as? Boolean ?: false,
+            cashbackPercent = ((snapshot.get("cashback") as? Map<*, *>)?.get("percentage") as? Number)?.toDouble() ?: 0.0,
+            cashbackPerPurchaseCap = ((snapshot.get("cashback") as? Map<*, *>)?.get("capPerPurchase") as? Number)?.toDouble(),
+            cashbackMonthlyCap = ((snapshot.get("cashback") as? Map<*, *>)?.get("monthlyCap") as? Number)?.toDouble(),
             comboDeals = combos,
             inventory = products
         )
