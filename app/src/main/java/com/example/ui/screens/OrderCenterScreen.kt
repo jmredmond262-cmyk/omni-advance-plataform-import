@@ -227,8 +227,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     val total = cartLines.sumOf { it.price * it.quantity }
 
     fun submitOrder() {
-        if (uid.isBlank() || cartLines.isEmpty() || cartLines.size > 30 || total <= 0.0 || total > 500000.0 || (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())) {
-            feedback = "Revisá el pedido: máximo 30 productos distintos, total hasta OM$ 500.000 y dirección obligatoria para delivery."
+        if (uid.isBlank() || cartLines.isEmpty() || cartLines.size > 30 || total <= 0.0 || total > 50000.0 || (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())) {
+            feedback = "Revisá el pedido: máximo 30 productos distintos, total hasta OM$ 50.000 y dirección obligatoria para delivery."
             return
         }
         sending = true
@@ -283,7 +283,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             .addOnSuccessListener { doc ->
                 val order = decodeOrder(doc)
                 val createdAt = doc.getTimestamp("createdAt")?.toDate()?.time ?: 0L
-                val expired = createdAt == 0L || System.currentTimeMillis() - createdAt > 24L * 60L * 60L * 1000L
+                val expired = createdAt == 0L || System.currentTimeMillis() - createdAt >= 24L * 60L * 60L * 1000L
                 val itemsMatch = order != null &&
                     order.items.size == payload.items.size &&
                     order.items.zip(payload.items).all { (line, qrItem) ->
