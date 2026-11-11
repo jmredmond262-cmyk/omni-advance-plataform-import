@@ -1384,7 +1384,9 @@ class MainViewModel : ViewModel() {
                 result.onFailure { android.util.Log.w("MainViewModel", "Custom contact update failed", it) }
             }
         } else {
-            personalDataRepository.setContactFavorite(uid, contactId, updated.isFavorite) { result ->
+            personalDataRepository.setContactFavorite(
+                uid, contactId, updated.isFavorite, _favoriteContactIds.value
+            ) { result ->
                 result.onFailure { android.util.Log.w("MainViewModel", "Contact favorite update failed", it) }
             }
         }
