@@ -1330,7 +1330,7 @@ class MainViewModel : ViewModel() {
         val updated = current.copy(
             minSpendDiscountThreshold = threshold,
             minSpendDiscountPercent = percent,
-            specialOfferText = "$percent% de reintegro en canasta total superando los $${String.format("%,.0f", threshold)}"
+            specialOfferText = "$percent% de descuento en canasta total superando los ${String.format("%,.0f", threshold)}"
         )
         _managedStore.value = updated
         updateManagedStoreInCollections(updated)
