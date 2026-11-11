@@ -9,6 +9,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceError
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -22,10 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -44,17 +48,10 @@ private val MapMuted = Color(0xFF91A7C1)
 
 @Composable
 internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String, onRefresh: () -> Unit) {
-  val summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject()
-  val points = payload.optJSONArray("geoActivity") ?: JSONArray()
+  val points = remember(payload) { payload.optJSONArray("geoActivity") ?: JSONArray() }
+  val summary = payload.optJSONObject("geoActivitySummary")
   val pointsJson = points.toString()
-  val activeUsers = summary.optInt("activeUsers", points.length())
-
-  LaunchedEffect(Unit) {
-    while (true) {
-      delay(30_000L)
-      onRefresh()
-    }
-  }
+  val activeUsers = summary?.optInt("activeUsers", points.length()) ?: points.length()
 
   Column(
     Modifier.fillMaxSize().background(MapNavy).padding(10.dp),
@@ -70,10 +67,15 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
     ) {
       Icon(Icons.Default.Public, contentDescription = null, tint = MapCyan)
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("OMNI LIVE MAP", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
-        Text("Posiciones GPS individuales · actualización automática", color = MapMuted, fontSize = 9.sp)
+        Text("OMNI LIVE MAP · ACTIVIDAD REAL", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
+        Text("Ubicaciones GPS compartidas con consentimiento", color = MapMuted, fontSize = 9.sp)
       }
-      Text("$activeUsers EN LÍNEA", color = Color(0xFF65E9B7), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("$activeUsers USUARIOS", color = MapCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+        IconButton(onClick = onRefresh) {
+          Icon(Icons.Default.Refresh, contentDescription = "Actualizar ubicaciones", tint = MapCyan)
+        }
+      }
     }
     Box(
       Modifier.weight(1f).fillMaxWidth()
@@ -88,6 +90,16 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
               android.view.ViewGroup.LayoutParams.MATCH_PARENT
             )
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+            // Evita que un contenedor Android padre intercepte el gesto de arrastre del mapa.
+            setOnTouchListener { view, event ->
+              when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
+                  view.parent?.requestDisallowInterceptTouchEvent(true)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                  view.parent?.requestDisallowInterceptTouchEvent(false)
+              }
+              false
+            }
             addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
               val width = right - left
               val height = bottom - top
@@ -154,12 +166,24 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
       Icon(Icons.Default.MyLocation, contentDescription = null, tint = MapCyan)
       Column(Modifier.weight(1f)) {
         Text(
-          if (error.isNotBlank()) error else if (loading) "Actualizando posiciones…" else "$activeUsers usuarios con ubicación GPS vigente · precisión informada por dispositivo",
+          if (error.isNotBlank()) error
+          else if (loading) "Consultando posiciones GPS reales…"
+          else if (activeUsers > 0) "$activeUsers usuarios con ubicación real y reciente"
+          else "No hay usuarios compartiendo ubicación ahora. Cada persona debe autorizar y activar el uso compartido.",
           color = if (error.isNotBlank()) Color(0xFFFF9B9B) else MapMuted,
           fontSize = 9.sp
         )
-        Text("Solo cuentas que autorizaron compartir ubicación precisa mientras OMNI está abierta.", color = MapMuted, fontSize = 8.sp)
-        Text("Cada color identifica una cuenta distinta · tocá un punto para ver su ficha y última actualización.", color = MapMuted, fontSize = 8.sp)
+        Text("Solo se muestran ubicaciones recientes de cuentas que aceptaron compartir su GPS.", color = MapMuted, fontSize = 8.sp)
+        val received = summary?.optInt("recordsReceived", points.length()) ?: points.length()
+        val gps = summary?.optInt("gpsRecords", received) ?: received
+        val missingNames = summary?.optInt("profilesMissing", 0) ?: 0
+        Text(
+          "$received registros recibidos · $gps fuentes GPS · $activeUsers posiciones activas",
+          color = MapCyan, fontSize = 8.sp
+        )
+        if (missingNames > 0) {
+          Text("$missingNames perfiles activos todavía no tienen un nombre registrado en OMNI.", color = Color(0xFFFFC66D), fontSize = 8.sp)
+        }
       }
     }
   }
@@ -177,22 +201,16 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
 #map{position:fixed;top:0;right:0;bottom:0;left:0;display:block;width:100vw;height:100vh;min-width:100%;min-height:100%;overflow:hidden;background:#06101f;isolation:isolate}
 #map .maplibregl-canvas-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:1!important;pointer-events:auto!important;touch-action:none!important;-webkit-user-select:none!important;user-select:none!important}
 #map .maplibregl-canvas{position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;opacity:1!important;visibility:visible!important;z-index:1!important;pointer-events:auto!important;touch-action:none!important}
-#map .maplibregl-control-container{position:absolute;inset:0;z-index:3;pointer-events:none!important}\n#map .maplibregl-ctrl-top-right,#map .maplibregl-ctrl-top-left,#map .maplibregl-ctrl-bottom-right,#map .maplibregl-ctrl-bottom-left,#map .maplibregl-ctrl-group{pointer-events:auto!important}
+#map .maplibregl-control-container{position:absolute;inset:0;z-index:3;pointer-events:none!important}
+#map .maplibregl-ctrl-top-right,#map .maplibregl-ctrl-top-left,#map .maplibregl-ctrl-bottom-right,#map .maplibregl-ctrl-bottom-left,#map .maplibregl-ctrl-group{pointer-events:auto!important}
 .maplibregl-ctrl-group{background:#0b2034!important;border:1px solid #00bcd4!important;box-shadow:0 0 12px #00bcd455!important}
 .maplibregl-ctrl button span{filter:invert(1) sepia(1) saturate(5) hue-rotate(140deg)}
 .maplibregl-ctrl-attrib{background:#071426dd!important;color:#8faec4!important}
 .maplibregl-ctrl-attrib a{color:#00e5ff!important}
-.omni-user-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffffff 0 10%,#8cffff 18%,#00e5ff 52%,#007caa 100%);border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 12px #00e5ff,0 0 25px #00dfff;position:relative;box-sizing:border-box;cursor:pointer}.omni-user-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}
-.omni-user-marker[data-color="green"]{background:radial-gradient(circle at 35% 30%,#fff 0 10%,#a9ffd9 18%,#28dfa2 52%,#08734f 100%);border-color:#eafff5;box-shadow:0 0 0 5px #28dfa235,0 0 12px #28dfa2,0 0 25px #28dfa2}
-.omni-user-marker[data-color="green"]:after{border-color:#28dfa2}
-.omni-user-marker[data-color="orange"]{background:radial-gradient(circle at 35% 30%,#fff 0 10%,#ffe1a6 18%,#ffb547 52%,#9b5b12 100%);box-shadow:0 0 0 5px #ffb54735,0 0 12px #ffb547,0 0 25px #ffb547}
-.omni-user-marker[data-color="orange"]:after{border-color:#ffb547}
-.omni-user-marker[data-color="violet"]{background:radial-gradient(circle at 35% 30%,#fff 0 10%,#d9c8ff 18%,#9b78ff 52%,#5134a6 100%);box-shadow:0 0 0 5px #9b78ff35,0 0 12px #9b78ff,0 0 25px #9b78ff}
-.omni-user-marker[data-color="violet"]:after{border-color:#9b78ff}
-.omni-user-marker[data-color="pink"]{background:radial-gradient(circle at 35% 30%,#fff 0 10%,#ffc1dc 18%,#ff5c9a 52%,#9e2455 100%);box-shadow:0 0 0 5px #ff5c9a35,0 0 12px #ff5c9a,0 0 25px #ff5c9a}
-.omni-user-marker[data-color="pink"]:after{border-color:#ff5c9a}
-.omni-user-marker[data-color="blue"]{background:radial-gradient(circle at 35% 30%,#fff 0 10%,#b9d7ff 18%,#4d9cff 52%,#164a9a 100%);box-shadow:0 0 0 5px #4d9cff35,0 0 12px #4d9cff,0 0 25px #4d9cff}
-.omni-user-marker[data-color="blue"]:after{border-color:#4d9cff}.omni-cluster-marker{width:38px;height:38px;border-radius:50%;border:2px solid #d9ffff;background:radial-gradient(circle at 35% 28%,#36faff 0,#00aeca 45%,#064c70 100%);color:#fff;font:900 13px Arial;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 7px #00e5ff35,0 0 16px #00e5ff,0 0 32px #00cfff;cursor:pointer;position:relative;text-shadow:0 0 7px #002b42;outline:none;padding:0}.omni-cluster-marker:after{content:'';position:absolute;inset:-9px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 2s ease-out infinite;pointer-events:none}.omni-cluster-marker:active{transform:scale(.94)}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
+#map .maplibregl-marker-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:4!important;pointer-events:none!important}
+#map .maplibregl-marker{z-index:5!important;pointer-events:auto!important;visibility:visible!important;opacity:1!important}
+#map .maplibregl-popup{z-index:7!important}
+.omni-user-marker{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffffff 0 10%,#8cffff 18%,#00e5ff 52%,#007caa 100%);border:2px solid #e8fdff;box-shadow:0 0 0 5px #00e5ff35,0 0 12px #00e5ff,0 0 25px #00dfff;position:relative;box-sizing:border-box;cursor:pointer}.omni-user-marker:after{content:'';position:absolute;inset:-8px;border:1.5px solid #00e5ff;border-radius:50%;animation:omniPulse 1.8s ease-out infinite;pointer-events:none}.omni-cluster-marker{width:38px;height:38px;border-radius:50%;border:2px solid #d9ffff;background:radial-gradient(circle at 35% 28%,#36faff 0,#00aeca 45%,#064c70 100%);color:#fff;font:900 13px Arial;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 7px #00e5ff35,0 0 16px #00e5ff,0 0 32px #00cfff;cursor:pointer;position:relative;text-shadow:0 0 7px #002b42;outline:none;padding:0}.omni-cluster-marker:after{content:'';position:absolute;inset:-9px;border:1px solid #00e5ff;border-radius:50%;animation:omniPulse 2s ease-out infinite;pointer-events:none}.omni-cluster-marker:active{transform:scale(.94)}@keyframes omniPulse{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.8);opacity:0}}.maplibregl-popup-content{background:#071a2c;color:#eafaff;border:1px solid #00cde8;border-radius:10px;box-shadow:0 0 18px #00dfff55;font:12px Arial;padding:10px 12px}.maplibregl-popup-tip{border-top-color:#071a2c!important;border-bottom-color:#071a2c!important}.omni-popup-title{font-weight:700;color:#00e5ff;margin-bottom:5px}.omni-popup-meta{color:#c4d7e7;line-height:1.5}#status{position:absolute;left:10px;top:10px;z-index:5;max-width:calc(100% - 40px);padding:7px 10px;border:1px solid #00dfff;border-radius:9px;background:#061526ee;color:#65e9b7;font:700 10px Arial;letter-spacing:.5px;box-shadow:0 0 14px #00dfff44;white-space:normal}
 </style>
 </head>
 <body>
@@ -267,17 +285,12 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      const updated=window.omniEscapeHtml(point.updatedAt||'');
      const timeText=updated?new Date(updated).toLocaleString('es-AR'):'Sin hora informada';
      const lat=Number(point.latitude),lon=Number(point.longitude),accuracy=Number(point.accuracyMeters);
-     return '<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+lat.toFixed(6)+', '+lon.toFixed(6)+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● EN LÍNEA</span></div>';
-   };
-   window.omniAddUserMarker=function(point,offset){
+     return '<div class="omni-popup-title">'+label+'</div><div class="omni-popup-meta">'+locality+'<br>Coordenadas: '+lat.toFixed(6)+', '+lon.toFixed(6)+'<br>Precisión GPS: '+(Number.isFinite(accuracy)?Math.round(accuracy)+' m':'No informada')+'<br>Actualizado: '+timeText+'<br><span style="color:#65e9b7">● UBICACIÓN REAL · EN LÍNEA</span></div>';
+    };
+    window.omniAddUserMarker=function(point,offset){
      const uid=String(point.uid||'');
      const element=document.createElement('div');
      element.className='omni-user-marker';
-     const palette=['cyan','green','orange','violet','pink','blue'];
-     const uidForColor=String(point.uid||'');
-     let colorHash=0;
-     for(let i=0;i<uidForColor.length;i++)colorHash=((colorHash*31)+uidForColor.charCodeAt(i))|0;
-     element.dataset.color=palette[Math.abs(colorHash%palette.length)];
      element.setAttribute('aria-label',point.userLabel||'Usuario OMNI');
      const popup=new maplibregl.Popup({offset:18,closeButton:true,closeOnClick:false}).setHTML(window.omniPopupHtml(point));
      const marker=new maplibregl.Marker({element:element,anchor:'center',offset:offset||[0,0]})
@@ -285,12 +298,14 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      window.omniPresenceMarkers.set(uid,{marker:marker,popup:popup});
    };
    window.omniRenderPresence=function(){
-     if(!map.loaded())return;
+     if(!map)return;
      window.omniClearRenderedMarkers();
      const valid=window.omniPresenceData.filter(function(p){
        const lat=Number(p.latitude),lon=Number(p.longitude);
-       return String(p.uid||'')&&Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
+       return String(p.uid||'')&&p.status==='online'&&p.source!=='DEMO'&&Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
      });
+     // Agrupar todos los puntos por proximidad visual, incluidos los DEMO.
+     // Así la prueba reproduce el mismo comportamiento que tendrá el mapa real.
      const projected=valid.map(function(point){return {point:point,pixel:map.project([Number(point.longitude),Number(point.latitude)])};});
      const groups=[];
      const radius=48;
@@ -326,7 +341,8 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
        const center=group.items.reduce(function(sum,item){return [sum[0]+Number(item.point.longitude),sum[1]+Number(item.point.latitude)];},[0,0]);
        center[0]/=group.items.length;center[1]/=group.items.length;
        const element=document.createElement('button');
-       element.type='button';element.className='omni-cluster-marker';
+       element.type='button';
+       element.className='omni-cluster-marker';
        element.textContent=String(group.items.length);
        element.setAttribute('aria-label',group.items.length+' usuarios agrupados');
        element.title=group.items.length+' usuarios detectados · acercar para separar';
@@ -344,9 +360,9 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      });
    };
    window.omniSetPresence=function(points){
-     points=Array.isArray(points)?points:[];
-     window.omniPresenceData=points.slice();
-     if(!map.loaded())return;
+     points=Array.isArray(points)?points.filter(function(point){return point&&point.source!=='DEMO'&&point.status==='online';}):[];
+      window.omniPresenceData=points.slice();
+     if(!map)return;
      window.omniRenderPresence();
      if(!window.omniHasFitPresence && window.omniPresenceData.length){
        const valid=window.omniPresenceData.filter(function(p){return Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude));});
