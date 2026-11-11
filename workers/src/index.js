@@ -225,7 +225,8 @@ function aggregateGeoPresence(records, profiles) {
       country: String(record.country || "País no informado").trim().slice(0, 80),
       updatedAt: record.updatedAt,
       locationTime: record.locationTime || record.updatedAt,
-      status: "online"
+      status: "online",
+      source: "GPS_ANDROID"
     });
   }
   return { points, activeUsers, freshnessMinutes: 3 };
@@ -527,10 +528,12 @@ async function handleAction(env, action, data) {
           sampleComplete: received.length < 200,
           sourceAvailable: true,
           recordsReceived: received.length,
+          gpsRecords: received.filter(record => !record.source || record.source === "GPS_ANDROID").length,
           recentRecords: records.length,
           consentedRecords: consented.length,
           profilesRequested: profileUids.length,
           profilesResolved: profiles.length,
+          profilesMissing: Math.max(0, profileUids.length - profiles.length),
           profileLookupErrors,
           invalidOrStaleRecords: Math.max(0, consented.length - geo.points.length)
         },
