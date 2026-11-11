@@ -4,39 +4,34 @@ OMNI Admin es una aplicación Android independiente del cliente OMNI.
 
 ## Compilación
 - Módulo: `:admin`
-- Application ID: `com.omni.admin`
+- Application ID: `com.omni.adminpanel`
 - APK debug: `admin/build/outputs/apk/debug/admin-debug.apk`
-- CI compila y publica primero OMNI y luego OMNI Admin en pasos separados para aislar fallas y conservar el artefacto de OMNI si Admin falla.
-- Firebase: reutiliza las credenciales del proyecto OMNI mediante el secreto `FIREBASE_GOOGLE_SERVICES_JSON_BASE64` de GitHub Actions. CI genera `firebase_config.xml` con XML válido antes de compilar Admin. Si falta el secreto, el flujo se detiene para evitar entregar una APK que no pueda conectarse.
-- La inicialización de Firebase se comprueba en `MainActivity` antes de entrar en Compose; la autorización exige `enabled: true` explícito y rol `owner` o `admin`.
+- La firma de depuración se comparte con la identidad persistente de OMNI para permitir actualizaciones sobre la instalación existente.
+- Firebase Authentication usa el proyecto administrativo independiente configurado por `OMNI_ADMIN_AUTH_PROJECT_ID`.
+- GitHub Actions genera `admin/google-services.json` desde `OMNI_ADMIN_GOOGLE_SERVICES_JSON_BASE64` y valida que el paquete sea `com.omni.adminpanel`.
 
-## Acceso administrativo
-1. Crear o habilitar el usuario desde Firebase Authentication (correo/contraseña).
-2. En Firestore crear manualmente `systemAdmins/{UID}` con:
-   ```json
-   { "role": "owner", "enabled": true }
-   ```
-3. No se permite crear ni elevar privilegios desde la aplicación.
-4. El documento de autorización no debe exponerse en reglas de escritura a clientes.
+## Arquitectura de acceso
+1. El administrador inicia sesión con Email/Password en el proyecto Firebase administrativo.
+2. El Cloudflare Worker `omni-admin-api` verifica el ID token contra ese proyecto.
+3. El Worker consulta `systemAdmins/{UID}` en el Firestore principal `omni-57f69` mediante la cuenta de servicio almacenada en Cloudflare.
+4. La autorización exige `enabled: true` y rol `owner` o `admin`.
+5. El cliente Android no incluye credenciales de servicio ni acceso directo a Firestore.
 
-## Primera entrega
-- Inicio de sesión Firebase Auth.
-- Verificación de autorización contra `systemAdmins/{uid}`.
-- Resumen de perfiles, billeteras, saldo DEMO, operaciones, comercios, pedidos y eventos.
-- Listado inicial de usuarios y operaciones.
-- Catálogo inicial de módulos.
-- Lectura y almacenamiento de parámetros administrativos con auditoría básica.
+## Permisos del panel
+- Panel ejecutivo, finanzas DEMO, cuentas, operaciones, comercios, pedidos, eventos, perfiles, opiniones, telemetría y auditoría: solo lectura.
+- Módulos, parámetros globales e invitaciones: solo lectura.
+- Recuperación de contraseña: se realiza mediante Firebase Authentication.
+- No se crean invitaciones, no se editan módulos ni se modifica configuración desde OMNI Admin.
+- Las cuentas de autorización `systemAdmins` se aprovisionan manualmente por el propietario.
 
-## Límites conocidos de esta iteración
-- Las consultas se limitan a 500 documentos por colección; los indicadores se presentan como datos consultados, no como conteos ilimitados.
-- La configuración guardada en `adminConfig/global` todavía no controla los límites ni el modo mantenimiento de OMNI Android. Requiere integración del lado del cliente y reglas financieras coordinadas antes de aplicar cambios operativos.
-- La telemetría `usageEvents` queda habilitada en reglas, pero los eventos deben incorporarse en cada módulo Android.
-- No hay movimientos reales de dinero: OMNI Pay permanece en modo DEMO.
-- No se utiliza Cloud Functions ni servicios pagos.
+## API
+- Endpoint usado por Android: `https://omni-admin-api.jmredmond262.workers.dev`.
+- El Worker de Cloudflare es la API canónica del panel.
+- `functions/src/adminApi.ts` se conserva como endpoint legado de solo lectura; Android no lo invoca. No desplegar esa API en paralelo.
+- El endpoint `/geo-presence` del Worker es independiente del panel y recibe únicamente la presencia aproximada autorizada por OMNI Principal.
 
-## Colecciones
-- `systemAdmins`: autorización administrativa, aprovisionada manualmente.
-- `adminConfig/global`: parámetros administrados.
-- `adminAuditLogs`: auditoría de cambios administrativos.
-- `usageEvents`: telemetría mínima de módulos.
-- `appFeedback`: comentarios de participantes.
+## Límites
+- No se habilitan operaciones de dinero real.
+- Los saldos y pagos de OMNI Pay siguen siendo DEMO.
+- La ubicación administrativa utiliza la información aproximada que el usuario autorizó compartir; no concede al panel acceso a la ubicación precisa del dispositivo.
+- Los cambios de reglas y servicios requieren publicación explícita; esta rama solo prepara el código.
