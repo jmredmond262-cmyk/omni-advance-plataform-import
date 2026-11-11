@@ -646,6 +646,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             order, merchantMode = false,
                             onAdvance = { next -> if (next == "CANCELADO") cancelCustomerOrder(order) },
                             onPay = { payOrderDemo(order) },
+                            onPayWithDemoCard = if (order.environment == "DEMO") ({ selectedCardOrder = order }) else null,
                             paying = payingOrderId == order.id
                         )
                     }
