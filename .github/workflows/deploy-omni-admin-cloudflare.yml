@@ -11,10 +11,10 @@ jobs:
     name: Deploy secure OMNI Admin API
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout OMNI Admin branch
+      - name: Checkout selected workflow branch
         uses: actions/checkout@v4
         with:
-          ref: omni-advance-1.4
+          ref: ${{ github.ref }}
 
       - name: Configure Node
         uses: actions/setup-node@v4
@@ -26,11 +26,14 @@ jobs:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.OMNI_PRIMARY_FIREBASE_SERVICE_ACCOUNT_BASE64 }}
+          ADMIN_AUTH_PROJECT_ID: ${{ secrets.OMNI_ADMIN_AUTH_PROJECT_ID }}
         run: |
           test -n "$CF_TOKEN" || { echo "::error::Falta CLOUDFLARE_API_TOKEN"; exit 1; }
           test -n "$CF_ACCOUNT" || { echo "::error::Falta CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           test -n "$FIREBASE_SERVICE_ACCOUNT" || { echo "::error::Falta OMNI_PRIMARY_FIREBASE_SERVICE_ACCOUNT_BASE64"; exit 1; }
-          echo "Credenciales requeridas presentes."
+          test -n "$ADMIN_AUTH_PROJECT_ID" || { echo "::error::Falta OMNI_ADMIN_AUTH_PROJECT_ID"; exit 1; }
+          grep -Fq "const ADMIN_AUTH_PROJECT = \"$ADMIN_AUTH_PROJECT_ID\";" workers/src/index.js || { echo "::error::El Worker y el proyecto de autenticación administrativa no coinciden."; exit 1; }
+          echo "Credenciales y proyecto de autenticación administrativa validados."
 
       - name: Install Wrangler
         run: npm install --global wrangler@4

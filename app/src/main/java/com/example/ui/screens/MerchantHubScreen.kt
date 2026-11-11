@@ -228,6 +228,15 @@ fun MerchantHubScreen(
     // Campos regla de descuento
     var thresholdAmount by remember { mutableStateOf("${store.minSpendDiscountThreshold.toInt()}") }
     var thresholdPercent by remember { mutableStateOf("${store.minSpendDiscountPercent}") }
+    var showCashbackDialog by remember { mutableStateOf(false) }
+    var cashbackPercentInput by remember { mutableStateOf(store.cashbackPercent.toString()) }
+    var cashbackPurchaseCapInput by remember { mutableStateOf(store.cashbackPerPurchaseCap?.toString().orEmpty()) }
+    var cashbackMonthlyCapInput by remember { mutableStateOf(store.cashbackMonthlyCap?.toString().orEmpty()) }
+    LaunchedEffect(store.cashbackEnabled, store.cashbackPercent, store.cashbackPerPurchaseCap, store.cashbackMonthlyCap) {
+        cashbackPercentInput = store.cashbackPercent.toString()
+        cashbackPurchaseCapInput = store.cashbackPerPurchaseCap?.toString().orEmpty()
+        cashbackMonthlyCapInput = store.cashbackMonthlyCap?.toString().orEmpty()
+    }
 
     BackHandler {
         viewModel.navigateTo(Screen.UserProfile)
@@ -751,6 +760,59 @@ fun MerchantHubScreen(
                 }
             }
         }
+
+        // Cashback independiente del comercio
+        item {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = AmberDealContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Cashback del comercio", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = SlateNavy)
+                            Text(
+                                if (store.cashbackEnabled) "Política activa: ${store.cashbackPercent}% de reintegro configurado" else "Beneficio desactivado",
+                                fontSize = 12.sp, color = SlateNavy
+                            )
+                        }
+                        Switch(
+                            checked = store.cashbackEnabled,
+                            onCheckedChange = { enabled ->
+                                if (enabled && store.cashbackPercent <= 0.0) {
+                                    showCashbackDialog = true
+                                } else {
+                                    viewModel.updateCashbackPolicy(
+                                        enabled, store.cashbackPercent,
+                                        store.cashbackPerPurchaseCap, store.cashbackMonthlyCap
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val cashbackLimits = buildList {
+                        store.cashbackPerPurchaseCap?.let { add("tope por compra OM$ ${String.format("%,.2f", it)}") }
+                        store.cashbackMonthlyCap?.let { add("tope mensual OM$ ${String.format("%,.2f", it)}") }
+                    }
+                    Text(
+                        text = if (cashbackLimits.isEmpty()) "Sin topes configurados." else cashbackLimits.joinToString(" · ", prefix = "Límites: "),
+                        fontSize = 11.sp, color = SlateNavy
+                    )
+                    Text(
+                        "La política se guarda para informar las condiciones. El crédito automático aún no se ejecuta hasta completar su validación transaccional segura.",
+                        fontSize = 10.sp, color = SlateNavy
+                    )
+                    TextButton(onClick = { showCashbackDialog = true }) { Text("Configurar cashback") }
+                }
+            }
+        }
+
 
         // Catálogo de Productos del Local
         item {
@@ -1331,6 +1393,51 @@ fun MerchantHubScreen(
             dismissButton = {
                 TextButton(onClick = { showPublishNewsDialog = false }) { Text("Cancelar") }
             }
+        )
+    }
+
+    if (showCashbackDialog) {
+        AlertDialog(
+            onDismissRequest = { showCashbackDialog = false },
+            title = { Text("Política de cashback del comercio") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Definí el porcentaje y los límites que este comercio ofrecerá. Dejá un tope vacío si no querés limitarlo.", fontSize = 12.sp)
+                    OutlinedTextField(
+                        value = cashbackPercentInput, onValueChange = { cashbackPercentInput = it },
+                        label = { Text("Porcentaje de cashback (%)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = cashbackPurchaseCapInput, onValueChange = { cashbackPurchaseCapInput = it },
+                        label = { Text("Tope por compra (OM$) · opcional") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = cashbackMonthlyCapInput, onValueChange = { cashbackMonthlyCapInput = it },
+                        label = { Text("Tope mensual (OM$) · opcional") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("El cashback no se suma al saldo por ahora: primero debe quedar protegido contra duplicados, cambios de precio y exceso de topes.", fontSize = 11.sp, color = SlateNavy)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val percent = cashbackPercentInput.replace(',', '.').toDoubleOrNull()
+                    val purchaseCap = cashbackPurchaseCapInput.trim().takeIf { it.isNotEmpty() }?.replace(',', '.')?.toDoubleOrNull()
+                    val monthlyCap = cashbackMonthlyCapInput.trim().takeIf { it.isNotEmpty() }?.replace(',', '.')?.toDoubleOrNull()
+                    val validCaps = (cashbackPurchaseCapInput.isBlank() || (purchaseCap != null && purchaseCap > 0.0)) &&
+                        (cashbackMonthlyCapInput.isBlank() || (monthlyCap != null && monthlyCap > 0.0))
+                    if (percent != null && percent > 0.0 && percent <= 100.0 && validCaps) {
+                        viewModel.updateCashbackPolicy(true, percent, purchaseCap, monthlyCap)
+                        showCashbackDialog = false
+                    }
+                }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)) { Text("Guardar política") }
+            },
+            dismissButton = { TextButton(onClick = { showCashbackDialog = false }) { Text("Cancelar") } }
         )
     }
 

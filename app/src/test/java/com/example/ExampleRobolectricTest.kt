@@ -1,6 +1,7 @@
 package com.example
 
 import android.content.Context
+import com.google.firebase.FirebaseApp
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -31,16 +32,17 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `verify farmacia de turno and schedule configuration`() {
+    fun `verify managed store schedule configuration`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        if (FirebaseApp.getApps(context).isEmpty()) {
+            checkNotNull(FirebaseApp.initializeApp(context)) { "Firebase test configuration is unavailable" }
+        }
         val viewModel = com.example.ui.MainViewModel()
-        val stores = viewModel.stores.value
-        val pharmacy = stores.firstOrNull { it.type == com.example.model.StoreType.FARMACIA }
-        
-        assertNotNull(pharmacy)
-        assertEquals(true, pharmacy?.isOnDuty)
-        assertEquals(true, pharmacy?.is24Hours)
+        assertNotNull(viewModel.managedStore.value)
 
-        // Test updating schedule through merchant hub
+        // The public real-merchant directory intentionally starts empty until a
+        // live catalog is loaded. Schedule editing belongs to the managed store,
+        // so this test must not depend on a demo pharmacy in the public directory.
         viewModel.updateManagedStoreSchedule(
             openTime = "07:30",
             closeTime = "22:00",

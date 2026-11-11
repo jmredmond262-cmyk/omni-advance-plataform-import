@@ -17,7 +17,10 @@ data class DigitalReceipt(
     val discountApplied: Double,
     val total: Double,
     val paymentMethod: String,
-    val qrVerificationCode: String
+    val qrVerificationCode: String,
+    val environment: String = "DEMO",
+    val fiscalValidity: Boolean = false,
+    val validationStatus: String = "SIMULATED"
 )
 
 data class TouristAttraction(

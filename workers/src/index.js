@@ -148,6 +148,15 @@ async function recentDocuments(env, collection, limit = 8, offset = 0) {
   const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
+async function queryRecentDocuments(env, collection, orderField, limit) {
+  const structuredQuery = {
+    from: [{ collectionId: collection }],
+    orderBy: [{ field: { fieldPath: orderField }, direction: "DESCENDING" }],
+    limit: Math.min(Math.max(Number(limit) || 100, 1), 1000)
+  };
+  const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
+  return (rows || []).filter(row => row.document).map(row => documentData(row.document));
+}
 async function usageEventsLast7Days(env) {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const structuredQuery = {
@@ -175,19 +184,6 @@ async function writeDocument(env, collection, id, data, merge = true) {
     method: "PATCH", body: JSON.stringify({ fields: encodeFields(data) })
   });
 }
-async function addDocument(env, collection, data) {
-  const id = crypto.randomUUID();
-  await firestore(env, "/" + encodeURIComponent(collection) + "?documentId=" + id, {
-    method: "POST", body: JSON.stringify({ fields: encodeFields(data) })
-  });
-  return id;
-}
-async function audit(env, actor, action, target, details = {}) {
-  await addDocument(env, "adminAuditLogs", {
-    actorUid: actor.uid, actorEmail: actor.email, action, target, details,
-    createdAt: new Date().toISOString()
-  });
-}
 function userLabels(profiles) {
   return new Map(profiles.map(profile => [
     String(profile.uid || profile.id || ""),
@@ -198,41 +194,42 @@ function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
-function aggregateGeoPresence(records) {
-  const buckets = new Map();
+// Live map feed: individual GPS positions only while the account has explicitly enabled sharing.
+function aggregateGeoPresence(records, profiles) {
+  const labels = userLabels(profiles);
   const now = Date.now();
-  let freshUsers = 0;
+  const points = [];
+  let activeUsers = 0;
   for (const record of records) {
     if (record.consent !== true) continue;
     const updatedAt = Date.parse(record.updatedAt || "");
-    if (!Number.isFinite(updatedAt) || now - updatedAt > 24 * 60 * 60 * 1000 || updatedAt > now + 5 * 60 * 1000) continue;
+    if (!Number.isFinite(updatedAt) || now - updatedAt > 3 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
     const uid = String(record.uid || record.id || "");
-    const lat = Number(record.latitude);
-    const lon = Number(record.longitude);
-    if (!uid || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
-    // Reject precise coordinates: this collection is reserved for the app's ~1 km privacy grid.
-    if (Math.abs(lat * 100 - Math.round(lat * 100)) > 0.00001 ||
-        Math.abs(lon * 100 - Math.round(lon * 100)) > 0.00001) continue;
-    freshUsers += 1;
-    const locality = String(record.locality || "Localidad no informada").trim().slice(0, 80);
-    const province = String(record.province || "Provincia no informada").trim().slice(0, 80);
-    const country = String(record.country || "País no informado").trim().slice(0, 80);
-    const key = lat.toFixed(2) + "," + lon.toFixed(2) + "|" + locality.toLowerCase() + "|" + province.toLowerCase();
-    const current = buckets.get(key) || {
-      latitude: lat, longitude: lon, locality, province, country, users: new Set()
-    };
-    current.users.add(uid);
-    buckets.set(key, current);
+    const latitude = Number(record.latitude);
+    const longitude = Number(record.longitude);
+    const accuracyMeters = Number(record.accuracyMeters);
+    if (!uid || !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+        Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
+        !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000) continue;
+    const locationTime = Number(record.locationTimeMillis || Date.parse(record.locationTime || record.updatedAt || ""));
+    if (!Number.isFinite(locationTime) || now - locationTime > 5 * 60 * 1000 || locationTime > now + 60 * 1000) continue;
+    activeUsers += 1;
+    points.push({
+      uid,
+      userLabel: labels.get(uid) || ("Cuenta OMNI · " + uid.slice(0, 8)),
+      latitude,
+      longitude,
+      accuracyMeters: Math.round(accuracyMeters),
+      locality: String(record.locality || "Localidad no informada").trim().slice(0, 80),
+      province: String(record.province || "Provincia no informada").trim().slice(0, 80),
+      country: String(record.country || "País no informado").trim().slice(0, 80),
+      updatedAt: record.updatedAt,
+      locationTime: record.locationTime || record.updatedAt,
+      status: "online",
+      source: "GPS_ANDROID"
+    });
   }
-  // A map marker is emitted only when at least three distinct accounts share the same area.
-  const points = [...buckets.values()]
-    .filter(point => point.users.size >= 3)
-    .map(point => ({
-      latitude: point.latitude, longitude: point.longitude,
-      locality: point.locality, province: point.province, country: point.country,
-      count: point.users.size
-    }));
-  return { points, freshUsers, privacyThreshold: 3, freshnessHours: 24 };
+  return { points, activeUsers, freshnessMinutes: 3 };
 }
 
 function summarizeUsage(events) {
@@ -383,7 +380,7 @@ async function dashboard(env) {
     count: usageByDay[day]
   }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoPresencePage.items);
+  const geoActivity = aggregateGeoPresence(geoPresencePage.items, userProfiles);
   return {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
@@ -396,10 +393,10 @@ async function dashboard(env) {
     recentUsers, recentOperations: operations,
     geoActivity: geoActivity.points,
     geoActivitySummary: {
-      consentedUsersFresh24h: geoActivity.freshUsers,
-      visibleAreas: geoActivity.points.length,
-      privacyThreshold: geoActivity.privacyThreshold,
-      freshnessHours: geoActivity.freshnessHours,
+      activeUsers: geoActivity.activeUsers,
+      visibleMarkers: geoActivity.points.length,
+      freshnessMinutes: geoActivity.freshnessMinutes,
+      coordinatePrecision: "GPS individual con consentimiento explícito",
       sampleComplete: geoPresencePage.complete
     },
     recentUsageEvents: attachUserLabels(usageEvents.filter(event => event.event !== "DIAGNOSTIC_TEST").slice(0, 8), userProfiles),
@@ -494,9 +491,61 @@ async function finance(env) {
   };
 }
 
-async function handleAction(env, actor, action, data) {
+async function handleAction(env, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
+    case "geoPresence":
+    case "geoActivity": {
+      const activeCutoff = Date.now() - 3 * 60 * 1000;
+      const received = await queryRecentDocuments(env, "geoPresence", "updatedAt", 200);
+      const records = received.filter(record => {
+        const updatedAt = Date.parse(record.updatedAt || "");
+        return Number.isFinite(updatedAt) && updatedAt >= activeCutoff && updatedAt <= Date.now() + 60 * 1000;
+      });
+      const profileUids = [...new Set(records
+        .filter(record => record.consent === true && (!record.source || record.source === "GPS_ANDROID"))
+        .map(record => String(record.uid || record.id || "").trim())
+        .filter(Boolean))].slice(0, 200);
+      // Resolver perfiles por UID evita perder marcadores cuando el listado general de usuarios
+      // no incluye los documentos más recientes o usa una paginación distinta.
+      const profileResults = await Promise.allSettled(profileUids.map(uid =>
+        getDocument(env, "users", uid).then(document => document.missing ? null : documentData(document))
+      ));
+      const profiles = profileResults
+        .map((result, index) => ({ result, uid: profileUids[index] }))
+        .filter(item => item.result.status === "fulfilled" && item.result.value)
+        .map(item => ({ ...item.result.value, uid: item.uid }));
+      const profileLookupErrors = profileResults.filter(result => result.status === "rejected").length;
+      const geo = aggregateGeoPresence(records, profiles);
+      const consented = records.filter(record => record.consent === true);
+      return {
+        geoActivity: geo.points,
+        geoActivitySummary: {
+          activeUsers: geo.activeUsers,
+          visibleMarkers: geo.points.length,
+          freshnessMinutes: geo.freshnessMinutes,
+          coordinatePrecision: "GPS individual con consentimiento explícito",
+          sampleComplete: received.length < 200,
+          sourceAvailable: true,
+          recordsReceived: received.length,
+          gpsRecords: received.filter(record => !record.source || record.source === "GPS_ANDROID").length,
+          recentRecords: records.length,
+          consentedRecords: consented.length,
+          profilesRequested: profileUids.length,
+          profilesResolved: profiles.length,
+          profilesMissing: Math.max(0, profileUids.length - profiles.length),
+          profileLookupErrors,
+          invalidOrStaleRecords: Math.max(0, consented.length - geo.points.length)
+        },
+        diagnostics: {
+          source: "geoPresence",
+          presenceDocumentsRead: received.length,
+          profileDocumentsRead: profiles.length,
+          adminModule: "liveMap",
+          refreshedAt: new Date().toISOString()
+        }
+      };
+    }
     case "finance": return finance(env);
     case "list": {
       const collection = String(data.collection || "");
@@ -548,33 +597,6 @@ async function handleAction(env, actor, action, data) {
       const snap = await getDocument(env, "adminConfig", "global");
       return { config: snap.missing ? {} : decodeFields(snap.fields || {}) };
     }
-    case "saveConfig": {
-      if (actor.role !== "owner") throw new ApiError(403, "permission-denied", "Solo el propietario puede modificar la configuración global.");
-      const input = data.config && typeof data.config === "object" ? data.config : {};
-      const allowed = ["maintenanceMode", "maintenanceMessage", "minimumVersion", "recommendedVersion", "globalNotice", "featureFlags"];
-      const patch = Object.fromEntries(Object.entries(input).filter(([key]) => allowed.includes(key)));
-      if (!Object.keys(patch).length) throw new ApiError(400, "invalid-argument", "No hay parámetros válidos para guardar.");
-      await writeDocument(env, "adminConfig", "global", { ...patch, updatedAt: new Date().toISOString(), updatedBy: actor.uid });
-      await audit(env, actor, "CONFIG_UPDATED", "adminConfig/global", { fields: Object.keys(patch) });
-      return { saved: true };
-    }
-    case "saveModule": {
-      if (actor.role !== "owner") throw new ApiError(403, "permission-denied", "Solo el propietario puede modificar módulos.");
-      const id = String(data.id || "").trim();
-      if (!/^[A-Za-z0-9_-]{2,64}$/.test(id)) throw new ApiError(400, "invalid-argument", "Identificador de módulo inválido.");
-      const input = data.module && typeof data.module === "object" ? data.module : {};
-      const patch = { title: String(input.title || id).slice(0, 80), description: String(input.description || "").slice(0, 500), enabled: input.enabled === true, updatedAt: new Date().toISOString(), updatedBy: actor.uid };
-      await writeDocument(env, "moduleRegistry", id, patch);
-      await audit(env, actor, "MODULE_UPDATED", "moduleRegistry/" + id, { enabled: patch.enabled });
-      return { saved: true };
-    }
-    case "createInvitation": {
-      const email = String(data.email || "").trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError(400, "invalid-argument", "Ingresá un correo válido.");
-      const id = await addDocument(env, "betaInvitations", { email, role: "beta", status: "PENDING", createdAt: new Date().toISOString(), createdBy: actor.uid });
-      await audit(env, actor, "BETA_INVITATION_CREATED", "betaInvitations/" + id, { email });
-      return { id, created: true };
-    }
     default: throw new ApiError(400, "invalid-argument", "Acción administrativa desconocida.");
   }
 }
@@ -591,28 +613,30 @@ async function handleGeoPresenceRequest(request, env) {
   if (data.enabled !== true || data.consent !== true) throw new ApiError(400, "invalid-argument", "La ubicación requiere autorización expresa.");
   const latitude = Number(data.latitude);
   const longitude = Number(data.longitude);
-  const roundedLatitude = Math.round(latitude * 100) / 100;
-  const roundedLongitude = Math.round(longitude * 100) / 100;
+  const accuracyMeters = Number(data.accuracyMeters);
+  const locationTime = Number(data.locationTimeMillis);
+  const now = Date.now();
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
       Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ||
-      Math.abs(latitude - roundedLatitude) > 0.000001 ||
-      Math.abs(longitude - roundedLongitude) > 0.000001) {
-    throw new ApiError(400, "invalid-argument", "La ubicación debe estar redondeada a una celda aproximada de 1 km.");
+      !Number.isFinite(accuracyMeters) || accuracyMeters <= 0 || accuracyMeters > 10000 ||
+      !Number.isFinite(locationTime) || now - locationTime > 2 * 60 * 1000 || locationTime > now + 60 * 1000) {
+    throw new ApiError(400, "invalid-argument", "Se requiere una posición GPS válida, reciente y con precisión informada.");
   }
-  const allowedAccuracy = ["hasta 100 m", "100 a 500 m", "500 m a 1 km", "más de 1 km"];
-  const accuracyBand = allowedAccuracy.includes(String(data.accuracyBand || "")) ? String(data.accuracyBand) : "más de 1 km";
   await writeDocument(env, "geoPresence", identity.uid, {
     uid: identity.uid,
-    latitude: roundedLatitude,
-    longitude: roundedLongitude,
+    latitude,
+    longitude,
+    accuracyMeters,
+    locationTime: new Date(locationTime).toISOString(),
+    locationTimeMillis: locationTime,
     locality: String(data.locality || "").trim().slice(0, 80) || "Localidad no informada",
     province: String(data.province || "").trim().slice(0, 80) || "Provincia no informada",
     country: String(data.country || "").trim().slice(0, 80) || "País no informado",
-    accuracyBand,
     consent: true,
+    source: "GPS_ANDROID",
     updatedAt: new Date().toISOString()
   });
-  return json({ ok: true, result: { saved: true, precision: "approx-1km" } });
+  return json({ ok: true, result: { saved: true, precision: "gps-exact", accuracyMeters: Math.round(accuracyMeters) } });
 }
 
 export default {
@@ -637,7 +661,7 @@ export default {
       const role = fields.role;
       if (fields.enabled !== true || !["owner", "admin"].includes(role)) throw new ApiError(403, "permission-denied", "Esta cuenta no está habilitada como administradora de OMNI.");
       const body = await request.json();
-      const result = await handleAction(env, { ...identity, role }, String(body.action || ""), body.data && typeof body.data === "object" ? body.data : {});
+      const result = await handleAction(env, String(body.action || ""), body.data && typeof body.data === "object" ? body.data : {});
       return json({ ok: true, result });
     } catch (error) {
       if (error instanceof ApiError) return json({ ok: false, error: error.code, message: error.message }, error.status);

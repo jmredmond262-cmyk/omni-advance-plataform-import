@@ -1,4 +1,4 @@
-name: Deploy OMNI Admin API
+name: LEGACY DISABLED — Deploy OMNI Admin API
 
 on:
   workflow_dispatch:
@@ -8,7 +8,8 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy secure Admin API to existing OMNI project
+    if: false # Android uses the Cloudflare Worker; keep this legacy endpoint disabled.
+    name: Disabled legacy Cloud Function deployment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

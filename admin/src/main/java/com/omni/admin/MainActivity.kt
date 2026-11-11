@@ -1,12 +1,10 @@
 package com.omni.admin
 
 import android.os.Bundle
-import androidx.compose.ui.viewinterop.AndroidView
-import android.webkit.WebViewClient
-import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.draw.clip
@@ -34,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -69,7 +67,7 @@ class MainActivity : ComponentActivity() {
 
 private data class AdminTab(val id: String, val label: String, val collection: String? = null)
 private val tabs = listOf(
-  AdminTab("dashboard", "Panel ejecutivo"), AdminTab("users", "Cuentas de usuario", "users"),
+  AdminTab("dashboard", "Panel ejecutivo"), AdminTab("liveMap", "Mapa en tiempo real"), AdminTab("users", "Cuentas de usuario", "users"),
   AdminTab("wallets", "Cuentas OMNI Pay", "walletAccounts"), AdminTab("operations", "Movimientos OMNI Pay", "walletOperations"), AdminTab("finance", "Control financiero DEMO"),
   AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
   AdminTab("feedback", "Opiniones y reportes", "appFeedback"), AdminTab("activity", "Actividad de uso", "usageEvents"), AdminTab("modules", "Módulos y funciones", "moduleRegistry"),
@@ -80,7 +78,8 @@ private val navGroups = listOf(
   AdminNavGroup("overview", "Panel", Icons.Default.Dashboard, listOf("dashboard")),
   AdminNavGroup("people", "Usuarios", Icons.Default.PeopleAlt, listOf("users", "feedback")),
   AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
-  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings"))
+  AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
+  AdminNavGroup("geography", "Mapa", Icons.Default.Public, listOf("liveMap"))
 )
 
 @Composable
@@ -107,6 +106,7 @@ private fun OmniAdminRoot() {
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
           "dashboard" -> AdminApi.call(token, "dashboard")
+          "liveMap" -> AdminApi.call(token, "geoPresence")
           "finance" -> AdminApi.call(token, "finance")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
@@ -167,44 +167,21 @@ private fun OmniAdminRoot() {
     )
   } else {
     AdminHome(
-      email = user?.email ?: "Administrador", selected = selected, payload = payload,
-      loading = loading, error = error, onSelect = { selected = it }, onRefresh = ::refresh, onLoadMore = ::loadMore, hasMore = hasMore,
+      email = user?.email ?: "Administrador",
+      selected = selected,
+      payload = payload,
+      loading = loading,
+      error = error,
+      onSelect = { selected = it },
+      onRefresh = ::refresh,
+      onLoadMore = ::loadMore,
+      hasMore = hasMore,
       onSignOut = {
-        auth.signOut(); user = null; payload = JSONObject(); error = ""; selected = "dashboard"
-      },
-      onSaveConfig = { config ->
-        scope.launch {
-          loading = true; error = ""
-          try {
-            val token = auth.currentUser?.getIdToken(true)?.await()?.token ?: throw IllegalStateException("Sesión vencida.")
-            AdminApi.call(token, "saveConfig", JSONObject().put("config", config))
-            error = "Configuración guardada correctamente."; refresh()
-          } catch (ex: Exception) { error = ex.message ?: "No se pudo guardar." }
-          finally { loading = false }
-        }
-      },
-      onSaveModule = { id, title, description, enabled ->
-        scope.launch {
-          loading = true; error = ""
-          try {
-            val token = auth.currentUser?.getIdToken(true)?.await()?.token ?: throw IllegalStateException("Sesión vencida.")
-            val module = JSONObject().put("title", title).put("description", description).put("enabled", enabled)
-            AdminApi.call(token, "saveModule", JSONObject().put("id", id).put("module", module))
-            error = "Módulo actualizado."; refresh()
-          } catch (ex: Exception) { error = ex.message ?: "No se pudo actualizar el módulo." }
-          finally { loading = false }
-        }
-      },
-      onInvite = { email ->
-        scope.launch {
-          loading = true; error = ""
-          try {
-            val token = auth.currentUser?.getIdToken(true)?.await()?.token ?: throw IllegalStateException("Sesión vencida.")
-            AdminApi.call(token, "createInvitation", JSONObject().put("email", email))
-            error = "Invitación registrada."; selected = "audit"
-          } catch (ex: Exception) { error = ex.message ?: "No se pudo crear la invitación." }
-          finally { loading = false }
-        }
+        auth.signOut()
+        user = null
+        payload = JSONObject()
+        error = ""
+        selected = "dashboard"
       }
     )
   }
@@ -248,9 +225,7 @@ private fun AdminLogin(onLogin: (String, String) -> Unit, onReset: (String) -> U
 @Composable
 private fun AdminHome(
   email: String, selected: String, payload: JSONObject, loading: Boolean, error: String,
-  onSelect: (String) -> Unit, onRefresh: () -> Unit, onLoadMore: () -> Unit, hasMore: Boolean, onSignOut: () -> Unit,
-  onSaveConfig: (JSONObject) -> Unit, onSaveModule: (String, String, String, Boolean) -> Unit,
-  onInvite: (String) -> Unit
+  onSelect: (String) -> Unit, onRefresh: () -> Unit, onLoadMore: () -> Unit, hasMore: Boolean, onSignOut: () -> Unit
 ) {
   val activeGroup = navGroups.firstOrNull { selected in it.tabIds } ?: navGroups.first()
   val activeTab = tabs.firstOrNull { it.id == selected }
@@ -363,10 +338,11 @@ private fun AdminHome(
       }
       when (selected) {
         "dashboard" -> DashboardContent(payload, onSelect, onRefresh)
+        "liveMap" -> LiveMapScreen(payload, loading, error, onRefresh)
         "finance" -> FinanceContent(payload)
-        "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray(), onSaveModule)
-        "settings" -> ConfigContent(payload.optJSONObject("config") ?: JSONObject(), onSaveConfig)
-        "invitations" -> InvitationContent(payload.optJSONArray("items") ?: JSONArray(), onInvite)
+        "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray())
+        "settings" -> ConfigContent(payload.optJSONObject("config") ?: JSONObject())
+        "invitations" -> InvitationContent(payload.optJSONArray("items") ?: JSONArray())
         else -> RecordsContent(selected, payload.optJSONArray("items") ?: JSONArray(), hasMore, onLoadMore)
       }
     }
@@ -380,7 +356,6 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
   val diagnostics = payload.optJSONObject("diagnostics") ?: JSONObject()
   val recentActivity = jsonArrayToList(payload.optJSONArray("recentUsageEvents"))
   val recentOperations = jsonArrayToList(payload.optJSONArray("recentOperations"))
-  var showMap by remember { mutableStateOf(false) }
   val shortcuts = listOf(
     Triple("Usuarios", "users", Icons.Default.PeopleAlt), Triple("OMNI Pay", "wallets", Icons.Default.AccountBalanceWallet),
     Triple("Comercios", "stores", Icons.Default.Storefront), Triple("Pedidos", "orders", Icons.Default.ShoppingBag),
@@ -432,7 +407,7 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
       }
     }
     item {
-      Card(Modifier.fillMaxWidth().clickable { showMap = true }.border(1.dp, Color(0xFF00DFFC), RoundedCornerShape(20.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF091A2D)), shape = RoundedCornerShape(20.dp)) {
+      Card(Modifier.fillMaxWidth().clickable { onSelect("liveMap") }.border(1.dp, Color(0xFF00DFFC), RoundedCornerShape(20.dp)), colors = CardDefaults.cardColors(containerColor = Color(0xFF091A2D)), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF103D55), Color(0xFF0A1B30), Color(0xFF11152D)))).padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text("GEOACTIVITY", color = Mint, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.8.sp); Spacer(Modifier.weight(1f))
@@ -495,7 +470,6 @@ private fun DashboardContent(payload: JSONObject, onSelect: (String) -> Unit, on
       }
     }
   }
-  if (showMap) ActivityMapDialog(points = payload.optJSONArray("geoActivity") ?: JSONArray(), summary = payload.optJSONObject("geoActivitySummary") ?: JSONObject(), onRefresh = onRefresh, onDismiss = { showMap = false })
 }
 
 @Composable
@@ -536,34 +510,26 @@ private fun CompactDashboardStat(label: String, value: String, icon: androidx.co
   }
 }
 
-private fun activityMapUrl(scope: String): String {
-  // Use the dedicated OSM embed page instead of the full website UI inside Android WebView.
-  val bounds = when (scope) {
-    "Santa Fe" -> listOf(-62.50, -32.50, -59.40, -29.00, -30.7069, -60.9500)
-    "Argentina" -> listOf(-73.50, -56.00, -53.50, -21.50, -38.4161, -63.6167)
-    else -> listOf(-60.82, -31.80, -60.58, -31.47, -31.6333, -60.7000)
-  }
-  val west = bounds[0]
-  val south = bounds[1]
-  val east = bounds[2]
-  val north = bounds[3]
-  val latitude = bounds[4]
-  val longitude = bounds[5]
-  val bbox = "$west%2C$south%2C$east%2C$north"
-  return "https://www.openstreetmap.org/export/embed.html?bbox=$bbox&layer=mapnik&marker=$latitude%2C$longitude"
-}
-
 @Composable
 private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh: () -> Unit, onDismiss: () -> Unit) {
-  var selectedScope by remember { mutableStateOf("Local") }
-  var mapStatus by remember { mutableStateOf("Conectando con OpenStreetMap…") }
-  var mapView by remember { mutableStateOf<WebView?>(null) }
-
-  LaunchedEffect(Unit) {
-    while (true) {
-      delay(120_000L)
-      onRefresh()
+  var selectedScope by remember { mutableStateOf("Zona local") }
+  val geoPoints = remember(points.toString()) {
+    (0 until points.length()).mapNotNull { index ->
+      val item = points.optJSONObject(index) ?: return@mapNotNull null
+      val latitude = item.optDouble("latitude", Double.NaN)
+      val longitude = item.optDouble("longitude", Double.NaN)
+      val count = item.optInt("count", 0)
+      if (!latitude.isFinite() || !longitude.isFinite() || count < 3) null
+      else Triple(latitude, longitude, count)
     }
+  }
+  val bounds = when (selectedScope) {
+    "Santa Fe" -> doubleArrayOf(-32.5, -29.0, -62.5, -59.4)
+    "Argentina" -> doubleArrayOf(-56.0, -21.5, -73.5, -53.5)
+    else -> doubleArrayOf(-31.9, -31.3, -61.0, -60.4)
+  }
+  val visiblePoints = geoPoints.filter { (lat, lon, _) ->
+    lat in bounds[0]..bounds[1] && lon in bounds[2]..bounds[3]
   }
 
   Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -571,31 +537,24 @@ private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh:
       Column(
         Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp))
           .border(1.dp, Color(0xFF168AC5), RoundedCornerShape(18.dp))
-          .background(Color(0xFF071321)).padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+          .background(Color(0xFF071321)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(Icons.Default.Map, null, tint = Mint, modifier = Modifier.size(24.dp))
           Spacer(Modifier.width(8.dp))
           Column(Modifier.weight(1f)) {
-            Text("Mapa geográfico OMNI", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("OpenStreetMap · calles, ciudades y rutas", color = Muted, fontSize = 10.sp)
+            Text("OMNI GEOACTIVITY", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Actividad agrupada · ubicación aproximada", color = Muted, fontSize = 10.sp)
           }
-          IconButton(onClick = {
-            mapStatus = "Actualizando cartografía…"
-            mapView?.reload()
-          }) { Icon(Icons.Default.Refresh, "Actualizar mapa", tint = Mint) }
+          IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Actualizar actividad", tint = Mint) }
           IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Cerrar mapa", tint = Mint) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          listOf("Local", "Santa Fe", "Argentina").forEach { level ->
+          listOf("Zona local", "Santa Fe", "Argentina").forEach { level ->
             FilterChip(
               selected = selectedScope == level,
-              onClick = {
-                selectedScope = level
-                mapStatus = "Cargando vista $level…"
-                mapView?.loadUrl(activityMapUrl(level))
-              },
+              onClick = { selectedScope = level },
               label = { Text(level, fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = Mint, selectedLabelColor = Navy,
@@ -604,69 +563,48 @@ private fun ActivityMapDialog(points: JSONArray, summary: JSONObject, onRefresh:
             )
           }
         }
-        Text(
-          mapStatus,
-          color = if (mapStatus.startsWith("Mapa cargado")) Color(0xFF65E9B7) else Muted,
-          fontSize = 10.sp
-        )
-        Text(
-          "${summary.optInt("consentedUsersFresh24h")} cuentas compartieron ubicación en las últimas 24 h · ${summary.optInt("visibleAreas")} áreas agrupadas · mínimo ${summary.optInt("privacyThreshold", 3)} cuentas por área",
-          color = Muted, fontSize = 9.sp, lineHeight = 13.sp
-        )
-        AndroidView(
-          modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(13.dp))
-            .border(1.dp, Color(0xFF12658C), RoundedCornerShape(13.dp)),
-          factory = { context ->
-            WebView(context).apply {
-              settings.javaScriptEnabled = true
-              settings.domStorageEnabled = true
-              settings.loadsImagesAutomatically = true
-              settings.useWideViewPort = true
-              settings.loadWithOverviewMode = true
-              settings.setSupportZoom(true)
-              settings.builtInZoomControls = true
-              settings.displayZoomControls = false
-              settings.allowFileAccess = false
-              settings.allowContentAccess = false
-              setBackgroundColor(android.graphics.Color.rgb(7, 19, 33))
-              webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
-                  super.onPageStarted(view, url, favicon)
-                  mapStatus = "Conectando con OpenStreetMap…"
-                }
-                override fun onPageFinished(view: WebView, url: String) {
-                  super.onPageFinished(view, url)
-                  mapStatus = "Mapa cargado · ${selectedScope}"
-                }
-                override fun onReceivedError(
-                  view: WebView,
-                  request: android.webkit.WebResourceRequest,
-                  error: android.webkit.WebResourceError
-                ) {
-                  super.onReceivedError(view, request, error)
-                  if (request.isForMainFrame) {
-                    mapStatus = "No se pudo cargar el mapa. Verificá la conexión e intentá actualizar."
-                  }
-                }
-                override fun onReceivedHttpError(
-                  view: WebView,
-                  request: android.webkit.WebResourceRequest,
-                  errorResponse: android.webkit.WebResourceResponse
-                ) {
-                  super.onReceivedHttpError(view, request, errorResponse)
-                  if (request.isForMainFrame && errorResponse.statusCode >= 400) {
-                    mapStatus = "OpenStreetMap respondió HTTP ${errorResponse.statusCode}."
-                  }
-                }
-              }
-              mapView = this
-              loadUrl(activityMapUrl(selectedScope))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          CompactDashboardStat("Cuentas activas 24 h", summary.optInt("consentedUsersFresh24h").toString(), Icons.Default.PeopleAlt, Modifier.weight(1f))
+          CompactDashboardStat("Áreas visibles", summary.optInt("visibleAreas").toString(), Icons.Default.MyLocation, Modifier.weight(1f))
+        }
+        Box(
+          Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(13.dp))
+            .background(Color(0xFF06101E))
+            .border(1.dp, Color(0xFF12658C), RoundedCornerShape(13.dp))
+        ) {
+          Canvas(Modifier.fillMaxSize()) {
+            val gridColor = Mint.copy(alpha = 0.12f)
+            val stepX = size.width / 8f
+            val stepY = size.height / 8f
+            for (i in 1..7) {
+              drawLine(gridColor, Offset(stepX * i, 0f), Offset(stepX * i, size.height), 1.dp.toPx())
+              drawLine(gridColor, Offset(0f, stepY * i), Offset(size.width, stepY * i), 1.dp.toPx())
             }
-          },
-          update = { mapView = it }
-        )
+            drawLine(Color(0xFF167A9A).copy(alpha = .5f), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), 1.dp.toPx())
+            drawLine(Color(0xFF167A9A).copy(alpha = .5f), Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), 1.dp.toPx())
+            visiblePoints.forEach { (lat, lon, count) ->
+              val x = ((lon - bounds[2]) / (bounds[3] - bounds[2])).toFloat() * size.width
+              val y = (1.0 - (lat - bounds[0]) / (bounds[1] - bounds[0])).toFloat() * size.height
+              val radius = (7f + count.coerceAtMost(20) * .45f).dp.toPx()
+              drawCircle(Color(0xFF00E5FF).copy(alpha = .14f), radius * 2.2f, Offset(x, y))
+              drawCircle(Color(0xFF00E5FF).copy(alpha = .85f), radius, Offset(x, y))
+              drawCircle(Color.White, 2.5.dp.toPx(), Offset(x, y))
+            }
+          }
+          Column(Modifier.align(Alignment.TopStart).padding(12.dp)) {
+            Text(selectedScope.uppercase(), color = Mint, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.2.sp)
+            Text("${visiblePoints.size} grupos que cumplen el umbral de privacidad", color = Muted, fontSize = 9.sp)
+          }
+          if (visiblePoints.isEmpty()) {
+            Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+              Icon(Icons.Default.Radar, null, tint = Color(0xFF3B7792), modifier = Modifier.size(42.dp))
+              Text("Todavía no hay grupos visibles en esta zona", color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              Text("Se muestran áreas únicamente cuando al menos ${summary.optInt("privacyThreshold", 3)} cuentas comparten ubicación aproximada y autorizada.", color = Muted, fontSize = 10.sp)
+            }
+          }
+        }
         Text(
-          "La cartografía base se muestra independientemente de la cantidad de usuarios. La actividad privada solo aparece cuando existen grupos autorizados que cumplen el umbral de privacidad.",
+          "Vista esquemática por coordenadas aproximadas; no representa calles ni rutas. Los puntos solo aparecen con consentimiento vigente y un mínimo de ${summary.optInt("privacyThreshold", 3)} cuentas por área.",
           color = Muted, fontSize = 9.sp, lineHeight = 13.sp
         )
       }
@@ -955,30 +893,24 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
   }
 }
 @Composable
-private fun ConfigContent(config: JSONObject, onSave: (JSONObject) -> Unit) {
-  var maintenance by remember(config.toString()) { mutableStateOf(config.optBoolean("maintenanceMode", false)) }
-  var message by remember(config.toString()) { mutableStateOf(config.optString("maintenanceMessage", "")) }
-  var notice by remember(config.toString()) { mutableStateOf(config.optString("globalNotice", "")) }
-  var minVersion by remember(config.toString()) { mutableStateOf(config.optString("minimumVersion", "")) }
-  var recommended by remember(config.toString()) { mutableStateOf(config.optString("recommendedVersion", "")) }
+private fun ConfigContent(config: JSONObject) {
+  val rows = listOf(
+    "Modo mantenimiento" to if (config.optBoolean("maintenanceMode", false)) "ACTIVO" else "INACTIVO",
+    "Mensaje de mantenimiento" to config.optString("maintenanceMessage").ifBlank { "No configurado" },
+    "Aviso global" to config.optString("globalNotice").ifBlank { "No hay aviso global" },
+    "Versión mínima" to config.optString("minimumVersion").ifBlank { "No informada" },
+    "Versión recomendada" to config.optString("recommendedVersion").ifBlank { "No informada" }
+  )
   LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    item { Text("Configuración global", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold); Text("Los cambios se guardan en adminConfig/global y quedan auditados.", color = Muted, fontSize = 12.sp) }
     item {
-      Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.padding(16.dp)) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text("Modo mantenimiento", color = White, fontWeight = FontWeight.SemiBold); Text("Indicador global para OMNI.", color = Muted, fontSize = 11.sp) }
-            Switch(maintenance, { maintenance = it })
-          }
-          OutlinedTextField(message, { message = it }, Modifier.fillMaxWidth(), label = { Text("Mensaje de mantenimiento") })
-          Spacer(Modifier.height(10.dp))
-          OutlinedTextField(notice, { notice = it }, Modifier.fillMaxWidth(), label = { Text("Aviso global") })
-          Spacer(Modifier.height(10.dp))
-          OutlinedTextField(minVersion, { minVersion = it }, Modifier.fillMaxWidth(), label = { Text("Versión mínima") }, singleLine = true)
-          Spacer(Modifier.height(10.dp))
-          OutlinedTextField(recommended, { recommended = it }, Modifier.fillMaxWidth(), label = { Text("Versión recomendada") }, singleLine = true)
-          Spacer(Modifier.height(16.dp))
-          Button(onClick = { onSave(JSONObject().put("maintenanceMode", maintenance).put("maintenanceMessage", message).put("globalNotice", notice).put("minimumVersion", minVersion).put("recommendedVersion", recommended)) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar configuración") }
+      Text("Configuración global", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+      Text("Vista de consulta. Los parámetros no se modifican desde OMNI Admin.", color = Muted, fontSize = 12.sp)
+    }
+    items(rows) { (label, value) ->
+      Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(15.dp)) {
+        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+          Text(label, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+          Text(value, color = White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         }
       }
     }
@@ -997,7 +929,7 @@ private fun ModuleSummary(label: String, value: String, icon: androidx.compose.u
 }
 
 @Composable
-private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boolean) -> Unit) {
+private fun ModuleContent(array: JSONArray) {
   val records = jsonArrayToList(array)
   val enabledCount = records.count { it["enabled"] == true }
   LazyColumn(Modifier.fillMaxSize().padding(16.dp), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
@@ -1005,7 +937,7 @@ private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boo
       Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(Color(0xFF123A5D), Panel, Color(0xFF0A1426)))).border(1.dp, Color(0xFF1679A6), RoundedCornerShape(22.dp)).padding(19.dp)) {
         Text("CENTRO DE FUNCIONES", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
         Text("Módulos de OMNI", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-        Text("Supervisión del catálogo registrado. Los cambios quedan auditados.", color = Muted, fontSize = 12.sp)
+        Text("Catálogo en modo consulta. La activación y configuración no se modifican desde este panel.", color = Muted, fontSize = 12.sp)
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           ModuleSummary("Registrados", records.size.toString(), Icons.Default.Apps, Modifier.weight(1f))
@@ -1017,24 +949,25 @@ private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boo
     if (records.isEmpty()) item { EmptyState("No hay módulos registrados en moduleRegistry. No se muestran módulos inventados.") }
     items(records) { item ->
       val id = item["id"]?.toString() ?: return@items
-      var enabled by remember(id, item["enabled"]) { mutableStateOf(item["enabled"] == true) }
+      val enabled = item["enabled"] == true
       val title = item["title"]?.toString() ?: id
       val description = item["description"]?.toString()?.takeIf { it.isNotBlank() } ?: "Descripción no cargada para esta ficha de módulo."
       Card(Modifier.fillMaxWidth().border(1.dp, if (enabled) Color(0xFF17647A) else Color(0xFF34445B), RoundedCornerShape(18.dp)), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(if (enabled) Color(0xFF103B4B) else PanelSoft), contentAlignment = Alignment.Center) { Icon(Icons.Default.Extension, null, tint = if (enabled) Mint else Muted) }
-            Spacer(Modifier.width(11.dp))
-            Column(Modifier.weight(1f)) { Text(title, color = White, fontWeight = FontWeight.Bold, fontSize = 15.sp); Text(id, color = Muted, fontSize = 10.sp) }
-            Column(horizontalAlignment = Alignment.End) {
-              Text(if (enabled) "HABILITADO" else "PAUSADO", color = if (enabled) Mint else Muted, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
-              Switch(checked = enabled, onCheckedChange = { enabled = it })
+            Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(if (enabled) Color(0xFF103B4B) else PanelSoft), contentAlignment = Alignment.Center) {
+              Icon(Icons.Default.Extension, null, tint = if (enabled) Mint else Muted)
             }
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f)) {
+              Text(title, color = White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+              Text(id, color = Muted, fontSize = 10.sp)
+            }
+            Text(if (enabled) "HABILITADO" else "PAUSADO", color = if (enabled) Mint else Muted, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
           }
           Text(description, color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
           val updated = item["updatedAt"]?.toString().orEmpty()
           if (updated.isNotBlank()) Text("Última modificación: ${updated.take(16).replace("T", " ")}", color = Color(0xFF7890AA), fontSize = 10.sp)
-          Button(onClick = { onSave(id, title, description, enabled) }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text("Guardar cambio") }
         }
       }
     }
@@ -1042,23 +975,14 @@ private fun ModuleContent(array: JSONArray, onSave: (String, String, String, Boo
 }
 
 @Composable
-private fun InvitationContent(array: JSONArray, onInvite: (String) -> Unit) {
-  var email by remember { mutableStateOf("") }
+private fun InvitationContent(array: JSONArray) {
   LazyColumn(Modifier.fillMaxSize().padding(16.dp), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
     item {
-      Text("Auditoría y accesos", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-      Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(15.dp)) {
-          Text("Invitar a la beta", color = White, fontWeight = FontWeight.SemiBold)
-          Spacer(Modifier.height(8.dp))
-          OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("Correo electrónico") }, singleLine = true)
-          Spacer(Modifier.height(8.dp))
-          Button(onClick = { onInvite(email); email = "" }, enabled = email.contains("@"), modifier = Modifier.fillMaxWidth()) { Text("Registrar invitación") }
-        }
-      }
-      Spacer(Modifier.height(8.dp)); Text("Registro de auditoría", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+      Text("Accesos de prueba", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+      Text("Registro de invitaciones en modo consulta. Las altas y cambios de acceso se gestionan fuera de OMNI Admin.", color = Muted, fontSize = 12.sp)
     }
-    items(jsonArrayToList(array)) { RecordCard(it, "adminAuditLogs") }
+    if (array.length() == 0) item { EmptyState("No hay invitaciones registradas.") }
+    items(jsonArrayToList(array)) { RecordCard(it, "betaInvitations") }
   }
 }
 

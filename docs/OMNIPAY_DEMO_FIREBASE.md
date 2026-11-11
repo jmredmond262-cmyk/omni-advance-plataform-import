@@ -9,9 +9,23 @@ OMNI Pay usa Firebase Authentication + Cloud Firestore. La lógica de transferen
 - Depósitos/cargas virtuales de hasta OM$ 50.000 por operación y OM$ 150.000 acumulados por cuenta.
 - Transferencias entre cuentas OMNI Pay por alias o CVU ficticio.
 - Cobros mediante QR: un usuario muestra su QR y otro lo escanea y paga.
-- Actualización en tiempo real de saldos e historial en ambos usuarios.
+- Pasarela de tarjeta DEMO para pedidos: permite simular resultados aprobados o rechazados con Visa/Mastercard ficticias.
+- La pasarela DEMO no pide número de tarjeta, vencimiento, CVV ni token; no se conecta a un adquirente y no mueve dinero.
+- Los intentos quedan registrados en `demoCardPayments`; una aprobación marca el pedido como pagado dentro del entorno DEMO, sin acreditar fondos al comercio.
+- Actualización en tiempo real de saldos e historial en ambos usuarios para las operaciones OMNI Pay DEMO.
 - Validación de saldo suficiente, límites y prevención de transferencias a la propia cuenta.
 - Historial de hasta 50 movimientos recientes por billetera.
+
+## Separación de comercios DEMO y directorio real
+
+- Los perfiles creados desde el panel de comercio de esta versión quedan marcados como `environment: "DEMO"`.
+- Los pedidos de prueba también se guardan con `environment: "DEMO"` y Firestore exige que el comercio asociado pertenezca a ese mismo entorno.
+- El catálogo DEMO no se mezcla con resultados del directorio real. Una ficha real no recibe productos, stock ni precios ficticios.
+- Los comercios del directorio real solo podrán publicar catálogo y operar pedidos cuando exista un perfil comercial real verificado y un circuito habilitado para ese entorno.
+
+## Tickets digitales DEMO
+
+Los tickets generados por los datos de muestra o por el flujo local de prueba son referencias internas. No son facturas, no tienen validez fiscal y no sustituyen comprobantes emitidos por un sistema autorizado por ARCA. Los descuentos de ejemplo tampoco representan cashback acreditado.
 
 ## Requisitos
 

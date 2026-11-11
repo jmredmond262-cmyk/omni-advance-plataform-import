@@ -9,10 +9,12 @@ import kotlinx.coroutines.withTimeout
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.SampleData
+import com.example.data.PersonalDataRepository
 import com.example.data.analytics.UsageAnalyticsRepository
 import com.example.data.analytics.OmniTracker
 import com.example.data.merchant.MerchantProfileRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.ListenerRegistration
 import com.example.data.ArgentinaAttractions
 import com.example.data.api.RealLocationHelper
 import com.example.data.api.RealLocationResult
@@ -268,9 +270,144 @@ class MainViewModel : ViewModel() {
         return false
     }
 
-    // Contactos y Remises Barriales
+    // Contactos de directorio: solo se sincronizan favoritos y contactos personalizados del usuario.
     private val _contacts = MutableStateFlow<List<NeighborhoodContact>>(SampleData.sampleContacts)
     val contacts: StateFlow<List<NeighborhoodContact>> = _contacts.asStateFlow()
+    private val _customContacts = MutableStateFlow<List<NeighborhoodContact>>(emptyList())
+    private val _favoriteContactIds = MutableStateFlow<Set<String>>(emptySet())
+    private var contactFavoritesTouched = false
+    private val personalDataRepository = PersonalDataRepository()
+    private var personalDataUid: String? = null
+    private val personalDataListeners = mutableListOf<ListenerRegistration>()
+    private val personalAuth = FirebaseAuth.getInstance()
+    private val personalAuthListener = FirebaseAuth.AuthStateListener { auth ->
+        val activeUid = auth.currentUser?.uid
+        if (activeUid.isNullOrBlank()) {
+            clearPersonalDataForSignedOutUser()
+        } else if (personalDataUid != activeUid) {
+            startPersonalDataSync(activeUid)
+        }
+    }
+
+    private fun clearPersonalDataForSignedOutUser() {
+        personalDataListeners.forEach { it.remove() }
+        personalDataListeners.clear()
+        personalDataUid = null
+        _tasks.value = emptyList()
+        _needs.value = emptyList()
+        _customContacts.value = emptyList()
+        _favoriteContactIds.value = emptySet()
+        contactFavoritesTouched = false
+        publishPersonalContacts()
+    }
+
+    private fun publishPersonalContacts() {
+        val samples = SampleData.sampleContacts.map { contact ->
+            contact.copy(isFavorite = contact.id in _favoriteContactIds.value)
+        }
+        _contacts.value = samples + _customContacts.value
+    }
+
+    private fun startPersonalDataSync(uid: String) {
+        if (uid.isBlank() || personalDataUid == uid) return
+        val previousUid = personalDataUid
+        personalDataListeners.forEach { it.remove() }
+        personalDataListeners.clear()
+        if (previousUid != null && previousUid != uid) {
+            // Never migrate one account's in-memory data into another account.
+            _tasks.value = emptyList()
+            _needs.value = emptyList()
+            _customContacts.value = emptyList()
+            _favoriteContactIds.value = emptySet()
+            contactFavoritesTouched = false
+            publishPersonalContacts()
+        }
+        personalDataUid = uid
+
+        var firstTaskSnapshot = true
+        personalDataListeners += personalDataRepository.observeTasks(uid) { result ->
+            result.onSuccess { remote ->
+                if (firstTaskSnapshot) {
+                    firstTaskSnapshot = false
+                    if (remote.isEmpty() && _tasks.value.isNotEmpty()) {
+                        _tasks.value.forEach { personalDataRepository.saveTask(uid, it) }
+                    } else {
+                        _tasks.value = remote
+                    }
+                } else {
+                    _tasks.value = remote
+                }
+            }.onFailure { android.util.Log.w("MainViewModel", "Tasks sync failed", it) }
+        }
+
+        var firstShoppingSnapshot = true
+        personalDataListeners += personalDataRepository.observeShoppingItems(uid) { result ->
+            result.onSuccess { remote ->
+                if (firstShoppingSnapshot) {
+                    firstShoppingSnapshot = false
+                    if (remote.isEmpty() && _needs.value.isNotEmpty()) {
+                        personalDataRepository.replaceShoppingItems(uid, _needs.value)
+                    } else {
+                        _needs.value = remote
+                    }
+                } else {
+                    _needs.value = remote
+                }
+            }.onFailure { android.util.Log.w("MainViewModel", "Shopping list sync failed", it) }
+        }
+
+        var firstCustomContactsSnapshot = true
+        personalDataListeners += personalDataRepository.observeCustomContacts(uid) { result ->
+            result.onSuccess { remote ->
+                if (firstCustomContactsSnapshot) {
+                    firstCustomContactsSnapshot = false
+                    if (remote.isEmpty() && _customContacts.value.isNotEmpty()) {
+                        _customContacts.value.forEach { personalDataRepository.saveCustomContact(uid, it) }
+                    } else {
+                        _customContacts.value = remote
+                    }
+                } else {
+                    _customContacts.value = remote
+                }
+                publishPersonalContacts()
+            }.onFailure { android.util.Log.w("MainViewModel", "Custom contacts sync failed", it) }
+        }
+
+        personalDataListeners += personalDataRepository.observeContactFavorites(uid) { result ->
+            result.onSuccess { remote ->
+                val defaultFavorites = SampleData.sampleContacts.filter { it.isFavorite }.map { it.id }.toSet()
+                val favorites = remote ?: if (contactFavoritesTouched) _favoriteContactIds.value else defaultFavorites
+                _favoriteContactIds.value = favorites
+                contactFavoritesTouched = true
+                publishPersonalContacts()
+                if (remote == null) personalDataRepository.saveContactFavorites(uid, favorites)
+            }.onFailure { android.util.Log.w("MainViewModel", "Contact favorites sync failed", it) }
+        }
+    }
+
+    private fun saveTaskForCurrentUser(task: DailyTask) {
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.saveTask(uid, task) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Task save failed", it) }
+            }
+        }
+    }
+
+    private fun saveNeedForCurrentUser(item: NeedItem) {
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.saveShoppingItem(uid, item) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Shopping item save failed", it) }
+            }
+        }
+    }
+
+    private fun replaceNeedsForCurrentUser(items: List<NeedItem>) {
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.replaceShoppingItems(uid, items) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Shopping list replacement failed", it) }
+            }
+        }
+    }
 
     // Sugerencias Inteligentes
     private val _suggestions = MutableStateFlow<List<SmartSuggestion>>(SampleData.sampleSuggestions)
@@ -303,6 +440,7 @@ class MainViewModel : ViewModel() {
             avatarUrl = photoUrl.trim()
         )
         UsageAnalyticsRepository.trackScreen(uid, _currentScreen.value.title)
+        startPersonalDataSync(uid)
     }
 
     // Modo Negocio / Comerciante (Mi Comercio Administrado: Redcom Romang)
@@ -451,7 +589,7 @@ class MainViewModel : ViewModel() {
     private val _morningBriefing = MutableStateFlow(SampleData.sampleMorningBriefing)
     val morningBriefing: StateFlow<com.example.model.MorningBriefing> = _morningBriefing.asStateFlow()
 
-    // Comprobantes Digitales y Facturas
+    // Tickets digitales DEMO sin validez fiscal
     private val _receipts = MutableStateFlow(SampleData.sampleReceipts)
     val receipts: StateFlow<List<com.example.model.DigitalReceipt>> = _receipts.asStateFlow()
 
@@ -474,6 +612,7 @@ class MainViewModel : ViewModel() {
         }
 
     init {
+        personalAuth.addAuthStateListener(personalAuthListener)
         // Primera consulta y actualización automática del clima cada 15 minutos.
         fetchLiveWeatherAndAlerts(
             _userProfile.value.currentLatitude,
@@ -633,27 +772,32 @@ class MainViewModel : ViewModel() {
     }
 
     fun addCatalogProductToNeeds(product: com.example.model.CatalogProduct) {
+        val productName = product.name.trim().take(120)
+        if (productName.isBlank()) return
+        val productUnit = product.unit.trim().take(24).ifBlank { "unid." }
         val currentList = _needs.value
-        val existing = currentList.firstOrNull { it.name.equals(product.name, ignoreCase = true) }
+        val existing = currentList.firstOrNull { it.name.equals(productName, ignoreCase = true) }
         if (existing != null) {
-            _needs.value = currentList.map {
-                if (it.id == existing.id) it.copy(quantity = it.quantity + 1) else it
-            }
+            val updated = existing.copy(quantity = (existing.quantity + 1).coerceAtMost(999))
+            _needs.value = currentList.map { if (it.id == existing.id) updated else it }
+            saveNeedForCurrentUser(updated)
         } else {
             val newItem = NeedItem(
                 id = UUID.randomUUID().toString(),
-                name = product.name,
+                name = productName,
                 category = product.category,
                 quantity = 1,
-                unit = product.unit,
+                unit = productUnit,
                 isChecked = false
             )
             _needs.value = currentList + newItem
+            saveNeedForCurrentUser(newItem)
         }
     }
 
     fun loadFamilyBasket() {
         _needs.value = SampleData.initialNeeds
+        replaceNeedsForCurrentUser(_needs.value)
     }
 
     fun loadSampleBasket(option: Int) {
@@ -678,6 +822,7 @@ class MainViewModel : ViewModel() {
             else -> SampleData.initialNeeds
         }
         _needs.value = sampleItems
+        replaceNeedsForCurrentUser(_needs.value)
     }
 
     private fun OmniDirectoryPlace.toOmniStore(): Store {
@@ -1092,18 +1237,25 @@ class MainViewModel : ViewModel() {
         _tasks.value = _tasks.value.map {
             if (it.id == taskId) it.copy(isCompleted = !it.isCompleted) else it
         }
+        _tasks.value.firstOrNull { it.id == taskId }?.let(::saveTaskForCurrentUser)
     }
 
     fun addTask(title: String, category: TaskCategory, timeTag: String) {
         trackUsageAction("TASK_CREATE", "daily")
+        val cleanTitle = title.trim().take(120)
+        if (cleanTitle.isBlank()) return
+        val cleanTime = timeTag.takeIf {
+            Regex("^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$").matches(it)
+        } ?: "09:00"
         val newTask = DailyTask(
             id = UUID.randomUUID().toString(),
-            title = title,
+            title = cleanTitle,
             category = category,
             isCompleted = false,
-            timeTag = timeTag.ifBlank { "09:00" }
+            timeTag = cleanTime
         )
         _tasks.value = listOf(newTask) + _tasks.value
+        saveTaskForCurrentUser(newTask)
     }
 
     fun toggleNeed(needId: String) {
@@ -1111,24 +1263,33 @@ class MainViewModel : ViewModel() {
         _needs.value = _needs.value.map {
             if (it.id == needId) it.copy(isChecked = !it.isChecked) else it
         }
+        _needs.value.firstOrNull { it.id == needId }?.let(::saveNeedForCurrentUser)
     }
 
     fun addNeed(name: String, category: ProductCategory, quantity: Int, unit: String) {
         trackUsageAction("LIST_ITEM_ADD", "smart_list")
+        val cleanName = name.trim().take(120)
+        if (cleanName.isBlank()) return
         val newNeed = NeedItem(
             id = UUID.randomUUID().toString(),
-            name = name,
+            name = cleanName,
             category = category,
-            quantity = quantity,
-            unit = unit,
+            quantity = quantity.coerceIn(1, 999),
+            unit = unit.trim().take(24).ifBlank { "unid." },
             isChecked = false
         )
         _needs.value = _needs.value + newNeed
+        saveNeedForCurrentUser(newNeed)
     }
 
     fun deleteNeed(needId: String) {
         trackUsageAction("LIST_ITEM_DELETE", "smart_list")
         _needs.value = _needs.value.filter { it.id != needId }
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.deleteShoppingItem(uid, needId) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Shopping item delete failed", it) }
+            }
+        }
     }
 
     fun addSuggestionToNeeds(suggestion: SmartSuggestion) {
@@ -1146,55 +1307,48 @@ class MainViewModel : ViewModel() {
     }
 
     // Funciones de Billetera Virtual (OmniPay)
-    fun payWithWallet(storeName: String, amount: Double, cashbackPercent: Double = 5.0): Boolean {
+    @Suppress("UNUSED_PARAMETER")
+    fun payWithWallet(storeName: String, amount: Double, cashbackPercent: Double = 0.0): Boolean {
         if (!amount.isFinite() || amount <= 0.0) return false
         val currentBalance = _wallet.value.balance
         if (currentBalance < amount) return false
 
-        val cashbackAmount = amount * (cashbackPercent / 100.0)
-        val newBalance = currentBalance - amount + cashbackAmount
-
+        // Legacy local demo path: no cashback is credited until the secure order circuit exists.
         val newTransactions = listOf(
             WalletTransaction(
                 id = UUID.randomUUID().toString(),
-                title = "Pago con QR en $storeName",
+                title = "Pago DEMO en $storeName",
                 storeOrEntityName = storeName,
                 amount = -amount,
                 type = TransactionType.COMPRA_LOCAL,
                 dateText = "Recién",
-                cashbackEarned = cashbackAmount
-            ),
-            WalletTransaction(
-                id = UUID.randomUUID().toString(),
-                title = "Reintegro Barrial ($cashbackPercent%)",
-                storeOrEntityName = "OmniPay Cashback",
-                amount = cashbackAmount,
-                type = TransactionType.REINTEGRO_CASHBACK,
-                dateText = "Recién"
+                cashbackEarned = 0.0
             )
         ) + _wallet.value.transactions
 
         _wallet.value = _wallet.value.copy(
-            balance = newBalance,
-            totalCashbackEarned = _wallet.value.totalCashbackEarned + cashbackAmount,
+            balance = currentBalance - amount,
             transactions = newTransactions
         )
 
-        // Generación automática de comprobante fiscal digital
-        val ticketNum = "T-" + (1000..9999).random() + "-" + (1000000..9999999).random()
+        // Ticket interno de prueba: no es factura ni comprobante fiscal.
+        val ticketNum = "DEMO-T-" + (1000..9999).random() + "-" + (1000000..9999999).random()
         val newReceipt = com.example.model.DigitalReceipt(
             id = UUID.randomUUID().toString(),
             receiptNumber = ticketNum,
             storeName = storeName,
             dateText = "Hoy, " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) + " hs",
             items = listOf(
-                com.example.model.ReceiptItem("Compra en comercio / Pago QR", 1, amount, amount)
+                com.example.model.ReceiptItem("Compra en comercio / Pago QR DEMO", 1, amount, amount)
             ),
             subtotal = amount,
-            discountApplied = cashbackAmount,
-            total = amount - cashbackAmount,
-            paymentMethod = "OmniPay QR (5% Cashback Acreditado)",
-            qrVerificationCode = "OMNI-VALID-" + (10000..99999).random()
+            discountApplied = 0.0,
+            total = amount,
+            paymentMethod = "OMNI Pay local · DEMO (simulado)",
+            qrVerificationCode = "DEMO-REF-" + (10000..99999).random(),
+            environment = "DEMO",
+            fiscalValidity = false,
+            validationStatus = "SIMULATED"
         )
         _receipts.value = listOf(newReceipt) + _receipts.value
         trackUsageAction("DEMO_WALLET_PURCHASE", "wallet")
@@ -1234,24 +1388,57 @@ class MainViewModel : ViewModel() {
 
     fun toggleContactFavorite(contactId: String) {
         trackUsageAction("CONTACT_FAVORITE_TOGGLE", "contacts")
-        _contacts.value = _contacts.value.map {
-            if (it.id == contactId) it.copy(isFavorite = !it.isFavorite) else it
+        val current = _contacts.value.firstOrNull { it.id == contactId } ?: return
+        val updated = current.copy(isFavorite = !current.isFavorite)
+        _contacts.value = _contacts.value.map { if (it.id == contactId) updated else it }
+        if (updated.isCustom) {
+            _customContacts.value = _customContacts.value.map { if (it.id == contactId) updated else it }
+        }
+        if (!updated.isCustom) {
+            contactFavoritesTouched = true
+            _favoriteContactIds.value = if (updated.isFavorite) {
+                _favoriteContactIds.value + contactId
+            } else {
+                _favoriteContactIds.value - contactId
+            }
+        }
+        val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+        if (uid.isBlank()) return
+        if (updated.isCustom) {
+            personalDataRepository.saveCustomContact(uid, updated) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Custom contact update failed", it) }
+            }
+        } else {
+            personalDataRepository.setContactFavorite(
+                uid, contactId, updated.isFavorite, _favoriteContactIds.value
+            ) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Contact favorite update failed", it) }
+            }
         }
     }
 
     fun addCustomContact(name: String, category: ContactCategory, phone: String, address: String) {
         trackUsageAction("CONTACT_CREATE", "contacts")
+        val cleanName = name.trim().take(100)
+        if (cleanName.isBlank()) return
         val newContact = NeighborhoodContact(
             id = UUID.randomUUID().toString(),
-            name = name,
+            name = cleanName,
             category = category,
-            phoneNumber = phone,
+            phoneNumber = phone.trim().take(40),
             statusText = "Agendado por ti",
             rating = 5.0f,
-            address = address.ifBlank { null },
-            isFavorite = true
+            address = address.trim().take(200).ifBlank { null },
+            isFavorite = true,
+            isCustom = true
         )
-        _contacts.value = listOf(newContact) + _contacts.value
+        _customContacts.value = listOf(newContact) + _customContacts.value
+        publishPersonalContacts()
+        FirebaseAuth.getInstance().currentUser?.uid?.takeIf { it.isNotBlank() }?.let { uid ->
+            personalDataRepository.saveCustomContact(uid, newContact) { result ->
+                result.onFailure { android.util.Log.w("MainViewModel", "Custom contact save failed", it) }
+            }
+        }
     }
 
     fun updateSearchRadius(meters: Int) {
@@ -1330,13 +1517,39 @@ class MainViewModel : ViewModel() {
         val updated = current.copy(
             minSpendDiscountThreshold = threshold,
             minSpendDiscountPercent = percent,
-            specialOfferText = "$percent% de reintegro en canasta total superando los $${String.format("%,.0f", threshold)}"
+            specialOfferText = "$percent% de descuento en canasta total superando los ${String.format("%,.0f", threshold)}"
         )
         _managedStore.value = updated
         updateManagedStoreInCollections(updated)
         persistManagedStore()
     }
 
+    fun updateCashbackPolicy(
+        enabled: Boolean,
+        percentage: Double,
+        capPerPurchase: Double?,
+        monthlyCap: Double?
+    ) {
+        require(percentage.isFinite() && percentage in 0.0..100.0 && (!enabled || percentage > 0.0)) {
+            "El porcentaje debe ser mayor que 0 y no superar el 100% cuando el cashback está activo."
+        }
+        require(capPerPurchase == null || (capPerPurchase.isFinite() && capPerPurchase > 0.0)) {
+            "El tope por compra debe ser mayor que cero."
+        }
+        require(monthlyCap == null || (monthlyCap.isFinite() && monthlyCap > 0.0)) {
+            "El tope mensual debe ser mayor que cero."
+        }
+        trackUsageAction(if (enabled) "MERCHANT_CASHBACK_ENABLED" else "MERCHANT_CASHBACK_POLICY_UPDATED", "merchant")
+        val updated = _managedStore.value.copy(
+            cashbackEnabled = enabled,
+            cashbackPercent = percentage,
+            cashbackPerPurchaseCap = capPerPurchase,
+            cashbackMonthlyCap = monthlyCap
+        )
+        _managedStore.value = updated
+        updateManagedStoreInCollections(updated)
+        persistManagedStore()
+    }
     fun publishStoreNews(title: String, content: String, badge: String) {
         trackUsageAction("STORE_NEWS_PUBLISH", "merchant")
         val current = _managedStore.value
@@ -1546,5 +1759,12 @@ class MainViewModel : ViewModel() {
     fun clearStoreTypeFilter() {
         selectedStoreType = null
         _stores.value = _allStores.value
+    }
+
+    override fun onCleared() {
+        personalAuth.removeAuthStateListener(personalAuthListener)
+        personalDataListeners.forEach { it.remove() }
+        personalDataListeners.clear()
+        super.onCleared()
     }
 }

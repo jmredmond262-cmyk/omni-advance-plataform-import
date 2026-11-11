@@ -51,7 +51,7 @@ fun DemoMarketplaceScreen(
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("ENTORNO DEMO · SIN DINERO REAL", color = DemoViolet, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
                 Text(
-                    "Ahora las compras se registran como pedidos compartidos de OMNI. El catálogo, los precios y el stock deben estar publicados por cada comercio.",
+                    "Elegí entre los comercios de muestra, armá tu carrito y generá un QR DEMO para recorrer la experiencia de compra. No se utiliza dinero real.",
                     color = Color.White, fontSize = 11.sp
                 )
             }
@@ -73,11 +73,11 @@ fun DemoMarketplaceScreen(
                         modifier = Modifier.padding(start = 9.dp))
                 }
                 Text(
-                    "Elegí un comercio habilitado, agregá sus productos y confirmá. OMNI guardará el pedido en Firestore y generará un QR que el comercio podrá leer desde otro teléfono.",
+                    "Elegí un comercio de muestra, agregá productos y confirmá para generar un QR DEMO. El catálogo de prueba está separado del directorio de comercios reales.",
                     color = DemoMuted, fontSize = 12.sp
                 )
                 Text(
-                    "El cliente podrá consultar el estado y pagar con OMNI Pay DEMO. El comerciante podrá aceptar, preparar y entregar el pedido. No se procesa dinero real.",
+                    "El QR permite visualizar el resumen de compra y compartir la muestra. Esta ruta no crea pedidos compartidos ni mueve saldos.",
                     color = DemoMuted, fontSize = 11.sp
                 )
                 Button(
@@ -98,9 +98,9 @@ fun DemoMarketplaceScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("¿Qué pasa con los QR DEMO anteriores?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("¿Qué representa el QR DEMO?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Text(
-                    "Los pedidos creados por la versión anterior quedaron guardados localmente en el teléfono original. Se conservan como historial, pero esos códigos antiguos no se pueden convertir en pedidos compartidos ni acreditar pagos. Los nuevos pedidos deben generarse desde Pedidos OMNI.",
+                    "Es un QR ilustrativo que contiene el identificador de muestra, comercio, importe y productos. No es una orden aceptada por el comercio ni un comprobante de pago.",
                     color = DemoMuted, fontSize = 10.sp
                 )
             }

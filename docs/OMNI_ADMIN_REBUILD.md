@@ -1,63 +1,59 @@
-# OMNI Admin — nueva arquitectura
+# OMNI Admin — arquitectura de solo lectura
 
-OMNI Admin se reconstruye como aplicación Android independiente. No utiliza Google Sign-In, no vincula credenciales del usuario OMNI y no accede a Firestore desde el dispositivo.
+OMNI Admin es una aplicación Android independiente. Usa un proyecto de autenticación exclusivo y consulta el Firestore principal a través de un Cloudflare Worker. El panel no edita datos operativos.
 
 ## Arquitectura
 
 - Android Application ID: `com.omni.adminpanel`.
-- Firebase Authentication: proyecto independiente, exclusivo para cuentas administrativas, con proveedor Email/Password.
-- Datos: conserva el Firestore existente del proyecto `omni-57f69`.
-- API: Cloud Function HTTPS `omniAdminApi`, desplegada en el proyecto de datos `omni-57f69`.
-- Autorización: cada llamada valida el ID token emitido por el proyecto de autenticación y consulta `systemAdmins/{UID}` en el Firestore principal. El documento debe tener `enabled: true` y rol `owner` o `admin`.
+- Firebase Authentication: proyecto independiente `omni-admin-52e3f`, Email/Password.
+- Datos: Firestore principal del proyecto `omni-57f69`.
+- API canónica: Cloudflare Worker `omni-admin-api`, publicado en `https://omni-admin-api.jmredmond262.workers.dev`.
+- Autorización: el Worker valida el ID token del proyecto administrativo y consulta `systemAdmins/{UID}` en el Firestore principal. El documento exige `enabled: true` y rol `owner` o `admin`.
 - El cliente Android no incorpora credenciales de servicio ni permisos directos de Firestore.
 
 ## Configuración de Firebase necesaria
 
-La configuración externa no puede generarse desde el repositorio: requiere acceso al proyecto Firebase del propietario.
-
-1. Crear un proyecto Firebase exclusivo para OMNI Admin Authentication.
-2. Habilitar Authentication → Sign-in method → Email/Password.
-3. Registrar una aplicación Android con package name `com.omni.adminpanel`.
-4. Descargar el `google-services.json` de esa aplicación.
-5. En GitHub → Settings → Secrets and variables → Actions, crear:
-   - `OMNI_ADMIN_GOOGLE_SERVICES_JSON_BASE64`: contenido del archivo codificado en Base64.
-   - `OMNI_ADMIN_AUTH_PROJECT_ID`: ID del proyecto Firebase de autenticación.
-6. Crear en ese proyecto de autenticación la cuenta administrativa con correo y contraseña. Confirmar el correo si la configuración lo exige.
-La cuenta nueva puede usar el mismo correo y la misma contraseña que tu cuenta OMNI actual: al estar en otro proyecto Firebase, será una identidad separada y tendrá su propio UID. No se vincula ni modifica la cuenta de la app OMNI.\n7. Copiar el UID de esa cuenta y, en Firestore del proyecto original `omni-57f69`, crear `systemAdmins/{UID}`:
+1. Mantener el proyecto administrativo exclusivo con Email/Password.
+2. Registrar la aplicación Android `com.omni.adminpanel`.
+3. En GitHub Actions, mantener los secretos:
+   - `OMNI_ADMIN_GOOGLE_SERVICES_JSON_BASE64`: configuración Android del proyecto administrativo.
+   - `OMNI_ADMIN_AUTH_PROJECT_ID`: ID del proyecto de autenticación administrativa.
+   - `OMNI_PRIMARY_FIREBASE_SERVICE_ACCOUNT_BASE64`: cuenta de servicio del Firestore principal, usada únicamente por el Worker de Cloudflare.
+4. Crear la cuenta administrativa en el proyecto de autenticación y copiar su UID.
+5. En el Firestore principal, el propietario crea manualmente `systemAdmins/{UID}`:
    ```json
    { "role": "owner", "enabled": true }
    ```
 
-No se debe crear ese documento con un UID del proyecto equivocado: debe ser exactamente el UID emitido por el proyecto de autenticación nuevo.
+El UID debe pertenecer al proyecto de autenticación administrativa, no al proyecto de OMNI Principal.
 
 ## Despliegue del backend
 
-Para desplegar la función al proyecto existente, crear el secreto de GitHub:
-
-- `OMNI_PRIMARY_FIREBASE_SERVICE_ACCOUNT_BASE64`: JSON de una cuenta de servicio del proyecto `omni-57f69`, codificado en Base64, con permisos suficientes para desplegar Cloud Functions y actuar como service account.
-
-Luego ejecutar manualmente el workflow **Deploy OMNI Admin API**. Este despliega únicamente `omniAdminApi`; no modifica las reglas ni los datos de las demás colecciones.
-
-La función necesita el parámetro `OMNI_ADMIN_AUTH_PROJECT_ID`, que el workflow toma del secreto y entrega al despliegue.
+- La API que usa Android es el Cloudflare Worker. El workflow manual correspondiente es **Deploy OMNI Admin API to Cloudflare**.
+- El workflow debe ejecutarse seleccionando la rama que contiene el código que se desea publicar.
+- No se debe desplegar en paralelo la antigua función HTTPS `omniAdminApi`. Se conserva en el código como legado de solo lectura, pero Android no la invoca.
+- No publicar reglas ni servicios sin aprobación explícita del propietario.
 
 ## Construcción de la APK
 
-El workflow **OMNI Admin Rebuild** valida el paquete Firebase, compila `:admin:assembleDebug`, verifica TypeScript y publica el artefacto `omni-admin-rebuild-debug-apk`.
+El workflow **OMNI Admin Rebuild** valida la configuración Firebase administrativa, compila `:admin:assembleDebug`, verifica paquete, versión y firma, y publica el artefacto `omni-admin-rebuild-debug-apk`.
 
-## Funciones incluidas en esta versión
+La versión declarada actualmente en `admin/build.gradle.kts` es `1.4.5`; el paso de verificación de APK debe coincidir con esa versión.
+
+## Funciones incluidas
 
 - Inicio de sesión Email/Password independiente y recuperación de contraseña.
-- Validación de autorización en servidor para cada solicitud.
-- Panel de indicadores y muestra de saldo DEMO.
+- Panel ejecutivo y métricas de actividad.
 - Lectura de usuarios, billeteras, operaciones, comercios, pedidos y comentarios.
-- Lectura de módulos y activación/desactivación desde el panel.
-- Configuración global: mantenimiento, mensaje, aviso y versiones.
-- Registro de auditoría y creación de invitaciones beta.
-- Separación de roles: solo `owner` puede guardar configuración y módulos; `owner` y `admin` pueden consultar y registrar invitaciones.
+- Lectura de eventos, momentos, perfiles profesionales, módulos e invitaciones.
+- Lectura de parámetros globales y auditoría.
+- Mapa administrativo de presencia aproximada autorizada.
+- Sin botones de alta, edición, activación, desactivación o eliminación de datos operativos.
 
 ## Límites explícitos
 
-- Los listados actuales cargan hasta 100 documentos por colección y el panel muestra ese límite.
-- El saldo DEMO del resumen suma hasta 1.000 billeteras y se identifica como muestra.
-- La configuración se guarda en Firestore, pero solo afectará al comportamiento de la app OMNI cuando sus módulos lean esos parámetros. No se cambia el cliente OMNI en este proyecto.
-- No se habilitan operaciones de dinero real ni edición destructiva de cuentas de usuarios.
+- No hay operaciones de dinero real.
+- La pasarela de tarjetas es una simulación DEMO y no mueve dinero.
+- Los listados se muestran como muestras paginadas; no deben presentarse como conteos completos cuando la API informa límites.
+- La configuración global se consulta, pero no controla todavía los límites ni el modo mantenimiento de OMNI Principal.
+- El panel no accede a las subcolecciones personales de tareas, listas ni contactos.

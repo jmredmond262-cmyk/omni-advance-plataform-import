@@ -18,5 +18,6 @@ data class NeighborhoodContact(
     val rating: Float,
     val address: String? = null,
     val isFavorite: Boolean = false,
-    val averageWaitMinutes: Int? = null
+    val averageWaitMinutes: Int? = null,
+    val isCustom: Boolean = false
 )

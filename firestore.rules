@@ -23,8 +23,121 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if (signedIn() && request.auth.uid == userId) || isSystemAdmin();
-      allow create, update, delete: if signedIn() && request.auth.uid == userId;
+      function ownsUserData() {
+        return signedIn() && request.auth.uid == userId;
+      }
+
+      allow read: if ownsUserData() || isSystemAdmin();
+      allow create, update, delete: if ownsUserData();
+
+      match /dailyTasks/{taskId} {
+        function validTask() {
+          return request.resource.data.keys().hasOnly([
+            "id", "ownerUid", "title", "category", "isCompleted", "timeTag", "updatedAt"
+          ])
+            && request.resource.data.id == taskId
+            && request.resource.data.ownerUid == userId
+            && request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 120
+            && request.resource.data.category in ["RUTINA", "COMPRAS", "HOGAR", "TRABAJO"]
+            && request.resource.data.isCompleted is bool
+            && request.resource.data.timeTag is string
+            && request.resource.data.timeTag.size() == 5
+            && request.resource.data.updatedAt is timestamp;
+        }
+        allow read: if ownsUserData();
+        allow create: if ownsUserData() && validTask();
+        allow update: if ownsUserData()
+          && resource.data.ownerUid == userId
+          && request.resource.data.ownerUid == userId
+          && request.resource.data.id == resource.data.id
+          && changedOnly(["title", "category", "isCompleted", "timeTag", "updatedAt"])
+          && validTask();
+        allow delete: if ownsUserData() && resource.data.ownerUid == userId;
+      }
+
+      match /shoppingListItems/{itemId} {
+        function validShoppingItem() {
+          return request.resource.data.keys().hasOnly([
+            "id", "ownerUid", "name", "category", "quantity", "unit", "isChecked", "updatedAt"
+          ])
+            && request.resource.data.id == itemId
+            && request.resource.data.ownerUid == userId
+            && request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.name.size() <= 120
+            && request.resource.data.category in ["ALMACEN", "LACTEOS", "FRESCOS", "BEBIDAS", "LIMPIEZA", "KIOSCO", "FARMACIA"]
+            && request.resource.data.quantity is int
+            && request.resource.data.quantity > 0
+            && request.resource.data.quantity <= 999
+            && request.resource.data.unit is string
+            && request.resource.data.unit.size() > 0
+            && request.resource.data.unit.size() <= 24
+            && request.resource.data.isChecked is bool
+            && request.resource.data.updatedAt is timestamp;
+        }
+        allow read: if ownsUserData();
+        allow create: if ownsUserData() && validShoppingItem();
+        allow update: if ownsUserData()
+          && resource.data.ownerUid == userId
+          && request.resource.data.ownerUid == userId
+          && request.resource.data.id == resource.data.id
+          && changedOnly(["name", "category", "quantity", "unit", "isChecked", "updatedAt"])
+          && validShoppingItem();
+        allow delete: if ownsUserData() && resource.data.ownerUid == userId;
+      }
+
+      match /customContacts/{contactId} {
+        function validCustomContact() {
+          return request.resource.data.keys().hasOnly([
+            "id", "ownerUid", "name", "category", "phoneNumber", "statusText",
+            "rating", "address", "isFavorite", "averageWaitMinutes", "updatedAt"
+          ])
+            && request.resource.data.id == contactId
+            && request.resource.data.ownerUid == userId
+            && request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.name.size() <= 100
+            && request.resource.data.category in ["REMIS", "TAXI", "FARMACIA_TURNO", "CERRAJERIA", "FLETE", "EMERGENCIA"]
+            && request.resource.data.phoneNumber is string
+            && request.resource.data.phoneNumber.size() <= 40
+            && request.resource.data.statusText is string
+            && request.resource.data.statusText.size() <= 100
+            && request.resource.data.rating is number
+            && request.resource.data.rating >= 0
+            && request.resource.data.rating <= 5
+            && (request.resource.data.address == null
+              || (request.resource.data.address is string && request.resource.data.address.size() <= 200))
+            && request.resource.data.isFavorite is bool
+            && (request.resource.data.averageWaitMinutes == null
+              || (request.resource.data.averageWaitMinutes is int
+                && request.resource.data.averageWaitMinutes >= 0
+                && request.resource.data.averageWaitMinutes <= 1440))
+            && request.resource.data.updatedAt is timestamp;
+        }
+        allow read: if ownsUserData();
+        allow create: if ownsUserData() && validCustomContact();
+        allow update: if ownsUserData()
+          && resource.data.ownerUid == userId
+          && request.resource.data.ownerUid == userId
+          && request.resource.data.id == resource.data.id
+          && changedOnly(["name", "category", "phoneNumber", "statusText", "rating", "address", "isFavorite", "averageWaitMinutes", "updatedAt"])
+          && validCustomContact();
+        allow delete: if ownsUserData() && resource.data.ownerUid == userId;
+      }
+
+      match /preferences/{preferenceId} {
+        allow read: if ownsUserData();
+        allow create, update: if ownsUserData()
+          && preferenceId == "contactFavorites"
+          && request.resource.data.keys().hasOnly(["ownerUid", "favoriteIds", "updatedAt"])
+          && request.resource.data.ownerUid == userId
+          && request.resource.data.favoriteIds is list
+          && request.resource.data.favoriteIds.size() <= 500
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if ownsUserData() && preferenceId == "contactFavorites";
+      }
     }
 
     // Wallet accounts are private. A new account receives one fixed fictitious
@@ -146,16 +259,79 @@ service cloud.firestore {
     // Demo merchant ownership. The first authenticated account to activate a
     // store profile claims it for this sandbox; this is not real-world verification.
     match /merchantProfiles/{storeId} {
+      function validCashbackPolicy() {
+        return request.resource.data.cashback is map
+          && request.resource.data.cashback.keys().hasAll([
+            "enabled", "percentage", "capPerPurchase", "monthlyCap"
+          ])
+          && request.resource.data.cashback.keys().hasOnly([
+            "enabled", "percentage", "capPerPurchase", "monthlyCap"
+          ])
+          && request.resource.data.cashback.enabled is bool
+          && request.resource.data.cashback.percentage is number
+          && request.resource.data.cashback.percentage >= 0
+          && request.resource.data.cashback.percentage <= 100
+          && (!request.resource.data.cashback.enabled
+            || request.resource.data.cashback.percentage > 0)
+          && (request.resource.data.cashback.capPerPurchase == null
+            || (request.resource.data.cashback.capPerPurchase is number
+              && request.resource.data.cashback.capPerPurchase > 0))
+          && (request.resource.data.cashback.monthlyCap == null
+            || (request.resource.data.cashback.monthlyCap is number
+              && request.resource.data.cashback.monthlyCap > 0));
+      }
+
       allow read: if signedIn();
       allow create: if signedIn()
         && request.resource.data.storeId == storeId
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.storeName is string;
+        && request.resource.data.storeName is string
+        && request.resource.data.environment == "DEMO"
+        && validCashbackPolicy();
       allow update: if signedIn()
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid
-        && request.resource.data.storeId == resource.data.storeId;
+        && request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.environment == "DEMO"
+        && (!("environment" in resource.data.keys()) || request.resource.data.environment == resource.data.environment)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["cashback"])
+          || validCashbackPolicy());
       allow delete: if false;
+    }
+
+    // Card gateway attempts are sandbox-only and never contain PAN, CVV or real tokens.
+    match /demoCardPayments/{paymentId} {
+      function linkedOrder() {
+        return get(/databases/$(database)/documents/storeOrders/$(request.resource.data.orderId)).data;
+      }
+      allow read: if isSystemAdmin() || (signedIn()
+        && (resource.data.customerUid == request.auth.uid
+          || resource.data.merchantUid == request.auth.uid));
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          "paymentId", "orderId", "customerUid", "merchantUid", "amount",
+          "cardBrand", "provider", "status", "environment", "createdAt"
+        ])
+        && request.resource.data.paymentId == paymentId
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.merchantUid is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 50000
+        && request.resource.data.cardBrand in ["VISA", "MASTERCARD"]
+        && request.resource.data.provider == "OMNI_DEMO_GATEWAY"
+        && request.resource.data.status in ["APROBADA · DEMO", "RECHAZADA · DEMO"]
+        && request.resource.data.environment == "DEMO"
+        && request.resource.data.createdAt is timestamp
+        && linkedOrder().customerUid == request.auth.uid
+        && linkedOrder().merchantUid == request.resource.data.merchantUid
+        && linkedOrder().environment == "DEMO"
+        && linkedOrder().paymentStatus == "PENDIENTE"
+        && linkedOrder().status in ["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"]
+        && linkedOrder().createdAt is timestamp
+        && request.time < linkedOrder().createdAt + duration.value(24, 'h')
+        && linkedOrder().total == request.resource.data.amount;
+      allow update, delete: if false;
     }
 
     // QR codes identify orders only. They never confirm payment.
@@ -163,11 +339,42 @@ service cloud.firestore {
       function merchantProfilePath() {
         return /databases/$(database)/documents/merchantProfiles/$(resource.data.storeId);
       }
+      function validCashbackSnapshot() {
+        let profile = get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data;
+        let snapshot = request.resource.data.cashbackPolicy;
+        return snapshot is map
+          && snapshot.keys().hasAll(["enabled", "percentage", "capPerPurchase", "monthlyCap"])
+          && snapshot.keys().hasOnly(["enabled", "percentage", "capPerPurchase", "monthlyCap"])
+          && snapshot.enabled is bool
+          && snapshot.percentage is number
+          && snapshot.percentage >= 0
+          && snapshot.percentage <= 100
+          && (!snapshot.enabled || snapshot.percentage > 0)
+          && (snapshot.capPerPurchase == null
+            || (snapshot.capPerPurchase is number && snapshot.capPerPurchase > 0))
+          && (snapshot.monthlyCap == null
+            || (snapshot.monthlyCap is number && snapshot.monthlyCap > 0))
+          && (
+            (("cashback" in profile.keys())
+              && profile.cashback is map
+              && snapshot == profile.cashback)
+            || (
+              !("cashback" in profile.keys())
+              && snapshot.enabled == false
+              && snapshot.percentage == 0
+              && snapshot.capPerPurchase == null
+              && snapshot.monthlyCap == null
+            )
+          );
+      }
       function validNextStatus() {
         return
-          (resource.data.status == "RECIBIDO" && request.resource.data.status in ["ACEPTADO", "RECHAZADO"]) ||
-          (resource.data.status == "ACEPTADO" && request.resource.data.status in ["EN_PREPARACION", "CANCELADO"]) ||
-          (resource.data.status == "EN_PREPARACION" && request.resource.data.status in ["LISTO", "CANCELADO"]) ||
+          (resource.data.status == "RECIBIDO" && request.resource.data.status == "ACEPTADO") ||
+          (resource.data.status == "RECIBIDO" && request.resource.data.status == "RECHAZADO" && resource.data.paymentStatus == "PENDIENTE") ||
+          (resource.data.status == "ACEPTADO" && request.resource.data.status == "EN_PREPARACION") ||
+          (resource.data.status == "ACEPTADO" && request.resource.data.status == "CANCELADO" && resource.data.paymentStatus == "PENDIENTE") ||
+          (resource.data.status == "EN_PREPARACION" && request.resource.data.status == "LISTO") ||
+          (resource.data.status == "EN_PREPARACION" && request.resource.data.status == "CANCELADO" && resource.data.paymentStatus == "PENDIENTE") ||
           (resource.data.status == "LISTO" && request.resource.data.status in ["EN_CAMINO", "ENTREGADO"]) ||
           (resource.data.status == "EN_CAMINO" && request.resource.data.status == "ENTREGADO");
       }
@@ -176,6 +383,7 @@ service cloud.firestore {
         && request.resource.data.merchantUid is string
         && request.resource.data.merchantUid != request.auth.uid
         && request.resource.data.storeId is string
+        && request.resource.data.environment == "DEMO"
         && request.resource.data.status == "RECIBIDO"
         && request.resource.data.paymentStatus == "PENDIENTE"
         && request.resource.data.paymentMethod == "PAGO_AL_RETIRAR"
@@ -184,14 +392,17 @@ service cloud.firestore {
           || (request.resource.data.deliveryAddress is string && request.resource.data.deliveryAddress.size() > 0))
         && request.resource.data.total is number
         && request.resource.data.total > 0
-        && request.resource.data.total <= 500000
+        && request.resource.data.total <= 50000
+        && request.resource.data.createdAt is timestamp
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
         && request.resource.data.items.size() <= 30
         && request.resource.data.qrNonce is string
         && request.resource.data.qrNonce.size() >= 20
         && get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.ownerUid
-          == request.resource.data.merchantUid;
+          == request.resource.data.merchantUid
+        && get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.environment == "DEMO"
+        && validCashbackSnapshot();
       // Queries must constrain customerUid or merchantUid to the signed-in user.
       // merchantUid is copied from the claimed merchant profile at order creation.
       allow read: if isSystemAdmin() || (signedIn()
@@ -212,6 +423,8 @@ service cloud.firestore {
         signedIn()
         && request.auth.uid == resource.data.customerUid
         && resource.data.paymentStatus == "PENDIENTE"
+        && resource.data.createdAt is timestamp
+        && request.time < resource.data.createdAt + duration.value(24, 'h')
         && request.resource.data.paymentStatus == "PAGADA · DEMO"
         && request.resource.data.paymentMethod == "OMNI_PAY_DEMO"
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["paymentStatus", "paymentMethod", "updatedAt"])
@@ -226,6 +439,38 @@ service cloud.firestore {
         && getAfter(operationPath("orderpay_" + orderId)).data.recipientUid == resource.data.merchantUid
         && getAfter(operationPath("orderpay_" + orderId)).data.orderId == orderId
         && getAfter(operationPath("orderpay_" + orderId)).data.amount == resource.data.total
+      ) || (
+        signedIn()
+        && request.auth.uid == resource.data.customerUid
+        && resource.data.paymentStatus == "PENDIENTE"
+        && resource.data.status in ["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"]
+        && resource.data.createdAt is timestamp
+        && request.time < resource.data.createdAt + duration.value(24, 'h')
+        && request.resource.data.paymentStatus == "PAGADA · DEMO"
+        && request.resource.data.paymentMethod == "TARJETA_DEMO"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["paymentStatus", "paymentMethod", "cardPaymentId", "updatedAt"])
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.total == resource.data.total
+        && request.resource.data.qrNonce == resource.data.qrNonce
+        && request.resource.data.cardPaymentId is string
+        && existsAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId))
+        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.paymentId == request.resource.data.cardPaymentId
+        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.orderId == orderId
+        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.customerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.merchantUid == resource.data.merchantUid
+        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.amount == resource.data.total
+        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.provider == "OMNI_DEMO_GATEWAY"
+        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.status == "APROBADA · DEMO"
+        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.environment == "DEMO"
+      ) || (
+        signedIn()
+        && request.auth.uid == resource.data.customerUid
+        && resource.data.status == "RECIBIDO"
+        && resource.data.paymentStatus == "PENDIENTE"
+        && request.resource.data.status == "CANCELADO"
+        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.paymentMethod == resource.data.paymentMethod
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
       );
       allow delete: if false;
     }
@@ -387,24 +632,23 @@ service cloud.firestore {
     }
 
     match /adminConfig/{configId} {
-      allow read, write: if isSystemAdmin();
+      allow read: if isSystemAdmin();
+      allow create, update, delete: if false;
     }
 
     match /adminAuditLogs/{logId} {
       allow read: if isSystemAdmin();
-      allow create: if isSystemAdmin()
-        && request.resource.data.actorUid == request.auth.uid
-        && request.resource.data.action is string
-        && request.resource.data.createdAt is timestamp;
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /moduleRegistry/{moduleId} {
-      allow read, write: if isSystemAdmin();
+      allow read: if isSystemAdmin();
+      allow create, update, delete: if false;
     }
 
     match /betaInvitations/{invitationId} {
-      allow read, write: if isSystemAdmin();
+      allow read: if isSystemAdmin();
+      allow create, update, delete: if false;
     }
 
     // Approximate presence is opt-in, owner-writable, and administrator-readable only.
@@ -461,21 +705,6 @@ service cloud.firestore {
         && (!("localDayOfWeek" in request.resource.data) || (request.resource.data.localDayOfWeek is int && request.resource.data.localDayOfWeek >= 1 && request.resource.data.localDayOfWeek <= 7))
         && (!("timezoneOffsetMinutes" in request.resource.data) || (request.resource.data.timezoneOffsetMinutes is int && request.resource.data.timezoneOffsetMinutes >= -840 && request.resource.data.timezoneOffsetMinutes <= 840))
         && (!("localDate" in request.resource.data) || (request.resource.data.localDate is string && request.resource.data.localDate.matches('^\\d{4}-\\d{2}-\\d{2}$')))
-      allow update, delete: if false;
-    }
-
-    match /appFeedback/{feedbackId} {
-      allow read: if isSystemAdmin();
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.message is string
-        && request.resource.data.message.size() <= 2000
-        && request.resource.data.createdAt is timestamp;
-      allow update, delete: if false;
-    }
-  }
-}
-)))
         && request.resource.data.keys().hasOnly([
           "uid", "module", "event", "appVersion", "createdAt", "campaignId",
           "sessionId", "eventId", "platform", "schemaVersion", "data",

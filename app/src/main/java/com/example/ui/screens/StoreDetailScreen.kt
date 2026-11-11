@@ -445,6 +445,27 @@ fun StoreDetailScreen(
                 }
             }
 
+            if (store.cashbackEnabled && store.cashbackPercent > 0.0) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF102C2B)),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("Cashback configurado por el comercio", color = Color(0xFF65E6A5), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(
+                                "${store.cashbackPercent}% de reintegro anunciado" +
+                                    (store.cashbackPerPurchaseCap?.let { " · Tope por compra OM$ ${String.format("%,.2f", it)}" } ?: "") +
+                                    (store.cashbackMonthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
+                                color = Color.White, fontSize = 11.sp
+                            )
+                            Text("El crédito en saldo todavía no está habilitado en OMNI Pay DEMO.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                        }
+                    }
+                }
+            }
+
             // Combos del Comercio
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {

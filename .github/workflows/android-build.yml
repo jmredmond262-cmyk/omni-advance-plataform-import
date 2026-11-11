@@ -41,8 +41,9 @@ jobs:
         env:
           FIREBASE_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
           ADMIN_FIREBASE_JSON: ${{ secrets.OMNI_ADMIN_GOOGLE_SERVICES_JSON_BASE64 }}
+          ADMIN_AUTH_PROJECT_ID: ${{ secrets.OMNI_ADMIN_AUTH_PROJECT_ID }}
         run: |
-          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" ] && [ -n "$ADMIN_FIREBASE_JSON" ]; then
+          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" ] && [ -n "$ADMIN_FIREBASE_JSON" ] && [ -n "$ADMIN_AUTH_PROJECT_ID" ]; then
             printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
             printf '%s' "$ADMIN_FIREBASE_JSON" | base64 --decode > admin/google-services.json
             python3 - <<'PY'
@@ -57,6 +58,8 @@ jobs:
               if item["client_info"]["android_client_info"]["package_name"] == "com.omni.adminpanel"
           )
           project = data["project_info"]
+          if project["project_id"] != os.environ["ADMIN_AUTH_PROJECT_ID"]:
+              raise SystemExit("El proyecto Firebase de Admin no coincide con OMNI_ADMIN_AUTH_PROJECT_ID.")
           values = {
               "google_app_id": client["client_info"]["mobilesdk_app_id"],
               "google_api_key": client["api_key"][0]["current_key"],
@@ -81,7 +84,7 @@ jobs:
           PY
             echo "Firebase project resources configured for OMNI Admin."
           else
-            echo "::error::Faltan las configuraciones Firebase de OMNI o de OMNI Admin. Se cancela la compilación para no publicar APK sin conexión funcional."
+            echo "::error::Faltan las configuraciones Firebase de OMNI o de OMNI Admin, o el ID del proyecto de autenticación. Se cancela la compilación."
             exit 1
           fi
       - name: Configure optional API keys
@@ -125,6 +128,15 @@ jobs:
         env:
           OMNI_ADMIN_VERSION_CODE: ${{ github.run_number }}
         run: gradle :admin:assembleDebug
+      - name: Verify OMNI Admin package, version and APK signing identity
+        run: |
+          APK="admin/build/outputs/apk/debug/admin-debug.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.omni.adminpanel' versionCode='$GITHUB_RUN_NUMBER' versionName='1.4.5'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" > /tmp/omni-admin-apk-certs.txt
+          APK_SHA256="$(awk -F': ' '/certificate SHA-256 digest:/{print $2; exit}' /tmp/omni-admin-apk-certs.txt | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
+          test "$APK_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La APK Admin no conserva la firma autorizada."; cat /tmp/omni-admin-apk-certs.txt; exit 1; }
+          echo "APK OMNI Admin verificada: paquete, versión y firma correctos."
       - name: Upload OMNI Admin APK
         uses: actions/upload-artifact@v4
         with:

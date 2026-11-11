@@ -32,7 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Store
+import com.example.data.SampleData
 import com.example.data.wallet.DemoWalletRepository
+import com.example.data.wallet.DemoCardGatewayRepository
 import com.example.model.StoreProduct
 import com.example.model.ProductCategory
 import com.example.ui.MainViewModel
@@ -48,6 +50,12 @@ import java.util.UUID
 import org.json.JSONObject
 
 private data class OrderLine(val productId: String, val name: String, val price: Double, val quantity: Int)
+private data class CashbackTerms(
+    val enabled: Boolean = false,
+    val percentage: Double = 0.0,
+    val capPerPurchase: Double? = null,
+    val monthlyCap: Double? = null
+)
 private data class OmniStoreOrder(
     val id: String,
     val storeId: String,
@@ -62,20 +70,41 @@ private data class OmniStoreOrder(
     val paymentStatus: String,
     val fulfillmentType: String,
     val deliveryAddress: String,
-    val qrNonce: String
+    val qrNonce: String,
+    val cashbackPolicy: CashbackTerms = CashbackTerms(),
+    val paymentMethod: String = "PAGO_AL_RETIRAR",
+    val environment: String = "DEMO",
+    val isLocalDemo: Boolean = false
 )
 
+private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
+    val map = raw as? Map<*, *> ?: return CashbackTerms()
+    val percentage = (map["percentage"] as? Number)?.toDouble() ?: 0.0
+    val purchaseCap = (map["capPerPurchase"] as? Number)?.toDouble()
+    val monthlyCap = (map["monthlyCap"] as? Number)?.toDouble()
+    val enabled = map["enabled"] == true && percentage.isFinite() && percentage in 0.000001..100.0
+    return CashbackTerms(
+        enabled = enabled,
+        percentage = if (enabled) percentage else 0.0,
+        capPerPurchase = purchaseCap?.takeIf { it.isFinite() && it > 0.0 },
+        monthlyCap = monthlyCap?.takeIf { it.isFinite() && it > 0.0 }
+    )
+}
+
 @Composable
-fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: () -> Unit) {
+fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: () -> Unit, demoMode: Boolean = false) {
     val context = LocalContext.current
     val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     val profile by viewModel.userProfile.collectAsState()
     val selectedStore by viewModel.selectedStore.collectAsState()
-    val availableStores by viewModel.stores.collectAsState()
+    val liveStores by viewModel.stores.collectAsState()
+    // El mercado DEMO usa un catálogo de muestra independiente del directorio real.
+    val availableStores = if (demoMode) SampleData.sampleStores else liveStores
     val managedStore by viewModel.managedStore.collectAsState()
     val store = if (merchantMode) managedStore else (selectedStore ?: managedStore)
     val db = remember { FirebaseFirestore.getInstance() }
     val walletRepository = remember { DemoWalletRepository() }
+    val demoCardGateway = remember { DemoCardGatewayRepository() }
 
     var merchantReady by remember { mutableStateOf(false) }
     var merchantError by remember { mutableStateOf<String?>(null) }
@@ -103,8 +132,19 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var feedback by remember { mutableStateOf<String?>(null) }
     var createdOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var showOrderReview by remember { mutableStateOf(false) }
+    var reviewCashbackTerms by remember(store.id) {
+        mutableStateOf(CashbackTerms(
+            store.cashbackEnabled, store.cashbackPercent,
+            store.cashbackPerPurchaseCap, store.cashbackMonthlyCap
+        ))
+    }
+    var loadingCashbackReview by remember { mutableStateOf(false) }
     var selectedScannedOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var payingOrderId by remember { mutableStateOf<String?>(null) }
+    var selectedCardOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
+    var cardPaymentInProgress by remember { mutableStateOf(false) }
+    var demoCardBrand by remember { mutableStateOf("VISA") }
+    var demoCardApproved by remember { mutableStateOf(true) }
 
     fun decodeOrder(doc: com.google.firebase.firestore.DocumentSnapshot): OmniStoreOrder? = runCatching {
         val lines = (doc.get("items") as? List<*>)?.mapNotNull { raw ->
@@ -130,7 +170,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             paymentStatus = doc.getString("paymentStatus").orEmpty(),
             fulfillmentType = doc.getString("fulfillmentType").orEmpty(),
             deliveryAddress = doc.getString("deliveryAddress").orEmpty(),
-            qrNonce = doc.getString("qrNonce").orEmpty()
+            qrNonce = doc.getString("qrNonce").orEmpty(),
+            cashbackPolicy = decodeCashbackTerms(doc.get("cashbackPolicy")),
+            paymentMethod = doc.getString("paymentMethod") ?: "PAGO_AL_RETIRAR",
+            environment = doc.getString("environment").orEmpty()
         )
     }.getOrNull()
 
@@ -181,9 +224,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         }
     }
 
-    DisposableEffect(merchantMode, merchantReady, store.id, uid) {
+    DisposableEffect(merchantMode, merchantReady, store.id, uid, demoMode) {
         var listener: ListenerRegistration? = null
-        if (uid.isNotBlank() && (!merchantMode || merchantReady)) {
+        if (!demoMode && uid.isNotBlank() && (!merchantMode || merchantReady)) {
             val query = if (merchantMode) {
                 db.collection("storeOrders").whereEqualTo("merchantUid", uid)
             } else {
@@ -227,11 +270,35 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     val total = cartLines.sumOf { it.price * it.quantity }
 
     fun submitOrder() {
-        if (uid.isBlank() || cartLines.isEmpty() || cartLines.size > 30 || total <= 0.0 || total > 500000.0 || (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())) {
-            feedback = "Revisá el pedido: máximo 30 productos distintos, total hasta OM$ 500.000 y dirección obligatoria para delivery."
+        if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 || total <= 0.0 || total > 50000.0 || (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())) {
+            feedback = "Revisá el pedido: máximo 30 productos distintos, total hasta OM$ 50.000 y dirección obligatoria para delivery."
             return
         }
         sending = true
+        if (demoMode) {
+            val demoId = "DEMO-" + UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
+            val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
+            createdOrder = OmniStoreOrder(
+                id = demoId,
+                storeId = store.id,
+                storeName = store.name,
+                merchantUid = "",
+                customerUid = uid,
+                customerName = profile.fullName,
+                customerPhone = profile.phone,
+                items = cartLines,
+                total = total,
+                status = "SIMULACIÓN LOCAL",
+                paymentStatus = "NO APLICA · DEMO",
+                fulfillmentType = fulfillmentType,
+                deliveryAddress = deliveryAddress.trim(),
+                qrNonce = nonce,
+                isLocalDemo = true
+            )
+            updateCart(emptyMap())
+            sending = false
+            return
+        }
         db.collection("merchantProfiles").document(store.id).get()
             .addOnSuccessListener { merchant ->
                 val merchantUid = merchant.getString("ownerUid").orEmpty()
@@ -239,6 +306,37 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     sending = false
                     feedback = "Este comercio todavía no habilitó pedidos QR para clientes."
                 } else {
+                    val publishedInventory = (merchant.get("inventory") as? List<*>)?.mapNotNull { raw ->
+                        raw as? Map<*, *>
+                    }.orEmpty()
+                    if (publishedInventory.isNotEmpty()) {
+                        val staleLine = cartLines.firstOrNull { line ->
+                            val current = publishedInventory.firstOrNull { it["id"] == line.productId }
+                            val currentPrice = (current?.get("price") as? Number)?.toDouble()
+                            current == null || current["inStock"] == false ||
+                                currentPrice == null || !currentPrice.isFinite() ||
+                                kotlin.math.abs(currentPrice - line.price) >= 0.005
+                        }
+                        if (staleLine != null) {
+                            sending = false
+                            feedback = "Cambió el precio o la disponibilidad de ${staleLine.name}. Actualizá el catálogo y revisá el pedido."
+                            return@addOnSuccessListener
+                        }
+                    }
+                    val cashbackPolicy = decodeCashbackTerms(merchant.get("cashback"))
+                    if (cashbackPolicy != reviewCashbackTerms) {
+                        reviewCashbackTerms = cashbackPolicy
+                        sending = false
+                        feedback = "El comercio actualizó las condiciones de cashback. Revisalas antes de confirmar."
+                        showOrderReview = true
+                        return@addOnSuccessListener
+                    }
+                    val cashbackPolicyData = mapOf(
+                        "enabled" to cashbackPolicy.enabled,
+                        "percentage" to cashbackPolicy.percentage,
+                        "capPerPurchase" to cashbackPolicy.capPerPurchase,
+                        "monthlyCap" to cashbackPolicy.monthlyCap
+                    )
                     val ref = db.collection("storeOrders").document()
                     val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
                     val payloadItems = cartLines.map { mapOf(
@@ -247,9 +345,11 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     ) }
                     ref.set(mapOf(
                         "storeId" to store.id, "storeName" to store.name,
+                        "environment" to "DEMO",
                         "merchantUid" to merchantUid, "customerUid" to uid,
                         "customerName" to profile.fullName, "customerPhone" to profile.phone,
                         "items" to payloadItems, "total" to total,
+                        "cashbackPolicy" to cashbackPolicyData,
                         "status" to "RECIBIDO", "paymentStatus" to "PENDIENTE",
                         "paymentMethod" to "PAGO_AL_RETIRAR",
                         "fulfillmentType" to fulfillmentType, "deliveryAddress" to deliveryAddress.trim(),
@@ -263,7 +363,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         createdOrder = OmniStoreOrder(
                             ref.id, store.id, store.name, merchantUid, uid,
                             profile.fullName, profile.phone, cartLines, total,
-                            "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce
+                            "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
+                            cashbackPolicy
                         )
                         updateCart(emptyMap())
                     }.addOnFailureListener { e ->
@@ -283,15 +384,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             .addOnSuccessListener { doc ->
                 val order = decodeOrder(doc)
                 val createdAt = doc.getTimestamp("createdAt")?.toDate()?.time ?: 0L
-                val expired = createdAt == 0L || System.currentTimeMillis() - createdAt > 24L * 60L * 60L * 1000L
+                val expired = createdAt == 0L || System.currentTimeMillis() - createdAt >= 24L * 60L * 60L * 1000L
                 val itemsMatch = order != null &&
                     order.items.size == payload.items.size &&
-                    order.items.all { line ->
-                        payload.items.any { qrItem ->
-                            qrItem.productId == line.productId && qrItem.name == line.name &&
-                                kotlin.math.abs(qrItem.price - line.price) < 0.005 &&
-                                qrItem.quantity == line.quantity
-                        }
+                    order.items.zip(payload.items).all { (line, qrItem) ->
+                        qrItem.productId == line.productId && qrItem.name == line.name &&
+                            kotlin.math.abs(qrItem.price - line.price) < 0.005 &&
+                            qrItem.quantity == line.quantity
                     }
                 if (order == null || order.storeId != store.id || order.merchantUid != uid ||
                     order.qrNonce != payload.qrNonce || order.storeName != payload.merchantName ||
@@ -300,16 +399,21 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     feedback = "QR inválido, vencido, modificado o no corresponde a este comercio."
                 } else {
                     OmniTracker.track("orders", "ORDER_QR_VERIFIED", mapOf("operationId" to order.id, "stage" to "QR_VALIDATION", "success" to true))
-                    db.collection("walletOperations")
-                        .whereEqualTo("recipientUid", uid)
-                        .whereEqualTo("orderId", order.id)
-                        .limit(1).get()
-                        .addOnSuccessListener { payment ->
-                            selectedScannedOrder = order.copy(
-                                paymentStatus = if (payment.isEmpty) "PENDIENTE" else "PAGADA · DEMO"
-                            )
-                        }
-                        .addOnFailureListener { selectedScannedOrder = order }
+                    if (order.paymentStatus.startsWith("PAGADA")) {
+                        // El pago con tarjeta DEMO se registra en demoCardPayments, no en walletOperations.
+                        selectedScannedOrder = order
+                    } else {
+                        db.collection("walletOperations")
+                            .whereEqualTo("recipientUid", uid)
+                            .whereEqualTo("orderId", order.id)
+                            .limit(1).get()
+                            .addOnSuccessListener { payment ->
+                                selectedScannedOrder = order.copy(
+                                    paymentStatus = if (payment.isEmpty) "PENDIENTE" else "PAGADA · DEMO"
+                                )
+                            }
+                            .addOnFailureListener { selectedScannedOrder = order }
+                    }
                 }
             }
             .addOnFailureListener { feedback = "No se pudo verificar el pedido en Firestore." }
@@ -330,7 +434,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         result.fold(
                             onSuccess = {
                                 orders = orders.map { current ->
-                                    if (current.id == order.id) current.copy(paymentStatus = "PAGADA · DEMO") else current
+                                    if (current.id == order.id) current.copy(paymentStatus = "PAGADA · DEMO", paymentMethod = "OMNI_PAY_DEMO") else current
                                 }
                                 feedback = "$it. Se registró el movimiento ficticio en las dos billeteras. No se movió dinero real."
                             },
@@ -348,7 +452,49 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         }
     }
 
+    fun payOrderWithDemoCard(order: OmniStoreOrder) {
+        if (cardPaymentInProgress) return
+        if (order.customerUid != uid || order.paymentStatus != "PENDIENTE" || order.environment != "DEMO") {
+            feedback = "Este pedido no está habilitado para pago con tarjeta DEMO."
+            return
+        }
+        cardPaymentInProgress = true
+        val selectedBrand = demoCardBrand
+        val shouldApprove = demoCardApproved
+        demoCardGateway.simulateOrderPayment(
+            order.id, order.merchantUid, order.total, selectedBrand, shouldApprove
+        ) { result ->
+            cardPaymentInProgress = false
+            result.fold(
+                onSuccess = { message ->
+                    OmniTracker.track(
+                        "orders",
+                        if (shouldApprove) "DEMO_CARD_PAYMENT_APPROVED" else "DEMO_CARD_PAYMENT_DECLINED",
+                        mapOf("operationId" to order.id, "cardBrand" to selectedBrand, "success" to shouldApprove)
+                    )
+                    if (shouldApprove) {
+                        orders = orders.map { current ->
+                            if (current.id == order.id) current.copy(
+                                paymentStatus = "PAGADA · DEMO",
+                                paymentMethod = "TARJETA_DEMO"
+                            ) else current
+                        }
+                    }
+                    selectedCardOrder = null
+                    feedback = "$message. No se ingresaron datos reales ni se movió dinero."
+                },
+                onFailure = { error ->
+                    feedback = error.localizedMessage ?: "No se pudo simular el pago con tarjeta."
+                }
+            )
+        }
+    }
+
     fun advanceOrder(order: OmniStoreOrder, next: String) {
+        if (next in listOf("RECHAZADO", "CANCELADO") && order.paymentStatus != "PENDIENTE") {
+            feedback = "No se puede rechazar ni cancelar un pedido ya pagado sin un circuito de devolución DEMO."
+            return
+        }
         db.collection("storeOrders").document(order.id).update(
             mapOf("status" to next, "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
@@ -359,14 +505,16 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     fun cancelCustomerOrder(order: OmniStoreOrder) {
-        if (order.customerUid != uid || order.status != "RECIBIDO") {
-            feedback = "Solo podés cancelar un pedido propio que todavía no fue aceptado."
+        if (order.customerUid != uid || order.status != "RECIBIDO" || order.paymentStatus != "PENDIENTE") {
+            feedback = "Solo podés cancelar un pedido propio, pendiente de pago y todavía no aceptado."
             return
         }
         db.collection("storeOrders").document(order.id).update(
             mapOf("status" to "CANCELADO", "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
             UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_CANCELLED_BY_CUSTOMER", mapOf("operationId" to order.id, "stage" to "CUSTOMER_CANCELLATION_CONFIRMED", "success" to true))
+            orders = orders.map { current -> if (current.id == order.id) current.copy(status = "CANCELADO") else current }
+            if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO")
             feedback = "El pedido fue cancelado."
         }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo cancelar el pedido." }
     }
@@ -386,6 +534,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 OrderQRScanner(
                     onOrderScanned = { handleScannedOrder(it) },
                     onLegacyWalletQr = { feedback = "Este es un QR de cuenta, no un QR de pedido." },
+                    onDemoOrderScanned = { feedback = "QR DEMO local detectado. Es una muestra de compra: no existe un pedido compartido ni permite cobrar o entregar." },
                     onError = { feedback = it },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     buttonLabel = "Escanear QR · Pedidos y cobros",
@@ -395,8 +544,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             if (merchantError != null) Text(merchantError.orEmpty(), color = Color(0xFFFF9B8F), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
             else if (!merchantReady) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
         } else {
-            Text("Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
-            Text("CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+            Text(if (demoMode) "Elegí un comercio de muestra, seleccioná productos y generá un QR DEMO." else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
+            Text(if (demoMode) "CATÁLOGO DEMO INDEPENDIENTE · No requiere aceptación del comercio ni crea movimientos reales." else "CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+            if (demoMode) Text("COMERCIOS DE MUESTRA", color = Color(0xFFB69CFF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
@@ -477,8 +627,29 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             OutlinedTextField(deliveryAddress, { deliveryAddress = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Dirección de entrega") }, singleLine = true)
                         }
                         Text("Podés seguir agregando productos. El QR se genera únicamente cuando confirmás el pedido.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
-                        Button(onClick = { showOrderReview = true }, enabled = !sending, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
-                            Text("Revisar carrito")
+                        Button(
+                            onClick = {
+                                loadingCashbackReview = true
+                                db.collection("merchantProfiles").document(store.id).get()
+                                    .addOnSuccessListener { merchant ->
+                                        loadingCashbackReview = false
+                                        if (!merchant.exists() || merchant.getString("environment") != "DEMO") {
+                                            feedback = "Este comercio no tiene un perfil DEMO habilitado para pedidos."
+                                        } else {
+                                            reviewCashbackTerms = decodeCashbackTerms(merchant.get("cashback"))
+                                            showOrderReview = true
+                                        }
+                                    }
+                                    .addOnFailureListener {
+                                        loadingCashbackReview = false
+                                        feedback = "No se pudieron actualizar las condiciones del comercio. Intentá nuevamente."
+                                    }
+                            },
+                            enabled = !sending && !loadingCashbackReview,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))
+                        ) {
+                            Text(if (loadingCashbackReview) "Actualizando condiciones…" else "Revisar carrito")
                         }
                     }
                 }
@@ -505,12 +676,47 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             order, merchantMode = false,
                             onAdvance = { next -> if (next == "CANCELADO") cancelCustomerOrder(order) },
                             onPay = { payOrderDemo(order) },
+                            onPayWithDemoCard = if (order.environment == "DEMO") ({ selectedCardOrder = order }) else null,
                             paying = payingOrderId == order.id
                         )
                     }
                 }
             }
         }
+    }
+
+    selectedCardOrder?.let { order ->
+        AlertDialog(
+            onDismissRequest = { if (!cardPaymentInProgress) selectedCardOrder = null },
+            title = { Text("Pasarela de tarjeta · DEMO") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("Pedido: ${order.id.take(9)} · OM$ ${String.format("%,.2f", order.total)}", fontWeight = FontWeight.Bold)
+                    Text("Elegí una tarjeta ficticia y el resultado que querés probar. No ingreses números, vencimiento ni CVV reales.", fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = demoCardBrand == "VISA", onClick = { demoCardBrand = "VISA" }, enabled = !cardPaymentInProgress, label = { Text("Visa DEMO") })
+                        FilterChip(selected = demoCardBrand == "MASTERCARD", onClick = { demoCardBrand = "MASTERCARD" }, enabled = !cardPaymentInProgress, label = { Text("Mastercard DEMO") })
+                    }
+                    Text("Resultado de prueba", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = demoCardApproved, onClick = { demoCardApproved = true }, enabled = !cardPaymentInProgress, label = { Text("Aprobada") })
+                        FilterChip(selected = !demoCardApproved, onClick = { demoCardApproved = false }, enabled = !cardPaymentInProgress, label = { Text("Rechazada") })
+                    }
+                    Text("La simulación solo registra una autorización ficticia. No cobra ni acredita fondos.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !cardPaymentInProgress,
+                    onClick = { payOrderWithDemoCard(order) }
+                ) { Text(if (cardPaymentInProgress) "Simulando…" else "Ejecutar simulación") }
+            },
+            dismissButton = {
+                TextButton(onClick = { if (!cardPaymentInProgress) selectedCardOrder = null }, enabled = !cardPaymentInProgress) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 
     selectedScannedOrder?.let { scanned ->
@@ -569,7 +775,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         AlertDialog(
             onDismissRequest = { if (!sending) showOrderReview = false },
             containerColor = Color(0xFF101B30),
-            title = { Text("Confirmar pedido", color = Color.White) },
+            title = { Text(if (demoMode) "Confirmar compra DEMO" else "Confirmar pedido", color = Color.White) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(store.name, color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold)
@@ -577,11 +783,22 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         Text("${line.quantity} × ${line.name} · OM$ ${String.format("%,.2f", line.price * line.quantity)}", color = Color.White, fontSize = 11.sp)
                     }
                     Text("Total: OM$ ${String.format("%,.2f", total)}", color = Color.White, fontWeight = FontWeight.Bold)
+                    if (reviewCashbackTerms.enabled) {
+                        Text(
+                            "Política vigente del comercio: ${reviewCashbackTerms.percentage}% de cashback configurado" +
+                                (reviewCashbackTerms.capPerPurchase?.let { " · Tope por compra OM$ ${String.format("%,.2f", it)}" } ?: "") +
+                                (reviewCashbackTerms.monthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
+                            color = Color(0xFF65E6A5), fontSize = 10.sp
+                        )
+                        Text("El crédito automático todavía no está habilitado; esta compra no recibirá un reintegro en saldo.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    } else {
+                        Text("Este comercio no tiene cashback activo para este pedido.", color = Color(0xFFB8C8D9), fontSize = 10.sp)
+                    }
                     Text(if (fulfillmentType == "DELIVERY") "Entrega: ${deliveryAddress.trim()}" else "Modalidad: Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 11.sp)
-                    Text("Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    Text(if (demoMode) "La compra es ilustrativa: se genera un QR DEMO local, sin pedido compartido ni pago." else "Pago pendiente. Se abona al retirar o recibir; el QR solo identifica el pedido.", color = Color(0xFFFFC978), fontSize = 10.sp)
                 }
             },
-            confirmButton = { Button(onClick = { showOrderReview = false; submitOrder() }, enabled = !sending) { Text("Confirmar y generar QR") } },
+            confirmButton = { Button(onClick = { showOrderReview = false; submitOrder() }, enabled = !sending) { Text(if (demoMode) "Generar QR DEMO" else "Confirmar y generar QR") } },
             dismissButton = { TextButton(onClick = { showOrderReview = false }, enabled = !sending) { Text("Volver al carrito") } }
         )
     }
@@ -589,7 +806,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         val payload = OrderQRCodec.encode(
             order.id, order.storeName, order.total,
             order.items.map { OrderQRItem(it.productId, it.name, it.price, it.quantity) },
-            order.qrNonce
+            order.qrNonce,
+            isLocalDemo = order.isLocalDemo
         )
         val bitmap = remember(payload) {
             runCatching {
@@ -604,37 +822,37 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         AlertDialog(
             onDismissRequest = { createdOrder = null },
             containerColor = Color(0xFF101B30),
-            title = { Text("Pedido enviado", color = Color.White) },
+            title = { Text(if (order.isLocalDemo) "QR DEMO generado" else "Pedido enviado", color = Color.White) },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Mostrá este QR en el comercio para identificar tu pedido.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
+                    Text(if (order.isLocalDemo) "QR ilustrativo de la compra. No se envía al comercio ni genera un pedido compartido." else "Mostrá este QR en el comercio para identificar tu pedido.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
                     bitmap?.let { qrBitmap ->
                         Image(qrBitmap.asImageBitmap(), "QR del pedido", modifier = Modifier.size(190.dp))
                         OutlinedButton(onClick = {
                             runCatching {
                                 val folder = File(context.cacheDir, "shared_qr").apply { mkdirs() }
-                                val qrFile = File(folder, "omni-pedido-${order.id.take(10)}.png")
+                                val qrFile = File(folder, if (order.isLocalDemo) "omni-pedido-demo-${order.id.take(10)}.png" else "omni-pedido-${order.id.take(10)}.png")
                                 FileOutputStream(qrFile).use { output -> check(qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) }
                                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", qrFile)
                                 UsageAnalyticsRepository.trackCurrentAction("orders", "ORDER_SHARED", mapOf("method" to "share_sheet"))
                                 val share = Intent(Intent.ACTION_SEND).apply {
                                     type = "image/png"
                                     putExtra(Intent.EXTRA_STREAM, uri)
-                                    putExtra(Intent.EXTRA_TEXT, "Pedido OMNI ${order.id}\nComercio: ${order.storeName}\nTotal: OM$ ${String.format("%,.2f", order.total)}\nPago pendiente al retirar o recibir.")
+                                    putExtra(Intent.EXTRA_TEXT, if (order.isLocalDemo) "QR DEMO LOCAL OMNI\nNo es un pedido compartido.\nComercio de muestra: ${order.storeName}\nTotal ilustrativo: OM$ ${String.format("%,.2f", order.total)}" else "Pedido OMNI ${order.id}\nComercio: ${order.storeName}\nTotal: OM$ ${String.format("%,.2f", order.total)}\nPago pendiente al retirar o recibir.")
                                     clipData = ClipData.newUri(context.contentResolver, "QR Pedido OMNI", uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(Intent.createChooser(share, "Compartir QR del pedido"))
+                                context.startActivity(Intent.createChooser(share, if (order.isLocalDemo) "Compartir QR DEMO" else "Compartir QR del pedido"))
                             }.onFailure { feedback = it.localizedMessage ?: "No se pudo compartir el QR." }
                         }) { Text("Compartir QR") }
                     } ?: Text("No se pudo generar la imagen QR.", color = Color(0xFFFF9B8F), fontSize = 10.sp)
-                    Text("Pedido ${order.id.take(10)} · ${order.status}", color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                    Text("Pago pendiente · se abona al retirar o recibir. Este QR no es un comprobante de pago.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                    Text("${if (order.isLocalDemo) "Código DEMO" else "Pedido"} ${order.id.take(10)} · ${order.status}", color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text(if (order.isLocalDemo) "Solo demostración: no genera retiro, cobro, pago ni registro comercial." else "Pago pendiente · se abona al retirar o recibir. Este QR no es un comprobante de pago.", color = Color(0xFFFFC978), fontSize = 10.sp)
                 }
             },
             confirmButton = {
                 Button(onClick = { createdOrder = null }) {
-                    Text("Ver pedido y opciones de pago")
+                    Text(if (order.isLocalDemo) "Cerrar demostración" else "Ver pedido y opciones de pago")
                 }
             }
         )
@@ -666,6 +884,7 @@ private fun OrderStatusCard(
     merchantMode: Boolean,
     onAdvance: (String) -> Unit,
     onPay: (() -> Unit)? = null,
+    onPayWithDemoCard: (() -> Unit)? = null,
     paying: Boolean = false
 ) {
     val context = LocalContext.current
@@ -699,9 +918,18 @@ private fun OrderStatusCard(
             }
             order.items.forEach { Text("${it.quantity} × ${it.name}", color = Color(0xFFB8C8D9), fontSize = 10.sp) }
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+            if (order.cashbackPolicy.enabled) {
+                Text(
+                    "Condiciones registradas al crear el pedido: ${order.cashbackPolicy.percentage}% de cashback" +
+                        (order.cashbackPolicy.capPerPurchase?.let { " · Tope por compra OM$ ${String.format("%,.2f", it)}" } ?: "") +
+                        (order.cashbackPolicy.monthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
+                    color = Color(0xFF65E6A5), fontSize = 9.sp
+                )
+                Text("No acreditable todavía: circuito DEMO de reintegro pendiente.", color = Color(0xFFFFC978), fontSize = 9.sp)
+            }
             Text(
-                if (order.paymentStatus.startsWith("PAGADA")) "Pago: acreditado · DEMO"
-                else "Pago: pendiente · OMNI Pay DEMO o al retirar/recibir",
+                if (order.paymentStatus.startsWith("PAGADA")) "Pago: acreditado · ${if (order.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"}"
+                else "Pago: pendiente · OMNI Pay DEMO, tarjeta DEMO o al retirar/recibir",
                 color = if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
                 fontSize = 9.sp
             )
@@ -713,7 +941,12 @@ private fun OrderStatusCard(
                         Text(if (paying) "Procesando pago DEMO…" else "Pagar con OMNI Pay DEMO", fontSize = 10.sp)
                     }
                 } else {
-                    Text("El total supera el límite de OMNI Pay DEMO (OM$ 50.000). Podés pagar al retirar o recibir.", color = Color(0xFFFFC978), fontSize = 9.sp)
+                    Text("El total supera el límite de pagos DEMO (OM$ 50.000). Podés abonar al retirar o recibir.", color = Color(0xFFFFC978), fontSize = 9.sp)
+                }
+                if (onPayWithDemoCard != null && order.total <= 50000.0) {
+                    OutlinedButton(onClick = onPayWithDemoCard, enabled = !paying, modifier = Modifier.fillMaxWidth()) {
+                        Text("Simular pago con tarjeta DEMO", fontSize = 10.sp)
+                    }
                 }
             }
             if (merchantMode && order.customerPhone.isNotBlank()) {
