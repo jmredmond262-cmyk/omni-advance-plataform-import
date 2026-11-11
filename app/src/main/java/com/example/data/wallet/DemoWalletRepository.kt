@@ -141,7 +141,7 @@ class DemoWalletRepository(
         }
         walletAliasService.resolveRecipientUid(identifier) { resolved ->
             resolved.fold(
-                onSuccess = { recipientUid -> executeTransfer(recipientUid, amount, false, done) },
+                onSuccess = { recipientUid -> executeTransfer(recipientUid, amount, false, done, expectedRecipientIdentifier = identifier) },
                 onFailure = { error -> done(Result.failure(error)) }
             )
         }
@@ -149,7 +149,7 @@ class DemoWalletRepository(
 
     fun payDemoQr(payload: String, amount: Double, done: (Result<String>) -> Unit) {
         val parts = payload.split("|")
-        if (parts.size < 3 || parts[0] != "OMNI-DEMO") {
+        if (parts.size != 3 || parts[0] != "OMNI-DEMO" || parts[1].isBlank() || parts[2].isBlank()) {
             done(Result.failure(IllegalArgumentException("El QR no pertenece a OMNI Pay DEMO.")))
             return
         }
@@ -157,7 +157,7 @@ class DemoWalletRepository(
             done(Result.failure(IllegalArgumentException("El importe no es válido.")))
             return
         }
-        executeTransfer(parts[1], amount, true, done)
+        executeTransfer(parts[1], amount, true, done, expectedRecipientIdentifier = parts[2])
     }
 
     /**
@@ -212,7 +212,8 @@ class DemoWalletRepository(
         amount: Double,
         isQr: Boolean,
         done: (Result<String>) -> Unit,
-        orderId: String? = null
+        orderId: String? = null,
+        expectedRecipientIdentifier: String? = null
     ) {
         val senderUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
         if (senderUid.isNullOrBlank()) {
@@ -267,6 +268,14 @@ class DemoWalletRepository(
             }
             check(sender.exists()) { "Tu billetera DEMO no está disponible." }
             check(recipient.exists()) { "La billetera DEMO del comercio no está disponible." }
+            expectedRecipientIdentifier?.let { rawIdentifier ->
+                val identifier = rawIdentifier.trim().lowercase(Locale.ROOT)
+                val currentAlias = recipient.getString("alias").orEmpty().trim().lowercase(Locale.ROOT)
+                val currentCvu = recipient.getString("cvu").orEmpty().trim().lowercase(Locale.ROOT)
+                check(identifier.isNotBlank() && (identifier == currentAlias || identifier == currentCvu)) {
+                    "El alias o CVU del QR ya no coincide con la cuenta destinataria. Pedí un QR actualizado."
+                }
+            }
             val senderBalance = (sender.get("balance") as? Number)?.toDouble() ?: 0.0
             check(senderBalance >= amount) { "Saldo insuficiente para completar la operación." }
             val recipientAlias = "Cuenta OMNI Pay"
