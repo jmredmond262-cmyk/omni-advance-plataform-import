@@ -212,6 +212,8 @@ service cloud.firestore {
         signedIn()
         && request.auth.uid == resource.data.customerUid
         && resource.data.paymentStatus == "PENDIENTE"
+        && resource.data.createdAt is timestamp
+        && request.time < resource.data.createdAt + duration.value(24, 'h')
         && request.resource.data.paymentStatus == "PAGADA · DEMO"
         && request.resource.data.paymentMethod == "OMNI_PAY_DEMO"
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["paymentStatus", "paymentMethod", "updatedAt"])
@@ -226,6 +228,15 @@ service cloud.firestore {
         && getAfter(operationPath("orderpay_" + orderId)).data.recipientUid == resource.data.merchantUid
         && getAfter(operationPath("orderpay_" + orderId)).data.orderId == orderId
         && getAfter(operationPath("orderpay_" + orderId)).data.amount == resource.data.total
+      ) || (
+        signedIn()
+        && request.auth.uid == resource.data.customerUid
+        && resource.data.status == "RECIBIDO"
+        && resource.data.paymentStatus == "PENDIENTE"
+        && request.resource.data.status == "CANCELADO"
+        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.paymentMethod == resource.data.paymentMethod
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
       );
       allow delete: if false;
     }
