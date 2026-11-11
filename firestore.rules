@@ -146,6 +146,28 @@ service cloud.firestore {
     // Demo merchant ownership. The first authenticated account to activate a
     // store profile claims it for this sandbox; this is not real-world verification.
     match /merchantProfiles/{storeId} {
+      function validCashbackPolicy() {
+        return request.resource.data.cashback is map
+          && request.resource.data.cashback.keys().hasAll([
+            "enabled", "percentage", "capPerPurchase", "monthlyCap"
+          ])
+          && request.resource.data.cashback.keys().hasOnly([
+            "enabled", "percentage", "capPerPurchase", "monthlyCap"
+          ])
+          && request.resource.data.cashback.enabled is bool
+          && request.resource.data.cashback.percentage is number
+          && request.resource.data.cashback.percentage >= 0
+          && request.resource.data.cashback.percentage <= 100
+          && (!request.resource.data.cashback.enabled
+            || request.resource.data.cashback.percentage > 0)
+          && (request.resource.data.cashback.capPerPurchase == null
+            || (request.resource.data.cashback.capPerPurchase is number
+              && request.resource.data.cashback.capPerPurchase > 0))
+          && (request.resource.data.cashback.monthlyCap == null
+            || (request.resource.data.cashback.monthlyCap is number
+              && request.resource.data.cashback.monthlyCap > 0));
+      }
+
       allow read: if signedIn();
       allow create: if signedIn()
         && request.resource.data.storeId == storeId
@@ -154,7 +176,9 @@ service cloud.firestore {
       allow update: if signedIn()
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid
-        && request.resource.data.storeId == resource.data.storeId;
+        && request.resource.data.storeId == resource.data.storeId
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["cashback"])
+          || validCashbackPolicy());
       allow delete: if false;
     }
 
