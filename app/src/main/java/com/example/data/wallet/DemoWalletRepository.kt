@@ -236,11 +236,13 @@ class DemoWalletRepository(
                     "El pedido está cerrado y no admite pagos."
                 }
                 if (existingOperation.exists()) {
+                    val previousAmount = (existingOperation.get("amount") as? Number)?.toDouble() ?: Double.NaN
                     check(existingOperation.getString("senderUid") == senderUid &&
                         existingOperation.getString("recipientUid") == recipientUid &&
                         existingOperation.getString("orderId") == orderId &&
                         existingOperation.getString("kind") == "QR_PAYMENT" &&
-                        kotlin.math.abs((existingOperation.get("amount") as? Number)?.toDouble().orNaN() - amount) < 0.005
+                        previousAmount.isFinite() &&
+                        kotlin.math.abs(previousAmount - amount) < 0.005
                     ) { "El pedido tiene un movimiento asociado que no coincide. Contactá soporte DEMO." }
                     if (orderSnapshot.getString("paymentStatus") == "PENDIENTE") {
                         tx.update(orderRef!!, mapOf(
