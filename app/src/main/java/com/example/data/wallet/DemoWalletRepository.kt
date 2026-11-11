@@ -305,8 +305,8 @@ class DemoWalletRepository(
                     previousAmount.isFinite() && kotlin.math.abs(previousAmount - amount) < 0.005 &&
                     existingSenderTransaction?.exists() == true &&
                     existingRecipientTransaction?.exists() == true &&
-                    existingSenderTransaction.getString("operationId") == stableOperationId &&
-                    existingRecipientTransaction.getString("operationId") == stableOperationId
+                    existingSenderTransaction?.getString("operationId") == stableOperationId &&
+                    existingRecipientTransaction?.getString("operationId") == stableOperationId
                 ) { "El identificador ya pertenece a otra operación o el registro está incompleto. Contactá soporte DEMO." }
                 return@runTransaction "OPERACIÓN YA PROCESADA · DEMO"
             }
