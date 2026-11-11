@@ -200,20 +200,32 @@ class PersonalDataRepository(
 
     fun saveContactFavorites(uid: String, favoriteIds: Set<String>, callback: (Result<Unit>) -> Unit = {}) {
         val ref = user(uid).collection("preferences").document("contactFavorites")
-        ref.set(mapOf(
-            "ownerUid" to uid,
-            "favoriteIds" to favoriteIds.toList(),
-            "updatedAt" to FieldValue.serverTimestamp()
-        ), SetOptions.merge()).addOnSuccessListener { callback(Result.success(Unit)) }
+        db.runTransaction { tx ->
+            val snapshot = tx.get(ref)
+            if (!snapshot.exists()) {
+                tx.set(ref, mapOf(
+                    "ownerUid" to uid,
+                    "favoriteIds" to favoriteIds.toList(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ))
+            }
+            Unit
+        }.addOnSuccessListener { callback(Result.success(Unit)) }
             .addOnFailureListener { callback(Result.failure(it)) }
     }
 
-    fun setContactFavorite(uid: String, contactId: String, favorite: Boolean, callback: (Result<Unit>) -> Unit = {}) {
+    fun setContactFavorite(
+        uid: String,
+        contactId: String,
+        favorite: Boolean,
+        baselineFavoriteIds: Set<String> = emptySet(),
+        callback: (Result<Unit>) -> Unit = {}
+    ) {
         val ref = user(uid).collection("preferences").document("contactFavorites")
         db.runTransaction { tx ->
             val snapshot = tx.get(ref)
             val ids = (snapshot.get("favoriteIds") as? List<*>)?.filterIsInstance<String>()?.toMutableSet()
-                ?: mutableSetOf()
+                ?: baselineFavoriteIds.toMutableSet()
             if (favorite) ids.add(contactId) else ids.remove(contactId)
             tx.set(ref, mapOf(
                 "ownerUid" to uid,
