@@ -909,9 +909,9 @@ private fun OrderStatusCard(
                         Text(if (paying) "Procesando pago DEMO…" else "Pagar con OMNI Pay DEMO", fontSize = 10.sp)
                     }
                 } else {
-                    Text("El total supera el límite de OMNI Pay DEMO (OM$ 50.000). Podés pagar al retirar o recibir.", color = Color(0xFFFFC978), fontSize = 9.sp)
+                    Text("El total supera el límite de pagos DEMO (OM$ 50.000). Podés abonar al retirar o recibir.", color = Color(0xFFFFC978), fontSize = 9.sp)
                 }
-                if (onPayWithDemoCard != null) {
+                if (onPayWithDemoCard != null && order.total <= 50000.0) {
                     OutlinedButton(onClick = onPayWithDemoCard, enabled = !paying, modifier = Modifier.fillMaxWidth()) {
                         Text("Simular pago con tarjeta DEMO", fontSize = 10.sp)
                     }
