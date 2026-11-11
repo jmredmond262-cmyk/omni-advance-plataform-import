@@ -616,7 +616,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             else if (!merchantReady) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
         } else {
             Text(if (demoMode) "Elegí un comercio de muestra, seleccioná productos y generá un QR DEMO." else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
-            Text(if (demoMode) "CATÁLOGO DEMO INDEPENDIENTE · No requiere aceptación del comercio ni crea movimientos reales." else "CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+            Text(if (demoMode) "CATÁLOGO DEMO · QR local para muestras; pedidos compartidos cuando hay un titular DEMO distinto." else "CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
             if (demoMode) Text("COMERCIOS DE MUESTRA", color = Color(0xFFB69CFF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
