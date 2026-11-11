@@ -165,9 +165,12 @@ service cloud.firestore {
       }
       function validNextStatus() {
         return
-          (resource.data.status == "RECIBIDO" && request.resource.data.status in ["ACEPTADO", "RECHAZADO"]) ||
-          (resource.data.status == "ACEPTADO" && request.resource.data.status in ["EN_PREPARACION", "CANCELADO"]) ||
-          (resource.data.status == "EN_PREPARACION" && request.resource.data.status in ["LISTO", "CANCELADO"]) ||
+          (resource.data.status == "RECIBIDO" && request.resource.data.status == "ACEPTADO") ||
+          (resource.data.status == "RECIBIDO" && request.resource.data.status == "RECHAZADO" && resource.data.paymentStatus == "PENDIENTE") ||
+          (resource.data.status == "ACEPTADO" && request.resource.data.status == "EN_PREPARACION") ||
+          (resource.data.status == "ACEPTADO" && request.resource.data.status == "CANCELADO" && resource.data.paymentStatus == "PENDIENTE") ||
+          (resource.data.status == "EN_PREPARACION" && request.resource.data.status == "LISTO") ||
+          (resource.data.status == "EN_PREPARACION" && request.resource.data.status == "CANCELADO" && resource.data.paymentStatus == "PENDIENTE") ||
           (resource.data.status == "LISTO" && request.resource.data.status in ["EN_CAMINO", "ENTREGADO"]) ||
           (resource.data.status == "EN_CAMINO" && request.resource.data.status == "ENTREGADO");
       }
