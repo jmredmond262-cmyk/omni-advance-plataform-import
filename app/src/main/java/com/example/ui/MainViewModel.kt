@@ -324,9 +324,19 @@ class MainViewModel : ViewModel() {
             }.onFailure { android.util.Log.w("MainViewModel", "Shopping list sync failed", it) }
         }
 
+        var firstCustomContactsSnapshot = true
         personalDataListeners += personalDataRepository.observeCustomContacts(uid) { result ->
-            result.onSuccess {
-                _customContacts.value = it
+            result.onSuccess { remote ->
+                if (firstCustomContactsSnapshot) {
+                    firstCustomContactsSnapshot = false
+                    if (remote.isEmpty() && _customContacts.value.isNotEmpty()) {
+                        _customContacts.value.forEach { personalDataRepository.saveCustomContact(uid, it) }
+                    } else {
+                        _customContacts.value = remote
+                    }
+                } else {
+                    _customContacts.value = remote
+                }
                 publishPersonalContacts()
             }.onFailure { android.util.Log.w("MainViewModel", "Custom contacts sync failed", it) }
         }
@@ -1336,6 +1346,13 @@ class MainViewModel : ViewModel() {
         val current = _contacts.value.firstOrNull { it.id == contactId } ?: return
         val updated = current.copy(isFavorite = !current.isFavorite)
         _contacts.value = _contacts.value.map { if (it.id == contactId) updated else it }
+        if (!updated.isCustom) {
+            _favoriteContactIds.value = if (updated.isFavorite) {
+                _favoriteContactIds.value + contactId
+            } else {
+                _favoriteContactIds.value - contactId
+            }
+        }
         val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
         if (uid.isBlank()) return
         if (updated.isCustom) {
@@ -1343,11 +1360,6 @@ class MainViewModel : ViewModel() {
                 result.onFailure { android.util.Log.w("MainViewModel", "Custom contact update failed", it) }
             }
         } else {
-            _favoriteContactIds.value = if (updated.isFavorite) {
-                _favoriteContactIds.value + contactId
-            } else {
-                _favoriteContactIds.value - contactId
-            }
             personalDataRepository.setContactFavorite(uid, contactId, updated.isFavorite) { result ->
                 result.onFailure { android.util.Log.w("MainViewModel", "Contact favorite update failed", it) }
             }
