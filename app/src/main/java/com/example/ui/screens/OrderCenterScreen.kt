@@ -371,16 +371,21 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     feedback = "QR inválido, vencido, modificado o no corresponde a este comercio."
                 } else {
                     OmniTracker.track("orders", "ORDER_QR_VERIFIED", mapOf("operationId" to order.id, "stage" to "QR_VALIDATION", "success" to true))
-                    db.collection("walletOperations")
-                        .whereEqualTo("recipientUid", uid)
-                        .whereEqualTo("orderId", order.id)
-                        .limit(1).get()
-                        .addOnSuccessListener { payment ->
-                            selectedScannedOrder = order.copy(
-                                paymentStatus = if (payment.isEmpty) "PENDIENTE" else "PAGADA · DEMO"
-                            )
-                        }
-                        .addOnFailureListener { selectedScannedOrder = order }
+                    if (order.paymentStatus.startsWith("PAGADA")) {
+                        // El pago con tarjeta DEMO se registra en demoCardPayments, no en walletOperations.
+                        selectedScannedOrder = order
+                    } else {
+                        db.collection("walletOperations")
+                            .whereEqualTo("recipientUid", uid)
+                            .whereEqualTo("orderId", order.id)
+                            .limit(1).get()
+                            .addOnSuccessListener { payment ->
+                                selectedScannedOrder = order.copy(
+                                    paymentStatus = if (payment.isEmpty) "PENDIENTE" else "PAGADA · DEMO"
+                                )
+                            }
+                            .addOnFailureListener { selectedScannedOrder = order }
+                    }
                 }
             }
             .addOnFailureListener { feedback = "No se pudo verificar el pedido en Firestore." }
