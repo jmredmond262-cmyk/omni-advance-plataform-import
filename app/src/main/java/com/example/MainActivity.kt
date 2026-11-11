@@ -290,6 +290,7 @@ fun OmniApp(viewModel: MainViewModel) {
         val coarse = permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (fine || coarse) {
             viewModel.refreshLiveGpsAndPlaces(context)
+            if (GeoPresenceRepository.hasDecision(context) && GeoPresenceRepository.isSharingEnabled(context)) GeoPresenceRepository.refreshPresenceWhileActive(context)
             if (!GeoPresenceRepository.hasDecision(context)) showGeoShareConsent = true
         }
     }
@@ -306,6 +307,7 @@ fun OmniApp(viewModel: MainViewModel) {
         } else {
             // Actualizar GPS también cuando hay una ubicación guardada: la caché reciente hace esta consulta rápida.
             viewModel.refreshLiveGpsAndPlaces(context)
+            if (GeoPresenceRepository.isSharingEnabled(context)) GeoPresenceRepository.refreshPresenceWhileActive(context)
             if (!GeoPresenceRepository.hasDecision(context)) showGeoShareConsent = true
         }
     }
@@ -317,10 +319,10 @@ fun OmniApp(viewModel: MainViewModel) {
                 shareGeoPresence = false
                 showGeoShareConsent = false
             },
-            title = { Text("Compartir ubicación aproximada", fontWeight = FontWeight.Bold) },
+            title = { Text("Compartir ubicación GPS precisa", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "¿Autorizás a OMNI a compartir una ubicación aproximada de tu zona con OMNI Admin? Se redondea a un área de aproximadamente 1 km y solo se muestra agrupada cuando hay al menos 3 cuentas. No se comparte tu dirección ni se realiza seguimiento en segundo plano. Podés desactivarlo cuando quieras desde Configurar ubicación.",
+                    "¿Autorizás a OMNI a compartir tus coordenadas GPS precisas con OMNI Admin mientras usás la aplicación? Se mostrará tu posición individual en el mapa administrativo, junto con el margen de precisión del GPS. Para esto, Android debe permitir Ubicación precisa. Podés desactivarlo cuando quieras desde Configurar ubicación.",
                     fontSize = 13.sp
                 )
             },
@@ -330,6 +332,7 @@ fun OmniApp(viewModel: MainViewModel) {
                     shareGeoPresence = true
                     showGeoShareConsent = false
                     viewModel.refreshLiveGpsAndPlaces(context)
+                    GeoPresenceRepository.refreshPresenceWhileActive(context)
                 }) { Text("Autorizar") }
             },
             dismissButton = {
@@ -346,7 +349,7 @@ fun OmniApp(viewModel: MainViewModel) {
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                delay(5 * 60 * 1000L)
+                delay(60 * 1000L)
                 GeoPresenceRepository.refreshPresenceWhileActive(context)
             }
         }
@@ -417,15 +420,15 @@ fun OmniApp(viewModel: MainViewModel) {
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("Compartir ubicación aproximada", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Solo áreas agrupadas en OMNI Admin · podés revocarlo", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Compartir ubicación GPS precisa", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Tu marcador individual en OMNI Admin · podés revocarlo", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         androidx.compose.material3.Switch(
                             checked = shareGeoPresence,
                             onCheckedChange = { enabled ->
                                 shareGeoPresence = enabled
                                 GeoPresenceRepository.setSharingEnabled(context, enabled)
-                                if (enabled) viewModel.refreshLiveGpsAndPlaces(context)
+                                if (enabled) { viewModel.refreshLiveGpsAndPlaces(context); GeoPresenceRepository.refreshPresenceWhileActive(context) }
                             }
                         )
                     }
