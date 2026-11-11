@@ -347,6 +347,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     fun advanceOrder(order: OmniStoreOrder, next: String) {
+        if (next in listOf("RECHAZADO", "CANCELADO") && order.paymentStatus != "PENDIENTE") {
+            feedback = "No se puede rechazar ni cancelar un pedido ya pagado sin un circuito de devolución DEMO."
+            return
+        }
         db.collection("storeOrders").document(order.id).update(
             mapOf("status" to next, "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
