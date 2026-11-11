@@ -159,6 +159,7 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
           fontSize = 9.sp
         )
         Text("Solo cuentas que autorizaron compartir ubicación precisa mientras OMNI está abierta.", color = MapMuted, fontSize = 8.sp)
+        Text("Cada color identifica una cuenta distinta · tocá un punto para ver su ficha y última actualización.", color = MapMuted, fontSize = 8.sp)
       }
     }
   }
