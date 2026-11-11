@@ -194,7 +194,7 @@ function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
-// Live map feed: individual consented accounts, coarse ~1 km cells, seven-minute active heartbeat.
+// Live map feed: individual GPS positions only while the account has explicitly enabled sharing.
 function aggregateGeoPresence(records, profiles) {
   const labels = userLabels(profiles);
   const now = Date.now();
@@ -503,7 +503,6 @@ async function handleAction(env, action, data) {
         geoActivity: geo.points,
         geoActivitySummary: {
           activeUsers: geo.activeUsers,
-          visibleMarkers: geo.points.length,
           visibleMarkers: geo.points.length,
           freshnessMinutes: geo.freshnessMinutes,
           coordinatePrecision: "GPS individual con consentimiento explícito",
