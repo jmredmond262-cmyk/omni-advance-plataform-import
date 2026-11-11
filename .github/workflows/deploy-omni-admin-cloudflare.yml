@@ -2,11 +2,6 @@ name: Deploy OMNI Admin API to Cloudflare
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - fix/stage-1-firestore-rules
-    paths:
-      - workers/src/index.js
 
 permissions:
   contents: read
