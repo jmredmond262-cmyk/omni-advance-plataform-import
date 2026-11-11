@@ -286,12 +286,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 val expired = createdAt == 0L || System.currentTimeMillis() - createdAt > 24L * 60L * 60L * 1000L
                 val itemsMatch = order != null &&
                     order.items.size == payload.items.size &&
-                    order.items.all { line ->
-                        payload.items.any { qrItem ->
-                            qrItem.productId == line.productId && qrItem.name == line.name &&
-                                kotlin.math.abs(qrItem.price - line.price) < 0.005 &&
-                                qrItem.quantity == line.quantity
-                        }
+                    order.items.zip(payload.items).all { (line, qrItem) ->
+                        qrItem.productId == line.productId && qrItem.name == line.name &&
+                            kotlin.math.abs(qrItem.price - line.price) < 0.005 &&
+                            qrItem.quantity == line.quantity
                     }
                 if (order == null || order.storeId != store.id || order.merchantUid != uid ||
                     order.qrNonce != payload.qrNonce || order.storeName != payload.merchantName ||
@@ -359,14 +357,16 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     fun cancelCustomerOrder(order: OmniStoreOrder) {
-        if (order.customerUid != uid || order.status != "RECIBIDO") {
-            feedback = "Solo podés cancelar un pedido propio que todavía no fue aceptado."
+        if (order.customerUid != uid || order.status != "RECIBIDO" || order.paymentStatus != "PENDIENTE") {
+            feedback = "Solo podés cancelar un pedido propio, pendiente de pago y todavía no aceptado."
             return
         }
         db.collection("storeOrders").document(order.id).update(
             mapOf("status" to "CANCELADO", "updatedAt" to FieldValue.serverTimestamp())
         ).addOnSuccessListener {
             UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_CANCELLED_BY_CUSTOMER", mapOf("operationId" to order.id, "stage" to "CUSTOMER_CANCELLATION_CONFIRMED", "success" to true))
+            orders = orders.map { current -> if (current.id == order.id) current.copy(status = "CANCELADO") else current }
+            if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO")
             feedback = "El pedido fue cancelado."
         }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo cancelar el pedido." }
     }
