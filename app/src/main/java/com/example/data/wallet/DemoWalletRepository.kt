@@ -230,7 +230,9 @@ class DemoWalletRepository(
             ))
             "CARGA ACREDITADA · DEMO"
         }.addOnSuccessListener {
-            UsageAnalyticsRepository.trackWalletOperation(uid, "DEMO_DEPOSIT")
+            if (it == "CARGA ACREDITADA · DEMO") {
+                UsageAnalyticsRepository.trackWalletOperation(uid, "DEMO_DEPOSIT")
+            }
             done(Result.success(it))
         }.addOnFailureListener { done(Result.failure(it)) }
     }
@@ -358,7 +360,9 @@ class DemoWalletRepository(
             }
             if (orderId != null) "PEDIDO PAGADO · OMNI PAY DEMO" else if (isQr) "PAGO QR APROBADO · DEMO" else "TRANSFERENCIA APROBADA · DEMO"
             }.addOnSuccessListener {
-                UsageAnalyticsRepository.trackWalletOperation(senderUid, if (orderId != null) "DEMO_ORDER_PAYMENT" else if (isQr) "DEMO_QR_PAYMENT" else "DEMO_TRANSFER")
+                if (it != "PEDIDO YA PAGADO · DEMO" && it != "OPERACIÓN YA PROCESADA · DEMO") {
+                    UsageAnalyticsRepository.trackWalletOperation(senderUid, if (orderId != null) "DEMO_ORDER_PAYMENT" else if (isQr) "DEMO_QR_PAYMENT" else "DEMO_TRANSFER")
+                }
                 done(Result.success(it))
             }.addOnFailureListener { done(Result.failure(it)) }
         }
