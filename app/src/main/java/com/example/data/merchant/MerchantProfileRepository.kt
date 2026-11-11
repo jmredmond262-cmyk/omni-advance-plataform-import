@@ -148,7 +148,9 @@ object MerchantProfileRepository {
         }
         db.collection("merchantProfiles").get()
             .addOnSuccessListener { snapshot ->
-                val profiles = snapshot.documents
+                // Never attach sandbox inventory/offers to real directory listings.
+                // Only profiles explicitly marked REAL may enrich the real directory.
+                val profiles = snapshot.documents.filter { it.getString("environment") == "REAL" }
                 val enriched = stores.map { base ->
                     val profile = profiles.firstOrNull { it.id == base.id }
                         ?: profiles.firstOrNull { document ->
