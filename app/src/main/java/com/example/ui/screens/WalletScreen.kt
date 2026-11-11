@@ -1065,6 +1065,7 @@ fun PaymentCardItem(card: PaymentCard, modifier: Modifier = Modifier) {
 
 @Composable
 fun WalletTransactionCard(transaction: WalletTransaction, modifier: Modifier = Modifier) {
+    val isUnknown = transaction.type == TransactionType.OPERACION_NO_RECONOCIDA
     val isIncome = transaction.type == TransactionType.CARGA_SALDO || transaction.type == TransactionType.REINTEGRO_CASHBACK || transaction.type == TransactionType.TRANSFERENCIA_RECIBIDA || transaction.type == TransactionType.QR_COBRO
 
     Card(
@@ -1083,15 +1084,15 @@ fun WalletTransactionCard(transaction: WalletTransaction, modifier: Modifier = M
                 modifier = Modifier
                     .size(38.dp)
                     .background(
-                        if (isIncome) EmeraldContainer else RosePromo.copy(alpha = 0.1f),
+                        when { isUnknown -> Color.LightGray; isIncome -> EmeraldContainer; else -> RosePromo.copy(alpha = 0.1f) },
                         CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (isIncome) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                    imageVector = when { isUnknown -> Icons.Default.Info; isIncome -> Icons.Default.ArrowDownward; else -> Icons.Default.ArrowUpward },
                     contentDescription = null,
-                    tint = if (isIncome) EmeraldDark else RosePromo,
+                    tint = when { isUnknown -> Color.Gray; isIncome -> EmeraldDark; else -> RosePromo },
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -1110,15 +1111,20 @@ fun WalletTransactionCard(transaction: WalletTransaction, modifier: Modifier = M
                     fontSize = 11.sp,
                     color = Color.Gray
                 )
-                Text(transaction.status, fontSize = 9.sp, color = EmeraldDark, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (isUnknown) "Tipo de movimiento no reconocido" else transaction.status,
+                    fontSize = 9.sp,
+                    color = if (isUnknown) Color.Gray else EmeraldDark,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
 
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "${if (transaction.amount > 0) "+" else ""}OM$ ${String.format("%,.2f", transaction.amount)}",
+                    text = if (isUnknown) "Importe sin identificar" else "${if (transaction.amount > 0) "+" else ""}OM$ ${String.format("%,.2f", transaction.amount)}",
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
-                    color = if (isIncome) EmeraldDark else SlateNavy
+                    color = when { isUnknown -> Color.Gray; isIncome -> EmeraldDark; else -> SlateNavy }
                 )
                 if (transaction.cashbackEarned > 0) {
                     Text(
