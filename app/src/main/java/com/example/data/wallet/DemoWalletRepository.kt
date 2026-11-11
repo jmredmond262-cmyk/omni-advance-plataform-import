@@ -135,20 +135,30 @@ class DemoWalletRepository(
         return listOf(accountListener, transactionsListener)
     }
 
-    fun transferDemoFunds(identifier: String, amount: Double, done: (Result<String>) -> Unit) {
+    fun transferDemoFunds(
+        identifier: String,
+        amount: Double,
+        done: (Result<String>) -> Unit,
+        operationId: String = UUID.randomUUID().toString()
+    ) {
         if (!validAmount(amount)) {
             done(Result.failure(IllegalArgumentException("El importe debe ser mayor que cero y no superar OM$ 50.000.")))
             return
         }
         walletAliasService.resolveRecipientUid(identifier) { resolved ->
             resolved.fold(
-                onSuccess = { recipientUid -> executeTransfer(recipientUid, amount, false, done, expectedRecipientIdentifier = identifier) },
+                onSuccess = { recipientUid -> executeTransfer(recipientUid, amount, false, done, expectedRecipientIdentifier = identifier, operationId = operationId) },
                 onFailure = { error -> done(Result.failure(error)) }
             )
         }
     }
 
-    fun payDemoQr(payload: String, amount: Double, done: (Result<String>) -> Unit) {
+    fun payDemoQr(
+        payload: String,
+        amount: Double,
+        done: (Result<String>) -> Unit,
+        operationId: String = UUID.randomUUID().toString()
+    ) {
         val parts = payload.split("|")
         if (parts.size != 3 || parts[0] != "OMNI-DEMO" || parts[1].isBlank() || parts[2].isBlank()) {
             done(Result.failure(IllegalArgumentException("El QR no pertenece a OMNI Pay DEMO.")))
@@ -158,7 +168,7 @@ class DemoWalletRepository(
             done(Result.failure(IllegalArgumentException("El importe no es válido.")))
             return
         }
-        executeTransfer(parts[1], amount, true, done, expectedRecipientIdentifier = parts[2])
+        executeTransfer(parts[1], amount, true, done, expectedRecipientIdentifier = parts[2], operationId = operationId)
     }
 
     /**
@@ -173,31 +183,48 @@ class DemoWalletRepository(
         executeTransfer(merchantUid, amount, true, done, orderId)
     }
 
-    fun topUpDemo(amount: Double, done: (Result<String>) -> Unit) {
+    fun topUpDemo(
+        amount: Double,
+        done: (Result<String>) -> Unit,
+        operationId: String = UUID.randomUUID().toString()
+    ) {
         val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
         if (uid.isNullOrBlank() || !validAmount(amount)) {
             done(Result.failure(IllegalArgumentException("Iniciá sesión e ingresá un importe válido (máximo OM$ 50.000).")))
             return
         }
         val accountRef = firestore.collection("walletAccounts").document(uid)
-        val operationId = UUID.randomUUID().toString()
         val operationRef = firestore.collection("walletOperations").document(operationId)
+        val transactionRef = accountRef.collection("transactions").document(operationId)
         firestore.runTransaction { tx ->
             val account = tx.get(accountRef)
+            val existingOperation = tx.get(operationRef)
+            val existingTransaction = tx.get(transactionRef)
             check(account.exists()) { "No existe tu billetera DEMO." }
+            if (existingOperation.exists()) {
+                val previousAmount = (existingOperation.get("amount") as? Number)?.toDouble() ?: Double.NaN
+                check(existingOperation.getString("kind") == "DEPOSIT" &&
+                    existingOperation.getString("senderUid") == uid &&
+                    existingOperation.getString("recipientUid") == uid &&
+                    previousAmount.isFinite() && kotlin.math.abs(previousAmount - amount) < 0.005 &&
+                    existingTransaction.exists() &&
+                    existingTransaction.getString("operationId") == operationId
+                ) { "El identificador de carga ya existe con otros datos. Iniciá una nueva operación." }
+                return@runTransaction "CARGA YA ACREDITADA · DEMO"
+            }
             val deposited = (account.get("depositedTotal") as? Number)?.toDouble() ?: 0.0
             check(deposited + amount <= 150000.0) { "Alcanzaste el límite de cargas DEMO de OM$ 150.000." }
             val before = (account.get("balance") as? Number)?.toDouble() ?: 0.0
             tx.update(accountRef, mapOf(
                 "balance" to before + amount, "depositedTotal" to deposited + amount,
-                "lastOperationId" to operationId, "updatedAt" to FieldValue.serverTimestamp()
+                "lastOperationId" to stableOperationId, "updatedAt" to FieldValue.serverTimestamp()
             ))
             tx.set(operationRef, mapOf(
                 "operationId" to operationId, "kind" to "DEPOSIT",
                 "senderUid" to uid, "recipientUid" to uid, "amount" to amount,
                 "createdAt" to FieldValue.serverTimestamp()
             ))
-            tx.set(accountRef.collection("transactions").document(operationId), transactionData(
+            tx.set(transactionRef, transactionData(
                 operationId, TransactionType.CARGA_SALDO, "Carga virtual de prueba",
                 "OMNI Pay DEMO", amount
             ))
@@ -214,7 +241,8 @@ class DemoWalletRepository(
         isQr: Boolean,
         done: (Result<String>) -> Unit,
         orderId: String? = null,
-        expectedRecipientIdentifier: String? = null
+        expectedRecipientIdentifier: String? = null,
+        operationId: String = UUID.randomUUID().toString()
     ) {
         val senderUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
         if (senderUid.isNullOrBlank()) {
@@ -227,8 +255,10 @@ class DemoWalletRepository(
         }
         val senderRef = firestore.collection("walletAccounts").document(senderUid)
         val recipientRef = firestore.collection("walletAccounts").document(recipientUid)
-        val operationId = if (orderId != null) "orderpay_$orderId" else UUID.randomUUID().toString()
-        val operationRef = firestore.collection("walletOperations").document(operationId)
+        val stableOperationId = if (orderId != null) "orderpay_$orderId" else operationId
+        val operationRef = firestore.collection("walletOperations").document(stableOperationId)
+        val senderTransactionRef = senderRef.collection("transactions").document(stableOperationId)
+        val recipientTransactionRef = recipientRef.collection("transactions").document(stableOperationId)
         val orderRef = orderId?.let { firestore.collection("storeOrders").document(it) }
         val executeAtomicTransfer: () -> Unit = {
             firestore.runTransaction { tx ->
@@ -236,6 +266,8 @@ class DemoWalletRepository(
             val sender = tx.get(senderRef)
             val recipient = tx.get(recipientRef)
             val existingOperation = tx.get(operationRef)
+            val existingSenderTransaction = if (orderId == null) tx.get(senderTransactionRef) else null
+            val existingRecipientTransaction = if (orderId == null) tx.get(recipientTransactionRef) else null
             if (orderId != null) {
                 check(orderSnapshot?.exists() == true) { "El pedido ya no está disponible." }
                 check(orderSnapshot?.getString("customerUid") == senderUid) { "Solo quien creó el pedido puede pagarlo." }
@@ -264,8 +296,19 @@ class DemoWalletRepository(
                     return@runTransaction "PEDIDO YA PAGADO · DEMO"
                 }
                 check(orderSnapshot.getString("paymentStatus") == "PENDIENTE") { "El pedido ya figura pagado." }
-            } else {
-                check(!existingOperation.exists()) { "La operación ya existe. Volvé a intentar." }
+            } else if (existingOperation.exists()) {
+                val previousAmount = (existingOperation.get("amount") as? Number)?.toDouble() ?: Double.NaN
+                val expectedKind = if (isQr) "QR_PAYMENT" else "TRANSFER"
+                check(existingOperation.getString("senderUid") == senderUid &&
+                    existingOperation.getString("recipientUid") == recipientUid &&
+                    existingOperation.getString("kind") == expectedKind &&
+                    previousAmount.isFinite() && kotlin.math.abs(previousAmount - amount) < 0.005 &&
+                    existingSenderTransaction?.exists() == true &&
+                    existingRecipientTransaction?.exists() == true &&
+                    existingSenderTransaction.getString("operationId") == stableOperationId &&
+                    existingRecipientTransaction.getString("operationId") == stableOperationId
+                ) { "El identificador ya pertenece a otra operación o el registro está incompleto. Contactá soporte DEMO." }
+                return@runTransaction "OPERACIÓN YA PROCESADA · DEMO"
             }
             check(sender.exists()) { "Tu billetera DEMO no está disponible." }
             check(recipient.exists()) { "La billetera DEMO del comercio no está disponible." }
@@ -284,26 +327,26 @@ class DemoWalletRepository(
             val senderType = if (isQr) TransactionType.QR_PAGO else TransactionType.TRANSFERENCIA_ENVIADA
             val recipientType = if (isQr) TransactionType.QR_COBRO else TransactionType.TRANSFERENCIA_RECIBIDA
             tx.update(senderRef, mapOf(
-                "balance" to senderBalance - amount, "lastOperationId" to operationId,
+                "balance" to senderBalance - amount, "lastOperationId" to stableOperationId,
                 "updatedAt" to FieldValue.serverTimestamp()
             ))
             tx.update(recipientRef, mapOf(
-                "balance" to FieldValue.increment(amount), "lastOperationId" to operationId,
+                "balance" to FieldValue.increment(amount), "lastOperationId" to stableOperationId,
                 "updatedAt" to FieldValue.serverTimestamp()
             ))
             val operationData = mutableMapOf<String, Any>(
-                "operationId" to operationId, "kind" to if (isQr) "QR_PAYMENT" else "TRANSFER",
+                "operationId" to stableOperationId, "kind" to if (isQr) "QR_PAYMENT" else "TRANSFER",
                 "senderUid" to senderUid, "recipientUid" to recipientUid,
                 "amount" to amount, "createdAt" to FieldValue.serverTimestamp()
             )
             if (orderId != null) operationData["orderId"] = orderId
             tx.set(operationRef, operationData)
-            tx.set(senderRef.collection("transactions").document(operationId), transactionData(
-                operationId, senderType, if (orderId != null) "Pago de pedido OMNI" else if (isQr) "Pago con QR" else "Transferencia enviada",
+            tx.set(senderTransactionRef, transactionData(
+                stableOperationId, senderType, if (orderId != null) "Pago de pedido OMNI" else if (isQr) "Pago con QR" else "Transferencia enviada",
                 recipientAlias, amount
             ))
-            tx.set(recipientRef.collection("transactions").document(operationId), transactionData(
-                operationId, recipientType, if (orderId != null) "Cobro de pedido OMNI" else if (isQr) "Cobro con QR" else "Transferencia recibida",
+            tx.set(recipientTransactionRef, transactionData(
+                stableOperationId, recipientType, if (orderId != null) "Cobro de pedido OMNI" else if (isQr) "Cobro con QR" else "Transferencia recibida",
                 senderAlias, amount
             ))
             if (orderId != null) {
