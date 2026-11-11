@@ -108,7 +108,7 @@ class DemoWalletRepository(
                 transactions = snapshot?.documents.orEmpty().map { document ->
                     val type = runCatching {
                         TransactionType.valueOf(document.getString("type").orEmpty())
-                    }.getOrDefault(TransactionType.CARGA_SALDO)
+                    }.getOrDefault(TransactionType.OPERACION_NO_RECONOCIDA)
                     val storedAmount = (document.get("amount") as? Number)?.toDouble() ?: 0.0
                     // Firestore stores a positive magnitude; the UI model uses sign to show direction.
                     val displayAmount = when (type) {
@@ -122,7 +122,8 @@ class DemoWalletRepository(
                     } ?: "Procesando…"
                     WalletTransaction(
                         id = document.getString("operationId") ?: document.id,
-                        title = document.getString("title").orEmpty(),
+                        title = document.getString("title").takeUnless { it.isNullOrBlank() }
+                            ?: if (type == TransactionType.OPERACION_NO_RECONOCIDA) "Movimiento no reconocido" else "Movimiento DEMO",
                         storeOrEntityName = document.getString("peerName").orEmpty(),
                         amount = displayAmount,
                         type = type, dateText = dateText,
