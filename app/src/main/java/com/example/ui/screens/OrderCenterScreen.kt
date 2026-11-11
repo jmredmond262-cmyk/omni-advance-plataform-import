@@ -404,9 +404,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             db.collection("merchantProfiles").document(store.id).get()
                 .addOnSuccessListener { merchant ->
                     val merchantUid = merchant.getString("ownerUid").orEmpty()
+                    val hasPublishedInventory = (merchant.get("inventory") as? List<*>)?.isNotEmpty() == true
                     val isOtherDemoMerchant = merchant.exists() &&
                         merchant.getString("environment") == "DEMO" &&
-                        merchantUid.isNotBlank() && merchantUid != uid
+                        merchantUid.isNotBlank() && merchantUid != uid && hasPublishedInventory
                     if (isOtherDemoMerchant) {
                         createSharedDemoOrder(merchant, merchantUid)
                     } else {
