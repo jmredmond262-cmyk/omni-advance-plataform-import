@@ -217,7 +217,7 @@ class DemoWalletRepository(
             val before = (account.get("balance") as? Number)?.toDouble() ?: 0.0
             tx.update(accountRef, mapOf(
                 "balance" to before + amount, "depositedTotal" to deposited + amount,
-                "lastOperationId" to stableOperationId, "updatedAt" to FieldValue.serverTimestamp()
+                "lastOperationId" to operationId, "updatedAt" to FieldValue.serverTimestamp()
             ))
             tx.set(operationRef, mapOf(
                 "operationId" to operationId, "kind" to "DEPOSIT",
