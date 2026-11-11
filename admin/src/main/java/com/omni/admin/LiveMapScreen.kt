@@ -147,6 +147,23 @@ internal fun LiveMapScreen(payload: JSONObject, loading: Boolean, error: String,
       )
     }
     Row(
+      Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+      horizontalArrangement = Arrangement.SpaceEvenly,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      listOf(
+        Triple("Alta", Color(0xFF28DFA2), "hasta 100 m"),
+        Triple("Media", Color(0xFF00E5FF), "100 a 500 m"),
+        Triple("Baja", Color(0xFFFFB547), "500 m a 1 km"),
+        Triple("Aprox.", Color(0xFF9B78FF), "más de 1 km")
+      ).forEach { (label, color, _) ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+          Box(Modifier.size(7.dp).background(color, RoundedCornerShape(50)))
+          Text(label, color = MapMuted, fontSize = 8.sp)
+        }
+      }
+    }
+    Row(
       Modifier.fillMaxWidth().padding(horizontal = 3.dp, vertical = 2.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(7.dp)
