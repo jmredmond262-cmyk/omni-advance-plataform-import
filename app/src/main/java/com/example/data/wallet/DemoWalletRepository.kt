@@ -224,18 +224,39 @@ class DemoWalletRepository(
             firestore.runTransaction { tx ->
             val orderSnapshot = orderRef?.let { tx.get(it) }
             val sender = tx.get(senderRef)
+            val recipient = tx.get(recipientRef)
+            val existingOperation = tx.get(operationRef)
             if (orderId != null) {
                 check(orderSnapshot?.exists() == true) { "El pedido ya no está disponible." }
                 check(orderSnapshot?.getString("customerUid") == senderUid) { "Solo quien creó el pedido puede pagarlo." }
                 check(orderSnapshot?.getString("merchantUid") == recipientUid) { "El comercio del pedido no coincide." }
                 val orderTotal = (orderSnapshot?.get("total") as? Number)?.toDouble() ?: 0.0
                 check(kotlin.math.abs(orderTotal - amount) < 0.005) { "El importe del pedido cambió. Volvé a revisar el total." }
-                check(orderSnapshot?.getString("paymentStatus") == "PENDIENTE") { "El pedido ya figura pagado." }
                 check(orderSnapshot?.getString("status") !in listOf("ENTREGADO", "RECHAZADO", "CANCELADO")) {
                     "El pedido está cerrado y no admite pagos."
                 }
+                if (existingOperation.exists()) {
+                    check(existingOperation.getString("senderUid") == senderUid &&
+                        existingOperation.getString("recipientUid") == recipientUid &&
+                        existingOperation.getString("orderId") == orderId &&
+                        existingOperation.getString("kind") == "QR_PAYMENT" &&
+                        kotlin.math.abs((existingOperation.get("amount") as? Number)?.toDouble().orNaN() - amount) < 0.005
+                    ) { "El pedido tiene un movimiento asociado que no coincide. Contactá soporte DEMO." }
+                    if (orderSnapshot.getString("paymentStatus") == "PENDIENTE") {
+                        tx.update(orderRef!!, mapOf(
+                            "paymentStatus" to "PAGADA · DEMO",
+                            "paymentMethod" to "OMNI_PAY_DEMO",
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ))
+                    }
+                    return@runTransaction "PEDIDO YA PAGADO · DEMO"
+                }
+                check(orderSnapshot.getString("paymentStatus") == "PENDIENTE") { "El pedido ya figura pagado." }
+            } else {
+                check(!existingOperation.exists()) { "La operación ya existe. Volvé a intentar." }
             }
             check(sender.exists()) { "Tu billetera DEMO no está disponible." }
+            check(recipient.exists()) { "La billetera DEMO del comercio no está disponible." }
             val senderBalance = (sender.get("balance") as? Number)?.toDouble() ?: 0.0
             check(senderBalance >= amount) { "Saldo insuficiente para completar la operación." }
             val recipientAlias = "Cuenta OMNI Pay"
@@ -265,26 +286,20 @@ class DemoWalletRepository(
                 operationId, recipientType, if (orderId != null) "Cobro de pedido OMNI" else if (isQr) "Cobro con QR" else "Transferencia recibida",
                 senderAlias, amount
             ))
+            if (orderId != null) {
+                tx.update(orderRef!!, mapOf(
+                    "paymentStatus" to "PAGADA · DEMO",
+                    "paymentMethod" to "OMNI_PAY_DEMO",
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ))
+            }
             if (orderId != null) "PEDIDO PAGADO · OMNI PAY DEMO" else if (isQr) "PAGO QR APROBADO · DEMO" else "TRANSFERENCIA APROBADA · DEMO"
             }.addOnSuccessListener {
                 UsageAnalyticsRepository.trackWalletOperation(senderUid, if (orderId != null) "DEMO_ORDER_PAYMENT" else if (isQr) "DEMO_QR_PAYMENT" else "DEMO_TRANSFER")
                 done(Result.success(it))
             }.addOnFailureListener { done(Result.failure(it)) }
         }
-        if (orderId != null) {
-            // La consulta respeta las reglas: solo lee operaciones enviadas por esta cuenta.
-            firestore.collection("walletOperations")
-                .whereEqualTo("senderUid", senderUid)
-                .whereEqualTo("orderId", orderId)
-                .limit(1).get()
-                .addOnSuccessListener { existing ->
-                    if (!existing.isEmpty) done(Result.success("PEDIDO YA PAGADO · DEMO"))
-                    else executeAtomicTransfer()
-                }
-                .addOnFailureListener { done(Result.failure(it)) }
-        } else {
-            executeAtomicTransfer()
-        }
+        executeAtomicTransfer()
     }
 
     private fun transactionData(
