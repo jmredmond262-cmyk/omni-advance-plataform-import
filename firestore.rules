@@ -197,13 +197,36 @@ service cloud.firestore {
       allow read: if isSystemAdmin() || (signedIn()
         && (resource.data.customerUid == request.auth.uid
           || resource.data.merchantUid == request.auth.uid));
-      allow update: if signedIn()
+      // El comercio solo avanza el estado operativo del pedido.
+      // El cliente solo puede confirmar el pago si el ledger y ambos saldos
+      // se actualizan en la misma transacción DEMO.
+      allow update: if (
+        signedIn()
         && get(merchantProfilePath()).data.ownerUid == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
         && request.resource.data.paymentStatus == resource.data.paymentStatus
         && request.resource.data.total == resource.data.total
         && request.resource.data.qrNonce == resource.data.qrNonce
-        && validNextStatus();
+        && validNextStatus()
+      ) || (
+        signedIn()
+        && request.auth.uid == resource.data.customerUid
+        && resource.data.paymentStatus == "PENDIENTE"
+        && request.resource.data.paymentStatus == "PAGADA · DEMO"
+        && request.resource.data.paymentMethod == "OMNI_PAY_DEMO"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["paymentStatus", "paymentMethod", "updatedAt"])
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.total == resource.data.total
+        && request.resource.data.qrNonce == resource.data.qrNonce
+        && resource.data.status in ["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"]
+        && existsAfter(operationPath("orderpay_" + orderId))
+        && getAfter(operationPath("orderpay_" + orderId)).data.operationId == "orderpay_" + orderId
+        && getAfter(operationPath("orderpay_" + orderId)).data.kind == "QR_PAYMENT"
+        && getAfter(operationPath("orderpay_" + orderId)).data.senderUid == request.auth.uid
+        && getAfter(operationPath("orderpay_" + orderId)).data.recipientUid == resource.data.merchantUid
+        && getAfter(operationPath("orderpay_" + orderId)).data.orderId == orderId
+        && getAfter(operationPath("orderpay_" + orderId)).data.amount == resource.data.total
+      );
       allow delete: if false;
     }
 
