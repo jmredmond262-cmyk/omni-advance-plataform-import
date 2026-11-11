@@ -169,7 +169,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             qrNonce = doc.getString("qrNonce").orEmpty(),
             cashbackPolicy = decodeCashbackTerms(doc.get("cashbackPolicy")),
             paymentMethod = doc.getString("paymentMethod") ?: "PAGO_AL_RETIRAR",
-            environment = doc.getString("environment") ?: "DEMO"
+            environment = doc.getString("environment").orEmpty()
         )
     }.getOrNull()
 
@@ -406,7 +406,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         result.fold(
                             onSuccess = {
                                 orders = orders.map { current ->
-                                    if (current.id == order.id) current.copy(paymentStatus = "PAGADA · DEMO") else current
+                                    if (current.id == order.id) current.copy(paymentStatus = "PAGADA · DEMO", paymentMethod = "OMNI_PAY_DEMO") else current
                                 }
                                 feedback = "$it. Se registró el movimiento ficticio en las dos billeteras. No se movió dinero real."
                             },
