@@ -684,9 +684,9 @@ class MainViewModel : ViewModel() {
                 _stores.value = localStores
             }
 
-            // Publicar solo una celda geográfica aproximada cuando el usuario lo autorizó.
-            // Nunca se envían la dirección ni las coordenadas GPS exactas.
-            GeoPresenceRepository.publishApproximateLocation(
+            // Publicar coordenadas GPS precisas únicamente con consentimiento expreso
+            // y permiso ACCESS_FINE_LOCATION; nunca se envía la dirección.
+            GeoPresenceRepository.publishPreciseLocation(
                 context = context,
                 location = loc,
                 locality = city,
