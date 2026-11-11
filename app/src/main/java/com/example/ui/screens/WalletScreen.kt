@@ -401,7 +401,7 @@ fun WalletScreen(
             }
         }
 
-        // Selector de Pestañas: Movimientos vs Comprobantes Fiscales
+        // Selector de Pestañas: Movimientos vs Tickets DEMO
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -421,7 +421,7 @@ fun WalletScreen(
                 FilterChip(
                     selected = selectedWalletTab == 1,
                     onClick = { selectedWalletTab = 1 },
-                    label = { Text("Comprobantes (${receipts.size})") },
+                    label = { Text("Tickets DEMO (${receipts.size})") },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = EmeraldPrimary,
                         selectedLabelColor = Color.White
@@ -467,7 +467,7 @@ fun WalletScreen(
                 WalletTransactionCard(transaction = tx)
             }
         } else {
-            // Pestaña de Comprobantes Digitales y Facturas
+            // Pestaña de tickets digitales de prueba
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -476,13 +476,13 @@ fun WalletScreen(
                 ) {
                     Column {
                         Text(
-                            text = "Historial de Comprobantes & Tickets",
+                            text = "Historial de tickets digitales DEMO",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = SlateNavy
                         )
                         Text(
-                            text = "Validados con QR fiscal para garantías y reintegros",
+                            text = "Referencias internas de prueba; no tienen validez fiscal ni reemplazan facturas.",
                             fontSize = 11.sp,
                             color = Color.Gray
                         )
@@ -567,7 +567,7 @@ fun WalletScreen(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 modifier = Modifier.height(28.dp)
                             ) {
-                                Text("Ver Ticket QR", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = EmeraldDark)
+                                Text("Ver ticket DEMO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = EmeraldDark)
                             }
                         }
                     }
@@ -868,7 +868,7 @@ fun WalletScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(imageVector = Icons.Default.Receipt, contentDescription = null, tint = EmeraldDark)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Comprobante Fiscal Digital", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(text = if (receipt.fiscalValidity) "Comprobante fiscal digital" else "Ticket digital DEMO", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             },
             text = {
@@ -887,7 +887,7 @@ fun WalletScreen(
                         color = SlateNavy
                     )
                     Text(
-                        text = "CUIT: 30-71239845-6 • Responsable Inscripto",
+                        text = if (receipt.fiscalValidity) "Datos fiscales verificados" else "Documento de demostración · Sin identificación fiscal",
                         fontSize = 10.sp,
                         color = Color.Gray
                     )
@@ -950,7 +950,7 @@ fun WalletScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(text = "Descuento / Reintegro:", fontSize = 12.sp, color = EmeraldDark, fontWeight = FontWeight.Bold)
+                            Text(text = "Descuento simulado:", fontSize = 12.sp, color = EmeraldDark, fontWeight = FontWeight.Bold)
                             Text(text = "-$${String.format("%,.2f", receipt.discountApplied)}", fontSize = 12.sp, color = EmeraldDark, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -959,7 +959,7 @@ fun WalletScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(text = "TOTAL FACTURADO:", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = SlateNavy)
+                        Text(text = "TOTAL DE LA OPERACIÓN:", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = SlateNavy)
                         Text(text = "$${String.format("%,.2f", receipt.total)}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = EmeraldDark)
                     }
 
@@ -971,7 +971,7 @@ fun WalletScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // QR de Validación Fiscal
+                    // Referencia interna de validación DEMO
                     Card(
                         shape = RoundedCornerShape(10.dp),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -990,13 +990,13 @@ fun WalletScreen(
                                 modifier = Modifier.size(54.dp)
                             )
                             Text(
-                                text = "Código Fiscal: ${receipt.qrVerificationCode}",
+                                text = "Referencia interna DEMO: ${receipt.qrVerificationCode}",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = SlateNavy
                             )
                             Text(
-                                text = "Válido ante el comercio y AFIP para garantías",
+                                text = if (receipt.fiscalValidity) "Validación fiscal confirmada" else "No válido ante ARCA/AFIP ni como comprobante fiscal",
                                 fontSize = 9.sp,
                                 color = Color.Gray
                             )
@@ -1009,13 +1009,13 @@ fun WalletScreen(
                     onClick = {
                         val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Comprobante ${receipt.receiptNumber} - ${receipt.storeName}")
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Ticket DEMO ${receipt.receiptNumber} - ${receipt.storeName}")
                             putExtra(
                                 android.content.Intent.EXTRA_TEXT,
-                                "Comprobante Fiscal OmniHub:\nComercio: ${receipt.storeName}\nNro: ${receipt.receiptNumber}\nFecha: ${receipt.dateText}\nTotal: $${String.format("%,.2f", receipt.total)}\nValidación: ${receipt.qrVerificationCode}"
+                                "Ticket digital DEMO OMNI (sin validez fiscal):\nComercio: ${receipt.storeName}\nReferencia: ${receipt.receiptNumber}\nFecha: ${receipt.dateText}\nTotal: ${String.format("%,.2f", receipt.total)}\nReferencia interna: ${receipt.qrVerificationCode}"
                             )
                         }
-                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Compartir Comprobante por:"))
+                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Compartir ticket DEMO:"))
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
                 ) {
