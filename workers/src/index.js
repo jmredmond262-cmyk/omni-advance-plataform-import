@@ -148,6 +148,15 @@ async function recentDocuments(env, collection, limit = 8, offset = 0) {
   const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
+async function queryRecentDocuments(env, collection, orderField, limit) {
+  const structuredQuery = {
+    from: [{ collectionId: collection }],
+    orderBy: [{ field: { fieldPath: orderField }, direction: "DESCENDING" }],
+    limit: Math.min(Math.max(Number(limit) || 100, 1), 1000)
+  };
+  const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
+  return (rows || []).filter(row => row.document).map(row => documentData(row.document));
+}
 async function usageEventsLast7Days(env) {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const structuredQuery = {
@@ -185,41 +194,52 @@ function attachUserLabels(events, profiles) {
   const labels = userLabels(profiles);
   return events.map(event => ({ ...event, userLabel: labels.get(String(event.uid || "")) || "Cuenta OMNI · nombre no informado" }));
 }
-function aggregateGeoPresence(records) {
-  const buckets = new Map();
+function aggregateGeoPresence(records, profiles = []) {
+  const labels = userLabels(profiles);
   const now = Date.now();
-  let freshUsers = 0;
+  const points = [];
+  const visibleCells = new Set();
   for (const record of records) {
     if (record.consent !== true) continue;
     const updatedAt = Date.parse(record.updatedAt || "");
-    if (!Number.isFinite(updatedAt) || now - updatedAt > 24 * 60 * 60 * 1000 || updatedAt > now + 5 * 60 * 1000) continue;
+    // En línea = OMNI publicó una posición autorizada en los últimos tres minutos.
+    if (!Number.isFinite(updatedAt) || now - updatedAt > 7 * 60 * 1000 || updatedAt > now + 60 * 1000) continue;
     const uid = String(record.uid || record.id || "");
-    const lat = Number(record.latitude);
-    const lon = Number(record.longitude);
-    if (!uid || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
-    // Reject precise coordinates: this collection is reserved for the app's ~1 km privacy grid.
-    if (Math.abs(lat * 100 - Math.round(lat * 100)) > 0.00001 ||
-        Math.abs(lon * 100 - Math.round(lon * 100)) > 0.00001) continue;
-    freshUsers += 1;
+    const latitude = Number(record.latitude);
+    const longitude = Number(record.longitude);
+    if (!uid || !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+        Math.abs(latitude) > 90 || Math.abs(longitude) > 180) continue;
+    // La app comparte únicamente una celda aproximada de ~1 km; no aceptar GPS exacto.
+    if (Math.abs(latitude * 100 - Math.round(latitude * 100)) > 0.00001 ||
+        Math.abs(longitude * 100 - Math.round(longitude * 100)) > 0.00001) continue;
+    const accuracyBand = ["hasta 100 m", "100 a 500 m", "500 m a 1 km", "más de 1 km"].includes(String(record.accuracyBand || ""))
+      ? String(record.accuracyBand) : "más de 1 km";
     const locality = String(record.locality || "Localidad no informada").trim().slice(0, 80);
     const province = String(record.province || "Provincia no informada").trim().slice(0, 80);
     const country = String(record.country || "País no informado").trim().slice(0, 80);
-    const key = lat.toFixed(2) + "," + lon.toFixed(2) + "|" + locality.toLowerCase() + "|" + province.toLowerCase();
-    const current = buckets.get(key) || {
-      latitude: lat, longitude: lon, locality, province, country, users: new Set()
-    };
-    current.users.add(uid);
-    buckets.set(key, current);
+    visibleCells.add(latitude.toFixed(2) + "," + longitude.toFixed(2));
+    points.push({
+      uid,
+      userLabel: labels.get(uid) || ("Cuenta OMNI · " + uid.slice(0, 8)),
+      latitude,
+      longitude,
+      accuracyBand,
+      locality,
+      province,
+      country,
+      updatedAt: record.updatedAt,
+      status: "online"
+    });
   }
-  // A map marker is emitted only when at least three distinct accounts share the same area.
-  const points = [...buckets.values()]
-    .filter(point => point.users.size >= 3)
-    .map(point => ({
-      latitude: point.latitude, longitude: point.longitude,
-      locality: point.locality, province: point.province, country: point.country,
-      count: point.users.size
-    }));
-  return { points, freshUsers, privacyThreshold: 3, freshnessHours: 24 };
+  return {
+    points,
+    freshUsers: points.length,
+    activeUsers: points.length,
+    visibleAreas: visibleCells.size,
+    privacyThreshold: 1,
+    freshnessMinutes: 7,
+    freshnessHours: 0.05
+  };
 }
 
 function summarizeUsage(events) {
@@ -370,7 +390,7 @@ async function dashboard(env) {
     count: usageByDay[day]
   }));
   const analytics = summarizeUsage(usageEvents);
-  const geoActivity = aggregateGeoPresence(geoPresencePage.items);
+  const geoActivity = aggregateGeoPresence(geoPresencePage.items, userProfiles);
   return {
     counts: resolvedCounts,
     activeUsers7d: analytics.activeUsers7d,
@@ -384,7 +404,7 @@ async function dashboard(env) {
     geoActivity: geoActivity.points,
     geoActivitySummary: {
       consentedUsersFresh24h: geoActivity.freshUsers,
-      visibleAreas: geoActivity.points.length,
+      visibleAreas: geoActivity.visibleAreas,
       privacyThreshold: geoActivity.privacyThreshold,
       freshnessHours: geoActivity.freshnessHours,
       sampleComplete: geoPresencePage.complete
@@ -484,6 +504,25 @@ async function finance(env) {
 async function handleAction(env, action, data) {
   switch (action) {
     case "dashboard": return dashboard(env);
+    case "geoActivity": {
+      const [records, profiles] = await Promise.all([
+        queryRecentDocuments(env, "geoPresence", "updatedAt", 500),
+        recentDocuments(env, "users", 500)
+      ]);
+      const geo = aggregateGeoPresence(records, profiles);
+      return {
+        geoActivity: geo.points,
+        geoActivitySummary: {
+          activeUsers: geo.activeUsers,
+          visibleMarkers: geo.points.length,
+          visibleAreas: geo.visibleAreas,
+          freshnessMinutes: geo.freshnessMinutes,
+          coordinatePrecision: "celda aproximada de 1 km",
+          sampleComplete: records.length < 500,
+          sourceAvailable: true
+        }
+      };
+    }
     case "finance": return finance(env);
     case "list": {
       const collection = String(data.collection || "");
