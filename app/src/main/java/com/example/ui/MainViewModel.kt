@@ -289,8 +289,18 @@ class MainViewModel : ViewModel() {
 
     private fun startPersonalDataSync(uid: String) {
         if (uid.isBlank() || personalDataUid == uid) return
+        val previousUid = personalDataUid
         personalDataListeners.forEach { it.remove() }
         personalDataListeners.clear()
+        if (previousUid != null && previousUid != uid) {
+            // Never migrate one account's in-memory data into another account.
+            _tasks.value = emptyList()
+            _needs.value = emptyList()
+            _customContacts.value = emptyList()
+            _favoriteContactIds.value = emptySet()
+            contactFavoritesTouched = false
+            publishPersonalContacts()
+        }
         personalDataUid = uid
 
         var firstTaskSnapshot = true
