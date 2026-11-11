@@ -764,7 +764,7 @@ fun OmniApp(viewModel: MainViewModel) {
                     Screen.JobBoard -> JobBoardScreen(onBack = { viewModel.navigateTo(Screen.DailyHub) })
                     Screen.Events -> EventsScreen(onBack = { viewModel.navigateTo(Screen.DailyHub) })
                     Screen.Moments -> MomentsScreen(onBack = { viewModel.navigateTo(Screen.DailyHub) })
-                    Screen.OrderCenter -> OrderCenterScreen(viewModel = viewModel, merchantMode = false, onBack = { viewModel.navigateTo(orderCenterReturnScreen) })
+                    Screen.OrderCenter -> OrderCenterScreen(viewModel = viewModel, merchantMode = false, demoMode = orderCenterReturnScreen == Screen.DemoMarketplace, onBack = { viewModel.navigateTo(orderCenterReturnScreen) })
                     Screen.MerchantOrders -> OrderCenterScreen(viewModel = viewModel, merchantMode = true, onBack = { viewModel.navigateTo(Screen.MerchantHub) })
                     else -> DailyHubScreen(viewModel = viewModel)
                 }
