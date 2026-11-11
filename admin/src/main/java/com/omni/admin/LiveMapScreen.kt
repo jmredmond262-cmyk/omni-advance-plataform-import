@@ -291,6 +291,11 @@ html,body{display:block;margin:0;padding:0;width:100vw;height:100vh;min-width:10
      const uid=String(point.uid||'');
      const element=document.createElement('div');
      element.className='omni-user-marker';
+     // Color estable por cuenta: el mismo usuario conserva su color entre refrescos.
+     let colorHash=0;
+     for(let i=0;i<uid.length;i++)colorHash=(colorHash*31+uid.charCodeAt(i))|0;
+     const palette=['green','orange','violet','pink','blue'];
+     element.dataset.color=palette[Math.abs(colorHash)%palette.length];
      element.setAttribute('aria-label',point.userLabel||'Usuario OMNI');
      const popup=new maplibregl.Popup({offset:18,closeButton:true,closeOnClick:false}).setHTML(window.omniPopupHtml(point));
      const marker=new maplibregl.Marker({element:element,anchor:'center',offset:offset||[0,0]})
