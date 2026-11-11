@@ -769,7 +769,7 @@ object SampleData {
             subtotal = 4950.0,
             discountApplied = 500.0,
             total = 4450.0,
-            paymentMethod = "Tarjeta Visa Débito Galicia",
+            paymentMethod = "Tarjeta simulada · DEMO",
             qrVerificationCode = "DEMO-REF-41209"
         )
     )
