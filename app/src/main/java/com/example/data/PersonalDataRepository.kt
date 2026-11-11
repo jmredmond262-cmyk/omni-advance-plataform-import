@@ -144,12 +144,18 @@ class PersonalDataRepository(
     fun replaceShoppingItems(uid: String, items: List<NeedItem>, callback: (Result<Unit>) -> Unit = {}) {
         val collection = user(uid).collection("shoppingListItems")
         collection.get().addOnSuccessListener { snapshot ->
-            if (snapshot.size() + items.size > 450) {
+            val nextIds = items.map { it.id }.toSet()
+            val staleDocuments = snapshot.documents.filter { it.id !in nextIds }
+            if (staleDocuments.size + items.size > 450) {
                 callback(Result.failure(IllegalStateException("La lista supera el límite seguro de elementos para una sola actualización.")))
                 return@addOnSuccessListener
             }
+            if (staleDocuments.isEmpty() && items.isEmpty()) {
+                callback(Result.success(Unit))
+                return@addOnSuccessListener
+            }
             val batch = db.batch()
-            snapshot.documents.forEach { batch.delete(it.reference) }
+            staleDocuments.forEach { batch.delete(it.reference) }
             items.forEach { item ->
                 batch.set(collection.document(item.id), mapOf(
                     "id" to item.id,
