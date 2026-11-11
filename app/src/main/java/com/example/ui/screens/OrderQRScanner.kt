@@ -54,7 +54,7 @@ object OrderQRCodec {
             .put("totalAmount", totalAmount)
             .put("items", jsonItems)
             .put("qrNonce", qrNonce)
-            .put("mode", if (isLocalDemo) "LOCAL_DEMO" else "LIVE")
+            .put("mode", if (isLocalDemo) "LOCAL_DEMO" else "SHARED_DEMO")
             .toString()
     }
 
