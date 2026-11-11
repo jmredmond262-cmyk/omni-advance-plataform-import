@@ -127,11 +127,13 @@ jobs:
       - name: Compile Admin APK (not published)
         run: gradle :admin:assembleDebug
   backend:
-    name: Validate secure Admin API
+    name: Validate read-only Admin API
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate Cloudflare Worker JavaScript
+        run: node --input-type=module --check < workers/src/index.js
       - name: Configure Node
         uses: actions/setup-node@v4
         with:
