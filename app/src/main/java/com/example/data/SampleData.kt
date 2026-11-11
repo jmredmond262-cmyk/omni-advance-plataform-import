@@ -743,7 +743,7 @@ object SampleData {
     val sampleReceipts = listOf(
         com.example.model.DigitalReceipt(
             id = "rec_1",
-            receiptNumber = "T-0048-0001928",
+            receiptNumber = "DEMO-T-0048-0001928",
             storeName = "Supermercado San Martín Express",
             dateText = "28 Oct 2026, 18:42 hs",
             items = listOf(
@@ -754,12 +754,12 @@ object SampleData {
             subtotal = 8550.0,
             discountApplied = 1282.5,
             total = 7267.5,
-            paymentMethod = "OmniPay QR (5% Cashback Acreditado)",
-            qrVerificationCode = "OMNI-VALID-98214"
+            paymentMethod = "Pago simulado OMNI Pay DEMO",
+            qrVerificationCode = "DEMO-REF-98214"
         ),
         com.example.model.DigitalReceipt(
             id = "rec_2",
-            receiptNumber = "T-0012-0000412",
+            receiptNumber = "DEMO-T-0012-0000412",
             storeName = "Panadería La Espiga de Oro",
             dateText = "27 Oct 2026, 09:15 hs",
             items = listOf(
@@ -770,7 +770,7 @@ object SampleData {
             discountApplied = 500.0,
             total = 4450.0,
             paymentMethod = "Tarjeta Visa Débito Galicia",
-            qrVerificationCode = "OMNI-VALID-41209"
+            qrVerificationCode = "DEMO-REF-41209"
         )
     )
 
