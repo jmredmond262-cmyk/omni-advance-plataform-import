@@ -104,6 +104,14 @@ fun WalletScreen(
     val wallet by viewModel.wallet.collectAsState()
     val profile by viewModel.userProfile.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val pendingOperationPrefs = remember(context) {
+        context.getSharedPreferences("omni_pay_pending_operations", android.content.Context.MODE_PRIVATE)
+    }
+    fun operationIdFor(key: String): String {
+        return pendingOperationPrefs.getString(key, null) ?: java.util.UUID.randomUUID().toString().also {
+            pendingOperationPrefs.edit().putString(key, it).apply()
+        }
+    }
     val currentUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     val walletRepository = remember { DemoWalletRepository() }
     val orderDb = remember { FirebaseFirestore.getInstance() }
@@ -686,10 +694,13 @@ fun WalletScreen(
                                 paymentSuccessMessage = "Ingresá un importe válido mayor que cero."
                             } else {
                                 qrPaymentInProgress = true
-                                walletRepository.payDemoQr(qrPaymentPayload, amount) { result ->
+                                val operationKey = "qr:${qrPaymentPayload.trim()}:${amount}"
+                                val operationId = operationIdFor(operationKey)
+                                walletRepository.payDemoQr(qrPaymentPayload, amount, { result ->
                                     qrPaymentInProgress = false
                                     result.fold(
                                     onSuccess = {
+                                        pendingOperationPrefs.edit().remove(operationKey).apply()
                                         paymentSuccessMessage = "Pago QR aprobado en el entorno DEMO por OM$ ${String.format("%,.2f", amount)}. El saldo del destinatario se actualiza automáticamente."
                                         showQrPaymentDialog = false
                                     },
@@ -697,7 +708,7 @@ fun WalletScreen(
                                         paymentSuccessMessage = error.localizedMessage ?: "No se pudo completar el pago DEMO."
                                     }
                                     )
-                                }
+                                }, operationId = operationId)
                             }
                         }
                     },
@@ -735,10 +746,13 @@ fun WalletScreen(
                                 paymentSuccessMessage = "Ingresá un importe válido mayor que cero."
                             } else {
                                 topUpInProgress = true
-                                walletRepository.topUpDemo(amount) { result ->
+                                val operationKey = "topup:${amount}"
+                                val operationId = operationIdFor(operationKey)
+                                walletRepository.topUpDemo(amount, { result ->
                                     topUpInProgress = false
                                     result.fold(
                                     onSuccess = {
+                                        pendingOperationPrefs.edit().remove(operationKey).apply()
                                         showAddFundsDialog = false
                                         paymentSuccessMessage = "Carga DEMO aprobada por OM$ ${String.format("%,.2f", amount)}."
                                     },
@@ -746,7 +760,7 @@ fun WalletScreen(
                                         paymentSuccessMessage = error.localizedMessage ?: "No se pudo cargar saldo DEMO."
                                     }
                                     )
-                                }
+                                }, operationId = operationId)
                             }
                         }
                     },
@@ -798,10 +812,13 @@ fun WalletScreen(
                                 paymentSuccessMessage = "Revisá el alias/CVU y el importe."
                             } else {
                                 transferInProgress = true
-                                walletRepository.transferDemoFunds(transferRecipient, amount) { result ->
+                                val operationKey = "transfer:${transferRecipient.trim().lowercase()}:${amount}"
+                                val operationId = operationIdFor(operationKey)
+                                walletRepository.transferDemoFunds(transferRecipient, amount, { result ->
                                     transferInProgress = false
                                     result.fold(
                                     onSuccess = {
+                                        pendingOperationPrefs.edit().remove(operationKey).apply()
                                         paymentSuccessMessage = "Transferencia DEMO aprobada por OM$ ${String.format("%,.2f", amount)}. La cuenta destinataria recibe el importe automáticamente."
                                         transferRecipient = ""
                                         showTransferDialog = false
@@ -810,7 +827,7 @@ fun WalletScreen(
                                         paymentSuccessMessage = error.localizedMessage ?: "No se pudo realizar la transferencia DEMO."
                                     }
                                     )
-                                }
+                                }, operationId = operationId)
                             }
                         }
                     },
