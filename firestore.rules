@@ -214,6 +214,7 @@ service cloud.firestore {
         && linkedOrder().merchantUid == request.resource.data.merchantUid
         && linkedOrder().environment == "DEMO"
         && linkedOrder().paymentStatus == "PENDIENTE"
+        && linkedOrder().status in ["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"]
         && linkedOrder().createdAt is timestamp
         && request.time < linkedOrder().createdAt + duration.value(24, 'h')
         && linkedOrder().total == request.resource.data.amount;
@@ -327,6 +328,7 @@ service cloud.firestore {
         signedIn()
         && request.auth.uid == resource.data.customerUid
         && resource.data.paymentStatus == "PENDIENTE"
+        && resource.data.status in ["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"]
         && resource.data.createdAt is timestamp
         && request.time < resource.data.createdAt + duration.value(24, 'h')
         && request.resource.data.paymentStatus == "PAGADA · DEMO"
