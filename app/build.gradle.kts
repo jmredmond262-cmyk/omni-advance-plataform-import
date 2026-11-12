@@ -120,6 +120,7 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   implementation(libs.firebase.firestore)
+  implementation("com.google.firebase:firebase-functions")
   implementation(libs.firebase.auth)
   implementation(libs.play.services.code.scanner)
   implementation(libs.zxing.core)
