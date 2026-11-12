@@ -82,6 +82,7 @@ import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -254,12 +255,13 @@ fun MerchantHubScreen(
         claimCodeMessage = "Validando código y asignando comercio…"
         screenScope.launch {
             runCatching {
-                val task = FirebaseFunctions.getInstance("us-central1").getHttpsCallable("claimDemoMerchant").call(mapOf("code" to code))
-                task.continueWith { completed -> completed.result?.data as? Map<*, *> ?: error("El servidor no devolvió la asignación.") }.getResult()
+                val response = FirebaseFunctions.getInstance("us-central1").getHttpsCallable("claimDemoMerchant").call(mapOf("code" to code)).await()
+                response.data as? Map<*, *> ?: error("El servidor no devolvió la asignación.")
             }.onSuccess { result ->
                 val name = result["storeName"]?.toString().orEmpty()
                 claimCodeMessage = if (name.isNotBlank()) "Comercio asignado correctamente: $name" else "Comercio asignado correctamente."
-                claimCodeInput = ""; showClaimCodeDialog = false; viewModel.activateMerchantProfile()
+                claimCodeInput = ""; showClaimCodeDialog = false
+                viewModel.activateClaimedDemoMerchant(result["storeId"]?.toString().orEmpty())
             }.onFailure { ex -> claimCodeMessage = ex.localizedMessage ?: "No se pudo validar el código." }
             claimCodeBusy = false
         }
