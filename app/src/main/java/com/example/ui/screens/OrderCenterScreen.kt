@@ -75,7 +75,8 @@ private data class OmniStoreOrder(
     val cashbackPolicy: CashbackTerms = CashbackTerms(),
     val paymentMethod: String = "PAGO_AL_RETIRAR",
     val environment: String = "DEMO",
-    val isLocalDemo: Boolean = false
+    val isLocalDemo: Boolean = false,
+    val rejectionReason: String = ""
 )
 
 private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
@@ -138,6 +139,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var deliveryAddress by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
+    var showRejectReasonDialog by remember { mutableStateOf(false) }
+    var rejectReasonInput by remember { mutableStateOf("") }
 
     LaunchedEffect(demoMode) {
         if (demoMode) {
@@ -200,7 +203,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             qrNonce = doc.getString("qrNonce").orEmpty(),
             cashbackPolicy = decodeCashbackTerms(doc.get("cashbackPolicy")),
             paymentMethod = doc.getString("paymentMethod") ?: "PAGO_AL_RETIRAR",
-            environment = doc.getString("environment").orEmpty()
+            environment = doc.getString("environment").orEmpty(),
+            rejectionReason = doc.getString("rejectionReason").orEmpty()
         )
     }.getOrNull()
 
@@ -520,7 +524,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         }
     }
 
-    fun advanceOrder(order: OmniStoreOrder, next: String) {
+    fun advanceOrder(order: OmniStoreOrder, next: String, rejectionReason: String = "") {
         if (!merchantMode || !merchantReady || uid.isBlank() ||
             order.storeId != store.id || order.merchantUid != uid ||
             order.environment != "DEMO") {
@@ -531,13 +535,20 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             feedback = "La transición solicitada no está permitida."
             return
         }
+        if (next == "RECHAZADO" && rejectionReason.trim().length !in 10..240) {
+            feedback = "Indicá un motivo de rechazo de entre 10 y 240 caracteres."
+            return
+        }
         if (next in listOf("RECHAZADO", "CANCELADO") && order.paymentStatus != "PENDIENTE") {
             feedback = "No se puede rechazar ni cancelar un pedido ya pagado sin un circuito de devolución DEMO."
             return
         }
-        db.collection("storeOrders").document(order.id).update(
-            mapOf("status" to next, "updatedAt" to FieldValue.serverTimestamp())
-        ).addOnSuccessListener {
+        val update = mutableMapOf<String, Any>(
+            "status" to next,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (next == "RECHAZADO") update["rejectionReason"] = rejectionReason.trim()
+        db.collection("storeOrders").document(order.id).update(update).addOnSuccessListener {
             UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next", mapOf("operationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
             orders = orders.map { current -> if (current.id == order.id) current.copy(status = next) else current }
             if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next)
@@ -850,11 +861,46 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             dismissButton = {
                 Row {
                     if (scanned.status == "RECIBIDO") TextButton(onClick = {
-                        advanceOrder(scanned, "RECHAZADO")
-                        selectedScannedOrder = null
+                        rejectReasonInput = ""
+                        showRejectReasonDialog = true
                     }) { Text("Rechazar") }
                     TextButton(onClick = { selectedScannedOrder = null }) { Text("Cerrar") }
                 }
+            }
+        )
+    }
+
+    if (showRejectReasonDialog && selectedScannedOrder != null) {
+        AlertDialog(
+            onDismissRequest = { showRejectReasonDialog = false },
+            containerColor = Color(0xFF101B30),
+            title = { Text("Motivo del rechazo", color = Color.White) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("El cliente verá el motivo. No se puede rechazar un pedido ya pagado.", color = Color(0xFFB8C8D9), fontSize = 12.sp)
+                    OutlinedTextField(
+                        value = rejectReasonInput,
+                        onValueChange = { rejectReasonInput = it.take(240) },
+                        label = { Text("Motivo (10 a 240 caracteres)") },
+                        minLines = 3,
+                        maxLines = 5
+                    )
+                    Text("${rejectReasonInput.trim().length}/240", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = rejectReasonInput.trim().length in 10..240,
+                    onClick = {
+                        val order = selectedScannedOrder ?: return@TextButton
+                        showRejectReasonDialog = false
+                        advanceOrder(order, "RECHAZADO", rejectReasonInput)
+                        selectedScannedOrder = null
+                    }
+                ) { Text("Confirmar rechazo") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRejectReasonDialog = false }) { Text("Volver") }
             }
         )
     }
