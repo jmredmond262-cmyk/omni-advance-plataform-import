@@ -162,8 +162,9 @@ function deliveryDistanceKm(lat1: number, lon1: number, lat2: number, lon2: numb
   const radians = (degrees: number) => degrees * Math.PI / 180;
   const dLat = radians(lat2 - lat1);
   const dLon = radians(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 +
+  const rawA = Math.sin(dLat / 2) ** 2 +
     Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(dLon / 2) ** 2;
+  const a = Math.min(1, Math.max(0, rawA));
   return 6371.0088 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -196,7 +197,7 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
   const profileRef = db.collection("merchantProfiles").doc(storeId);
   const profileSnap = await profileRef.get();
   if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
-      profileSnap.get("seedVersion") !== 1) {
+      profileSnap.get("seedVersion") !== 1 || profileSnap.get("storeId") !== storeId) {
     throw new HttpsError("failed-precondition", "El comercio no está habilitado para pedidos DEMO.");
   }
   const merchantUid = String(profileSnap.get("ownerUid") || "");
@@ -334,7 +335,8 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
     const profileRef = db.collection("merchantProfiles").doc(String(order.storeId || ""));
     const profileSnap = await tx.get(profileRef);
     if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
-        profileSnap.get("seedVersion") !== 1 || profileSnap.get("ownerUid") !== order.merchantUid) {
+        profileSnap.get("seedVersion") !== 1 || profileSnap.get("storeId") !== order.storeId ||
+        profileSnap.get("ownerUid") !== order.merchantUid) {
       throw new HttpsError("failed-precondition", "El comercio ya no está habilitado para este pedido.");
     }
     const orderItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
