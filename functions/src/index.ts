@@ -217,13 +217,13 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
         !validCoordinates(merchantLat, merchantLon) || !validCoordinates(buyerLat, buyerLon)) {
       throw new HttpsError("failed-precondition", "El comercio o tu dispositivo todavía no tienen una ubicación válida para verificar la cobertura.");
     }
-    const distance = deliveryDistanceKm(merchantLat, merchantLon, buyerLat, buyerLon);
+    const distance = deliveryDistanceKm(merchantLat as number, merchantLon as number, buyerLat as number, buyerLon as number);
     const radius = Number(profileSnap.get("deliveryRadiusKm"));
     if (!Number.isFinite(radius) || radius <= 0 || distance > radius + 0.05) {
       throw new HttpsError("out-of-range", "La dirección está fuera del radio de delivery de este comercio.");
     }
-    deliveryLatitude = buyerLat;
-    deliveryLongitude = buyerLon;
+    deliveryLatitude = buyerLat as number;
+    deliveryLongitude = buyerLon as number;
   }
   const catalog = Array.isArray(profileSnap.get("inventory"))
     ? profileSnap.get("inventory") as Array<Record<string, unknown>> : [];
@@ -368,7 +368,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       const radius = Number(profileSnap.get("deliveryRadiusKm"));
       if (!validCoordinates(merchantLat, merchantLon) || !validCoordinates(buyerLat, buyerLon) ||
           !Number.isFinite(radius) || radius <= 0 ||
-          deliveryDistanceKm(merchantLat, merchantLon, buyerLat, buyerLon) > radius + 0.05) {
+          deliveryDistanceKm(merchantLat as number, merchantLon as number, buyerLat as number, buyerLon as number) > radius + 0.05) {
         throw new HttpsError("failed-precondition", "La ubicación del pedido ya no supera la validación de cobertura. No se debitó el pago.");
       }
     }
