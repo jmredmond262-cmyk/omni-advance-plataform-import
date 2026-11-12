@@ -270,6 +270,15 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
   const cashbackPolicy = cashback && typeof cashback === "object" ? cashback : {
     enabled: false, percentage: 0, capPerPurchase: null, monthlyCap: null
   };
+  const expectedPolicy = data.expectedCashbackPolicy as Record<string, unknown> | undefined;
+  const actualPolicy = cashbackPolicy as Record<string, unknown>;
+  if (!expectedPolicy ||
+      expectedPolicy.enabled !== actualPolicy.enabled ||
+      Number(expectedPolicy.percentage || 0) !== Number(actualPolicy.percentage || 0) ||
+      (expectedPolicy.capPerPurchase ?? null) !== (actualPolicy.capPerPurchase ?? null) ||
+      (expectedPolicy.monthlyCap ?? null) !== (actualPolicy.monthlyCap ?? null)) {
+    throw new HttpsError("failed-precondition", "El comercio actualizó el cashback desde la revisión. Volvé a revisar las condiciones.");
+  }
   const orderRef = db.collection("storeOrders").doc();
   const qrNonce = randomUUID().replace(/-/g, "") + randomBytes(8).toString("hex");
   await orderRef.create({
