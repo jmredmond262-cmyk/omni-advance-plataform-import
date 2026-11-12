@@ -121,6 +121,7 @@ fun MerchantHubScreen(
     var showPublishNewsDialog by remember { mutableStateOf(false) }
     var showThresholdDialog by remember { mutableStateOf(false) }
     var showScheduleDialog by remember { mutableStateOf(false) }
+    var showLogisticsDialog by remember { mutableStateOf(false) }
     var showClaimCodeDialog by remember { mutableStateOf(false) }
     var claimCodeInput by remember { mutableStateOf("") }
     var claimCodeBusy by remember { mutableStateOf(false) }
@@ -135,6 +136,13 @@ fun MerchantHubScreen(
     var editOpenOnHolidays by remember { mutableStateOf(store.openOnHolidays) }
     var editScheduleNotes by remember { mutableStateOf(store.scheduleNotes) }
     var editIsOpenNow by remember { mutableStateOf(store.isOpen) }
+    var editPickupEnabled by remember { mutableStateOf(store.pickupEnabled) }
+    var editDeliveryEnabled by remember { mutableStateOf(store.deliveryEnabled) }
+    var editDeliveryRadius by remember { mutableStateOf(store.deliveryRadiusKm.toString()) }
+    var editDeliveryFee by remember { mutableStateOf(store.deliveryFee.toString()) }
+    var editFreeDeliveryFrom by remember { mutableStateOf(store.freeDeliveryFrom?.toString().orEmpty()) }
+    var editMinimumOrder by remember { mutableStateOf(store.minimumOrderAmount.toString()) }
+    var editPrepMinutes by remember { mutableStateOf(store.estimatedPrepMinutes.toString()) }
 
     // Campos formulario producto
     val merchantBenefits by viewModel.merchantBenefits.collectAsState()
@@ -544,6 +552,39 @@ fun MerchantHubScreen(
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(text = "${store.inventory.size}", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = SlateNavy)
                         Text(text = "Productos activos", fontSize = 10.sp, color = Color.Gray)
+                    }
+                }
+            }
+        }
+
+        // Configuración comercial y logística del comercio DEMO
+        item {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth().testTag("merchant_logistics_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.NearMe, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Modalidad de atención", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = SlateNavy)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Retiro: ${if (store.pickupEnabled) "Activo" else "Desactivado"} · Delivery: ${if (store.deliveryEnabled) "Activo" else "Desactivado"}", fontSize = 12.sp, color = Color.Gray)
+                    Text("Mínimo OM$ ${store.minimumOrderAmount.toInt()} · Preparación estimada: ${store.estimatedPrepMinutes} min", fontSize = 12.sp, color = Color.Gray)
+                    Button(onClick = {
+                        editPickupEnabled = store.pickupEnabled
+                        editDeliveryEnabled = store.deliveryEnabled
+                        editDeliveryRadius = store.deliveryRadiusKm.toString()
+                        editDeliveryFee = store.deliveryFee.toString()
+                        editFreeDeliveryFrom = store.freeDeliveryFrom?.toString().orEmpty()
+                        editMinimumOrder = store.minimumOrderAmount.toString()
+                        editPrepMinutes = store.estimatedPrepMinutes.toString()
+                        showLogisticsDialog = true
+                    }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)) {
+                        Text("Configurar retiro y delivery")
                     }
                 }
             }
@@ -1532,6 +1573,48 @@ fun MerchantHubScreen(
             dismissButton = {
                 TextButton(onClick = { showThresholdDialog = false }) { Text("Cancelar") }
             }
+        )
+    }
+
+    if (showLogisticsDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogisticsDialog = false },
+            title = { Text("Retiro y delivery", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("Definí cómo recibir pedidos y las condiciones de entrega. Valores de prueba DEMO.", fontSize = 11.sp, color = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.weight(1f)) { Text("Retiro en el local", fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text("El cliente retira el pedido", fontSize = 10.sp, color = Color.Gray) }
+                        Switch(checked = editPickupEnabled, onCheckedChange = { editPickupEnabled = it })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.weight(1f)) { Text("Entrega a domicilio", fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text("Habilita pedidos con delivery", fontSize = 10.sp, color = Color.Gray) }
+                        Switch(checked = editDeliveryEnabled, onCheckedChange = { editDeliveryEnabled = it })
+                    }
+                    OutlinedTextField(value = editMinimumOrder, onValueChange = { editMinimumOrder = it }, label = { Text("Compra mínima (OM$)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = editPrepMinutes, onValueChange = { editPrepMinutes = it }, label = { Text("Preparación estimada (minutos)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    if (editDeliveryEnabled) {
+                        OutlinedTextField(value = editDeliveryRadius, onValueChange = { editDeliveryRadius = it }, label = { Text("Radio de entrega (km)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = editDeliveryFee, onValueChange = { editDeliveryFee = it }, label = { Text("Costo de envío (OM$)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = editFreeDeliveryFrom, onValueChange = { editFreeDeliveryFrom = it }, label = { Text("Envío gratis desde (OM$ · opcional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val radius = editDeliveryRadius.toDoubleOrNull() ?: 3.0
+                    val fee = editDeliveryFee.toDoubleOrNull() ?: 0.0
+                    val minimum = editMinimumOrder.toDoubleOrNull() ?: 0.0
+                    val freeFrom = editFreeDeliveryFrom.toDoubleOrNull()
+                    val prep = editPrepMinutes.toIntOrNull() ?: 20
+                    if (minimum < 0 || minimum > 50000 || radius <= 0 || radius > 50 ||
+                        fee < 0 || fee > 50000 || (freeFrom != null && (freeFrom <= 0 || freeFrom > 50000)) ||
+                        prep !in 1..240 || (!editPickupEnabled && !editDeliveryEnabled)) return@Button
+                    viewModel.updateManagedStoreLogistics(editPickupEnabled, editDeliveryEnabled, radius, fee, freeFrom, minimum, prep)
+                    showLogisticsDialog = false
+                }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)) { Text("Guardar configuración") }
+            },
+            dismissButton = { TextButton(onClick = { showLogisticsDialog = false }) { Text("Cancelar") } }
         )
     }
 
