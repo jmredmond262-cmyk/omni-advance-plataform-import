@@ -438,4 +438,213 @@ export const claimDemoMerchant = onCall({ region: REGION }, async (request) => {
   });
 });
 
+type DemoSeedProduct = {
+  id: string; name: string; category: string; price: number;
+  originalPrice: number | null; inStock: boolean; unitLabel: string; description: string;
+};
+type DemoMerchantSeed = {
+  id: string; name: string; type: string; sizeTier: string; capacityLabel: string;
+  description: string; accentColorHex: number; hoursText: string; openTime: string;
+  closeTime: string; products: DemoSeedProduct[];
+};
+
+const DEMO_MERCHANT_SEEDS: DemoMerchantSeed[] = [
+  {
+    id: "demo_kiosco_punto_24", name: "Punto 24 · Kiosco DEMO", type: "KIOSCO",
+    sizeTier: "MICRO", capacityLabel: "Hasta 8 productos activos · retiro en local",
+    description: "Comercio ficticio de escala micro para probar ventas rápidas, stock reducido y pedidos pequeños.",
+    accentColorHex: 0xFFEF4444, hoursText: "Todos los días · 08:00 a 23:00", openTime: "08:00", closeTime: "23:00",
+    products: [
+      {id:"kp_agua_2l",name:"Agua mineral 2L",category:"BEBIDAS",price:1100,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Agua sin gas · botella 2 litros"},
+      {id:"kp_gaseosa_15",name:"Gaseosa cola 1.5L",category:"BEBIDAS",price:2450,originalPrice:2700,inStock:true,unitLabel:"bot.",description:"Bebida cola · botella 1.5 litros"},
+      {id:"kp_galletas",name:"Galletitas surtidas 300g",category:"KIOSCO",price:1450,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Paquete familiar"},
+      {id:"kp_chocolate",name:"Chocolate con leche 90g",category:"KIOSCO",price:1750,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Tableta individual"},
+      {id:"kp_papas",name:"Papas fritas  |  100g",category:"KIOSCO",price:1650,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Snack salado"},
+      {id:"kp_alfajor",name:"Alfajor triple",category:"KIOSCO",price:1250,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Alfajor de chocolate"},
+      {id:"kp_yerba",name:"Yerba mate 500g",category:"ALMACEN",price:2350,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Yerba tradicional"},
+      {id:"kp_leche",name:"Leche larga vida 1L",category:"LACTEOS",price:1450,originalPrice:null,inStock:true,unitLabel:"litro",description:"Leche entera"}
+    ]
+  },
+  {
+    id: "demo_almacen_esquina", name: "Almacén La Esquina · DEMO", type: "ALMACEN",
+    sizeTier: "PEQUENO", capacityLabel: "Hasta 15 productos activos · retiro y delivery",
+    description: "Almacén barrial ficticio para probar catálogo cotidiano, reposición y entregas de cercanía.",
+    accentColorHex: 0xFF10B981, hoursText: "Lun. a sáb. · 08:00 a 20:30", openTime: "08:00", closeTime: "20:30",
+    products: [
+      {id:"ae_leche",name:"Leche entera 1L",category:"LACTEOS",price:1450,originalPrice:null,inStock:true,unitLabel:"litro",description:"Leche larga vida"},
+      {id:"ae_arroz",name:"Arroz largo fino 1kg",category:"ALMACEN",price:1850,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Paquete de un kilo"},
+      {id:"ae_fideos",name:"Fideos spaghetti 500g",category:"ALMACEN",price:1350,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Pasta seca"},
+      {id:"ae_yerba",name:"Yerba mate 1kg",category:"ALMACEN",price:4650,originalPrice:4950,inStock:true,unitLabel:"paq.",description:"Yerba con palo"},
+      {id:"ae_azucar",name:"Azúcar 1kg",category:"ALMACEN",price:1250,originalPrice:null,inStock:true,unitLabel:"kg",description:"Azúcar blanca"},
+      {id:"ae_aceite",name:"Aceite mezcla 900ml",category:"ALMACEN",price:2550,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Aceite para cocinar"},
+      {id:"ae_huevos",name:"Huevos x 12",category:"FRESCOS",price:3600,originalPrice:null,inStock:true,unitLabel:"doc.",description:"Maple de una docena"},
+      {id:"ae_tomate",name:"Tomate perita 1kg",category:"FRESCOS",price:2100,originalPrice:null,inStock:true,unitLabel:"kg",description:"Producto fresco"},
+      {id:"ae_gaseosa",name:"Gaseosa naranja 1.5L",category:"BEBIDAS",price:2250,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Bebida sin alcohol"},
+      {id:"ae_agua",name:"Agua mineral 2L",category:"BEBIDAS",price:1100,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Agua sin gas"},
+      {id:"ae_detergente",name:"Detergente 750ml",category:"LIMPIEZA",price:1950,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Detergente para vajilla"},
+      {id:"ae_lavandina",name:"Lavandina 1L",category:"LIMPIEZA",price:1350,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Limpieza del hogar"},
+      {id:"ae_pan",name:"Pan casero 1/2kg",category:"ALMACEN",price:1900,originalPrice:null,inStock:true,unitLabel:"unidad",description:"Pan del día"},
+      {id:"ae_jabon",name:"Jabón de tocador x3",category:"LIMPIEZA",price:1850,originalPrice:null,inStock:true,unitLabel:"pack",description:"Pack de tres unidades"},
+      {id:"ae_cafe",name:"Café molido 250g",category:"ALMACEN",price:4250,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Café tostado molido"}
+    ]
+  },
+  {
+    id: "demo_panaderia_trigal", name: "Panadería Trigal · DEMO", type: "PANADERIA",
+    sizeTier: "PEQUENO", capacityLabel: "Hasta 12 productos activos · retiro y delivery programado",
+    description: "Panadería ficticia de producción diaria para probar disponibilidad, productos por unidad y combos.",
+    accentColorHex: 0xFFF59E0B, hoursText: "Todos los días · 06:30 a 19:30", openTime: "06:30", closeTime: "19:30",
+    products: [
+      {id:"pt_flauta",name:"Pan francés 1kg",category:"ALMACEN",price:2600,originalPrice:null,inStock:true,unitLabel:"kg",description:"Pan del día"},
+      {id:"pt_mixto",name:"Pan miñón 1/2kg",category:"ALMACEN",price:1450,originalPrice:null,inStock:true,unitLabel:"1/2 kg",description:"Pan fresco"},
+      {id:"pt_medialunas",name:"Medialunas x 6",category:"ALMACEN",price:3900,originalPrice:4200,inStock:true,unitLabel:"pack",description:"Media docena"},
+      {id:"pt_facturas",name:"Facturas surtidas x 6",category:"ALMACEN",price:3600,originalPrice:null,inStock:true,unitLabel:"pack",description:"Seis unidades"},
+      {id:"pt_chipa",name:"Chipá x 250g",category:"ALMACEN",price:2800,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Chipá horneado"},
+      {id:"pt_torta",name:"Porción de pasta frola",category:"ALMACEN",price:1850,originalPrice:null,inStock:true,unitLabel:"porción",description:"Membrillo"},
+      {id:"pt_cafe",name:"Café preparado",category:"BEBIDAS",price:1900,originalPrice:null,inStock:true,unitLabel:"vaso",description:"Café para llevar"},
+      {id:"pt_leche",name:"Leche chocolatada 500ml",category:"LACTEOS",price:1750,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Bebida láctea"},
+      {id:"pt_pan_integral",name:"Pan integral 500g",category:"ALMACEN",price:2950,originalPrice:null,inStock:true,unitLabel:"unidad",description:"Pan con semillas"},
+      {id:"pt_alfajor",name:"Alfajor artesanal",category:"KIOSCO",price:1600,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Elaboración propia"},
+      {id:"pt_prepizza",name:"Prepizza x 2",category:"ALMACEN",price:3200,originalPrice:null,inStock:true,unitLabel:"pack",description:"Dos bases listas"},
+      {id:"pt_tostadas",name:"Tostadas 200g",category:"ALMACEN",price:2100,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Tostadas clásicas"}
+    ]
+  },
+  {
+    id: "demo_supermercado_norte", name: "Supermercado Norte · DEMO", type: "SUPERMERCADO",
+    sizeTier: "GRANDE", capacityLabel: "Hasta 30 productos activos · retiro y delivery",
+    description: "Supermercado ficticio de mayor escala para probar variedad, stock amplio, múltiples categorías y pedidos grandes.",
+    accentColorHex: 0FF0D9488, hoursText: "Lun. a sáb. · 07:30 a 21:00", openTime: "07:30", closeTime: "21:00",
+    products: [
+      {id:"sn_leche",name:"Leche entera 1L",category:"LACTEOS",price:1450,originalPrice:null,inStock:true,unitLabel:"litro",description:"Leche larga vida"},
+      {id:"sn_yogur",name:"Yogur bebible 1L",category:"LACTEOS",price:2100,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Yogur frutilla"},
+      {id:"sn_queso",name:"Queso cremoso 500g",category:"LACTEOS",price:4650,originalPrice:null,inStock:true,unitLabel:"trozo",description:"Queso fresco"},
+      {id:"sn_manteca",name:"Manteca 200g",category:"LACTEOS",price:2450,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Manteca clásica"},
+      {id:"sn_arroz",name:"Arroz largo fino 1kg",category:"ALMACEN",price:1850,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Arroz"},
+      {id:"sn_fideos",name:"Fideos tirabuzón 500g",category:"ALMACEN",price:1350,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Pasta seca"},
+      {id:"sn_aceite",name:"Aceite girasol 900ml",category:"ALMACEN",price:2600,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Aceite vegetal"},
+      {id:"sn_yerba",name:"Yerba mate 1kg",category:"ALMACEN",price:4650,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Yerba tradicional"},
+      {id:"sn_cafe",name:"Café molido 250g",category:"ALMACEN",price:4250,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Café"},
+      {id:"sn_azucar",name:"Azúcar 1kg",category:"ALMACEN",price:1250,originalPrice:null,inStock:true,unitLabel:"kg",description:"Azúcar"},
+      {id:"sn_huevos",name:"Huevos x 12",category:"FRESCOS",price:3600,originalPrice:null,inStock:true,unitLabel:"doc.",description:"Huevos frescos"},
+      {id:"sn_tomate",name:"Tomates 1kg",category:"FRESCOS",price:2100,originalPrice:null,inStock:true,unitLabel:"kg",description:"Tomate fresco"},
+      {id:"sn_manzana",name:"Manzanas 1kg",category:"FRESCOS",price:2800,originalPrice:null,inStock:true,unitLabel:"kg",description:"Fruta fresca"},
+      {id:"sn_banana",name:"Bananas 1kg",category:"FRESCOS",price:2450,originalPrice:null,inStock:true,unitLabel:"kg",description:"Fruta fresca"},
+      {id:"sn_gaseosa",name:"Gaseosa cola 1.5L",category:"BEBIDAS",price:2450,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Bebida cola"},
+      {id:"sn_agua",name:"Agua mineral 2L",category:"BEBIDAS",price:1100,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Agua sin gas"},
+      {id:"sn_jugo",name:"Jugo en polvo x 20g",category:"BEBIDAS",price:450,originalPrice:null,inStock:true,unitLabel:"sobre",description:"Bebida para preparar"},
+      {id:"sn_detergente",name:"Detergente 750ml",category:"LIMPIEZA",price:1950,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Limpieza"},
+      {id:"sn_lavandina",name:"Lavandina 1L",category:"LIMPIEZA",price:1350,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Limpieza"},
+      {id:"sn_papel",name:"Papel higiénico x4",category:"LIMPIEZA",price:2800,originalPrice:null,inStock:true,unitLabel:"pack",description:"Higiene del hogar"},
+      {id:"sn_jabon",name:"Jabón de tocador x3",category:"LIMPIEZA",price:1850,originalPrice:null,inStock:true,unitLabel:"pack",description:"Higiene personal"},
+      {id:"sn_shampoo",name:"Shampoo 400ml",category:"LIMPIEZA",price:3950,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Cuidado personal"},
+      {id:"sn_pan",name:"Pan de campo 1kg",category:"ALMACEN",price:2600,originalPrice:null,inStock:true,unitLabel:"kg",description:"Pan fresco"},
+      {id:"sn_galletas",name:"Galletitas dulces 300g",category:"KIOSCO",price:1450,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Galletitas"},
+      {id:"sn_chocolate",name:"Chocolate 90g",category:"KIOSCO",price:1750,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Chocolate"},
+      {id:"sn_cereales",name:"Cereales 300g",category:"ALMACEN",price:3200,originalPrice:null,inStock:true,unitLabel:"caja",description:"Cereales"},
+      {id:"sn_pure",name:"Puré de tomate 520g",category:"ALMACEN",price:1250,originalPrice:null,inStock:true,unitLabel:"caja",description:"Conserva"},
+      {id:"sn_atun",name:"Atún al natural 170g",category:"ALMACEN",price:2850,originalPrice:null,inStock:true,unitLabel:"lata",description:"Conserva"},
+      {id:"sn_lentejas",name:"Lentejas 400g",category:"ALMACEN",price:1650,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Legumbre seca"},
+      {id:"sn_queso_rallado",name:"Queso rallado 40g",category:"LACTEOS",price:1350,originalPrice:null,inStock:true,unitLabel:"sobre",description:"Queso rallado"},
+      {id:"sn_agua_sabor",name:"Agua saborizada 1.5L",category:"BEBIDAS",price:1950,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Bebida sin alcohol"}
+    ]
+  },
+  {
+    id: "demo_tecnologia_pixel", name: "Pixel Lab · Tecnología DEMO", type: "SERVICIOS",
+    sizeTier: "ESPECIALIZADO", capacityLabel: "Hasta 10 productos activos · retiro y envío coordinado",
+    description: "Tienda ficticia especializada para probar productos tecnológicos, variantes y stock unitario.",
+    accentColorHex: 0FF0A78BFA, hoursText: "Lun. a sáb. · 09:00 a 19:00", openTime: "09:00", closeTime: "19:00",
+    products: [
+      {id:"pl_cable",name:"Cable USB-C reforzado 1m",category:"ALMACEN",price:4500,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Cable de carga y datos"},
+      {id:"pl_cargador",name:"Cargador USB-C 25W",category:"ALMACEN",price:12500,originalPrice:13900,inStock:true,unitLabel:"unid.",description:"Cargador de pared"},
+      {id:"pl_mouse",name:"Mouse inalámbrico",category:"ALMACEN",price:8900,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Mouse óptico USB"},
+      {id:"pl_auris",name:"Auriculares con micrófono",category:"ALMACEN",price:7200,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Auriculares estéreo"},
+      {id:"pl_pendrive",name:"Pendrive USB 64GB",category:"ALMACEN",price:9500,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Memoria USB"},
+      {id:"pl_funda",name:"Funda universal celular",category:"ALMACEN",price:5200,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Funda flexible"},
+      {id:"pl_vidrio",name:"Protector de pantalla",category:"ALMACEN",price:3900,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Protector transparente"},
+      {id:"pl_power",name:"Power bank 10.000mAh",category:"ALMACEN",price:18900,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Batería portátil"},
+      {id:"pl_parlante",name:"Parlante Bluetooth compacto",category:"ALMACEN",price:16500,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Audio portátil"},
+      {id:"pl_soporte",name:"Soporte de escritorio",category:"ALMACEN",price:6800,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Soporte ajustable"}
+    ]
+  }
+];
+
+/**
+ * Provisiona el catálogo inicial de comercios ficticios. No toca perfiles reales
+ * ni sobrescribe comercios DEMO que ya tengan titular.
+ */
+export const provisionDemoMerchants = onCall({ region: REGION }, async (request) => {
+  const uid = requireUid(request);
+  const adminSnap = await db.collection("systemAdmins").doc(uid).get();
+  if (!adminSnap.exists || adminSnap.get("enabled") !== true ||
+      !["owner", "admin"].includes(String(adminSnap.get("role") || ""))) {
+    throw new HttpsError("permission-denied", "Solo una cuenta administradora habilitada puede provisionar comercios DEMO.");
+  }
+
+  const results: Array<{storeId: string; name: string; result: string; products: number}> = [];
+  for (const seed of DEMO_MERCHANT_SEEDS) {
+    const profileRef = db.collection("merchantProfiles").doc(seed.id);
+    const result = await db.runTransaction(async (tx) => {
+      const existing = await tx.get(profileRef);
+      if (existing.exists && existing.get("environment") !== "DEMO") {
+        return "OMITIDO_PERFIL_NO_DEMO";
+      }
+      if (existing.exists && String(existing.get("ownerUid") || "").trim().length > 0) {
+        return "OMITIDO_YA_RECLAMADO";
+      }
+      if (existing.exists && Number(existing.get("seedVersion") || 0) >= 1) {
+        return "YA_PROVISIONADO";
+      }
+      const now = FieldValue.serverTimestamp();
+      tx.set(profileRef, {
+        storeId: seed.id,
+        storeName: seed.name,
+        type: seed.type,
+        environment: "DEMO",
+        ownerUid: "",
+        sizeTier: seed.sizeTier,
+        capacityLabel: seed.capacityLabel,
+        description: seed.description,
+        address: "Dirección ficticia · Entorno de prueba OMNI",
+        phone: "",
+        isOpen: true,
+        hoursText: seed.hoursText,
+        openTime: seed.openTime,
+        closeTime: seed.closeTime,
+        weekendHoursText: "Consultar disponibilidad DEMO",
+        is24Hours: false,
+        isOnDuty: false,
+        openOnHolidays: false,
+        scheduleNotes: "Datos ficticios para pruebas. No representa un comercio real.",
+        rating: 0,
+        reviewsCount: 0,
+        distanceMeters: 0,
+        accentColorHex: seed.accentColorHex,
+        photosCount: 0,
+        hasVideoTour: false,
+        videoTourDuration: "",
+        specialOfferText: "",
+        minSpendDiscountThreshold: 0,
+        minSpendDiscountPercent: 0,
+        comboDeals: [],
+        inventory: seed.products.map((product) => ({
+          ...product, photoUri: null, barcode: ""
+        })),
+        news: [],
+        cashback: { enabled: false, percentage: 0, capPerPurchase: null, monthlyCap: null },
+        seedVersion: 1,
+        seededByUid: uid,
+        createdAt: existing.exists ? (existing.get("createdAt") || now) : now,
+        updatedAt: now
+      }, { merge: true });
+      return "PROVISIONADO";
+    });
+    results.push({storeId: seed.id, name: seed.name, result, products: seed.products.length});
+  }
+  return {
+    environment: "DEMO",
+    total: results.length,
+    provisioned: results.filter((item) => item.result === "PROVISIONADO").length,
+    results
+  };
+});
+
 export { omniAdminApi } from "./adminApi.js";
