@@ -424,6 +424,17 @@ service cloud.firestore {
       allow create: if false;
       // Todas las transiciones y pagos de pedidos pasan por callables confiables (Admin SDK).
       allow update: if false;
+      match /statusHistory/{historyId} {
+        function parentOrder() {
+          return get(/databases/$(database)/documents/storeOrders/$(orderId)).data;
+        }
+        allow read: if signedIn() && (
+          isSystemAdmin()
+          || parentOrder().customerUid == request.auth.uid
+          || parentOrder().merchantUid == request.auth.uid
+        );
+        allow create, update, delete: if false;
+      }
       allow delete: if false;
     }
 
