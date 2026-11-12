@@ -409,7 +409,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             ref.id, store.id, store.name, merchantUid, uid,
                             profile.fullName, profile.phone, cartLines, total,
                             "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
-                            cashbackPolicy
+                            cashbackPolicy,
+                            subtotal = itemsSubtotal,
+                            deliveryFee = deliveryFee
                         )
                         updateCart(emptyMap())
                     }.addOnFailureListener { e ->
@@ -739,6 +741,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         }
                         if (fulfillmentType == "DELIVERY") {
                             OutlinedTextField(deliveryAddress, { deliveryAddress = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Dirección de entrega") }, singleLine = true)
+                        }
+                        if (fulfillmentType == "DELIVERY" && store.deliveryEnabled) {
+                            Text(
+                                if (deliveryFee == 0.0) "Envío: GRATIS" else "Envío: OM$ ${deliveryFee.toInt()}",
+                                color = Color(0xFF9AAAC2), fontSize = 11.sp
+                            )
+                            Text("Preparación estimada: ${store.estimatedPrepMinutes} min · Cobertura configurada: ${store.deliveryRadiusKm} km", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                         }
                         if (store.minimumOrderAmount > 0) {
                             Text("Compra mínima del comercio: OM$ ${store.minimumOrderAmount.toInt()}", color = Color(0xFF9AAAC2), fontSize = 11.sp)
