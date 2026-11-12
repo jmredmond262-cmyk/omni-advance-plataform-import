@@ -70,7 +70,14 @@ data class Store(
     val cashbackPerPurchaseCap: Double? = null,
     val cashbackMonthlyCap: Double? = null,
     val demoSizeTier: String? = null,
-    val demoCapacityLabel: String? = null
+    val demoCapacityLabel: String? = null,
+    val pickupEnabled: Boolean = true,
+    val deliveryEnabled: Boolean = false,
+    val deliveryRadiusKm: Double = 3.0,
+    val deliveryFee: Double = 0.0,
+    val freeDeliveryFrom: Double? = null,
+    val minimumOrderAmount: Double = 0.0,
+    val estimatedPrepMinutes: Int = 20
 ) {
     val distanceText: String
         get() = if (distanceMeters < 1000) "${distanceMeters} m" else String.format("%.1f km", distanceMeters / 1000.0)
