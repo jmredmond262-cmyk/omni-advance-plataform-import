@@ -373,6 +373,26 @@ service cloud.firestore {
       function merchantProfilePath() {
         return /databases/$(database)/documents/merchantProfiles/$(resource.data.storeId);
       }
+      function validOrderPricing() {
+        let profile = get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data;
+        let expectedFee = request.resource.data.fulfillmentType == "DELIVERY"
+          ? ((("freeDeliveryFrom" in profile.keys())
+              && profile.freeDeliveryFrom != null
+              && request.resource.data.subtotal >= profile.freeDeliveryFrom)
+            ? 0
+            : (("deliveryFee" in profile.keys()) ? profile.deliveryFee : 0))
+          : 0;
+        return request.resource.data.subtotal is number
+          && request.resource.data.subtotal > 0
+          && request.resource.data.subtotal <= 50000
+          && request.resource.data.deliveryFee is number
+          && request.resource.data.deliveryFee >= 0
+          && request.resource.data.deliveryFee <= 50000
+          && request.resource.data.total == request.resource.data.subtotal + request.resource.data.deliveryFee
+          && request.resource.data.subtotal >= (("minimumOrderAmount" in profile.keys()) ? profile.minimumOrderAmount : 0)
+          && request.resource.data.deliveryFee == expectedFee;
+      }
+
       function validCashbackSnapshot() {
         let profile = get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data;
         let snapshot = request.resource.data.cashbackPolicy;
@@ -448,6 +468,7 @@ service cloud.firestore {
         && request.resource.data.total is number
         && request.resource.data.total > 0
         && request.resource.data.total <= 50000
+        && validOrderPricing()
         && request.resource.data.createdAt is timestamp
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
