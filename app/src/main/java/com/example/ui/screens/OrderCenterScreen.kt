@@ -91,7 +91,8 @@ private data class OmniStoreOrder(
     val isLocalDemo: Boolean = false,
     val rejectionReason: String = "",
     val subtotal: Double = 0.0,
-    val deliveryFee: Double = 0.0
+    val deliveryFee: Double = 0.0,
+    val cashbackAmount: Double = 0.0
 )
 
 private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
@@ -240,7 +241,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             environment = doc.getString("environment").orEmpty(),
             rejectionReason = doc.getString("rejectionReason").orEmpty(),
             subtotal = (doc.get("subtotal") as? Number)?.toDouble() ?: ((doc.get("total") as? Number)?.toDouble() ?: 0.0),
-            deliveryFee = (doc.get("deliveryFee") as? Number)?.toDouble() ?: 0.0
+            deliveryFee = (doc.get("deliveryFee") as? Number)?.toDouble() ?: 0.0,
+            cashbackAmount = (doc.get("cashbackAmount") as? Number)?.toDouble() ?: 0.0
         )
     }.getOrNull()
 
@@ -630,9 +632,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 val data = result.data as? Map<*, *>
                 val paymentMethod = data?.get("paymentMethod") as? String ?: order.paymentMethod
                 orders = orders.map { current ->
-                    if (current.id == order.id) current.copy(status = "CANCELADO", paymentStatus = "REEMBOLSADA · DEMO") else current
+                    if (current.id == order.id) current.copy(status = "CANCELADO", paymentStatus = "REEMBOLSADA · DEMO", cashbackAmount = 0.0) else current
                 }
-                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO", paymentStatus = "REEMBOLSADA · DEMO")
+                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO", paymentStatus = "REEMBOLSADA · DEMO", cashbackAmount = 0.0)
                 UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_REFUNDED", mapOf("operationId" to order.id, "stage" to "REFUND_CONFIRMED", "paymentMethod" to paymentMethod, "success" to true))
                 selectedRefundOrder = null
                 feedback = if (paymentMethod == "TARJETA_DEMO") "Se anuló la simulación de tarjeta. No hubo movimientos de billetera." else "Devolución DEMO confirmada. Se revirtieron el pago y el cashback en forma atómica."
@@ -1257,7 +1259,16 @@ private fun OrderStatusCard(
                         (order.cashbackPolicy.monthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
                     color = Color(0xFF65E6A5), fontSize = 9.sp
                 )
-                Text("No acreditable todavía: circuito DEMO de reintegro pendiente.", color = Color(0xFFFFC978), fontSize = 9.sp)
+                Text(
+                    when {
+                        order.paymentStatus == "REEMBOLSADA · DEMO" -> "Cashback de este pedido revertido."
+                        order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "OMNI_PAY_DEMO" -> "Cashback acreditado: OM$ ${String.format("%,.2f", order.cashbackAmount)}."
+                        order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "TARJETA_DEMO" -> "Tarjeta DEMO simulada: no genera cashback ni mueve saldo."
+                        else -> "El cashback se acredita al pagar con OMNI Pay DEMO; la tarjeta DEMO solo simula una autorización."
+                    },
+                    color = if (order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "OMNI_PAY_DEMO") Color(0xFF65E6A5) else Color(0xFFFFC978),
+                    fontSize = 9.sp
+                )
             }
             Text(
                 when {
