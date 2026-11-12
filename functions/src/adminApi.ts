@@ -1,4 +1,5 @@
 import { initializeApp, getApps } from "firebase-admin/app";
+import { createHash, randomBytes } from "node:crypto";
 import { getAuth } from "firebase-admin/auth";
 import { FieldPath, getFirestore, Timestamp, type QuerySnapshot } from "firebase-admin/firestore";
 import { defineString } from "firebase-functions/params";
@@ -188,7 +189,54 @@ async function listCollection(name: string, limit = 100, pageToken = "") {
   };
 }
 
-async function handleAction(action: string, data: Record<string, unknown>) {
+async function listDemoMerchants() {
+  const snapshot = await db.collection("merchantProfiles")
+    .where("environment", "==", "DEMO").get();
+  return {
+    items: snapshot.docs
+      .filter((doc) => Number(doc.get("seedVersion") || 0) === 1)
+      .map((doc) => ({
+        id: doc.id,
+        storeName: String(doc.get("storeName") || "Comercio DEMO"),
+        sizeTier: String(doc.get("sizeTier") || ""),
+        capacityLabel: String(doc.get("capacityLabel") || ""),
+        ownerUid: String(doc.get("ownerUid") || ""),
+        claimed: String(doc.get("ownerUid") || "").trim().length > 0,
+        productCount: Array.isArray(doc.get("inventory")) ? (doc.get("inventory") as unknown[]).length : 0
+      }))
+      .sort((a, b) => a.storeName.localeCompare(b.storeName, "es"))
+  };
+}
+
+async function issueDemoMerchantClaimCode(uid: string, storeIdValue: unknown) {
+  const storeId = String(storeIdValue || "").trim();
+  if (!/^[A-Za-z0-9_-]{3,100}$/.test(storeId)) {
+    throw new HttpsError("invalid-argument", "Seleccioná un comercio DEMO válido.");
+  }
+  const profileRef = db.collection("merchantProfiles").doc(storeId);
+  const code = "OMNI-" + randomBytes(8).toString("hex").toUpperCase();
+  const codeHash = createHash("sha256").update(code).digest("hex");
+  const codeRef = db.collection("demoMerchantClaimCodes").doc(codeHash);
+  await db.runTransaction(async (tx) => {
+    const profile = await tx.get(profileRef);
+    if (!profile.exists || profile.get("environment") !== "DEMO" ||
+        Number(profile.get("seedVersion") || 0) !== 1) {
+      throw new HttpsError("failed-precondition", "El comercio no pertenece al catálogo DEMO provisionado.");
+    }
+    if (String(profile.get("ownerUid") || "").trim()) {
+      throw new HttpsError("already-exists", "El comercio DEMO ya tiene titular.");
+    }
+    const now = new Date();
+    tx.create(codeRef, {
+      storeId, active: true, createdByUid: uid,
+      createdAt: FieldValue.serverTimestamp(),
+      expiresAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+    });
+  });
+  return { code, storeId, expiresInDays: 30, singleUse: true };
+}
+
+async function handleAction(context: AdminContext, action: string, data: Record<string, unknown>) {
   switch (action) {
     case "dashboard":
       return dashboard();
@@ -196,6 +244,10 @@ async function handleAction(action: string, data: Record<string, unknown>) {
       const collection = String(data.collection ?? "");
       return await listCollection(collection, Number(data.limit) || 100, String(data.pageToken ?? ""));
     }
+    case "demoMerchants":
+      return await listDemoMerchants();
+    case "issueDemoMerchantClaimCode":
+      return await issueDemoMerchantClaimCode(context.uid, data.storeId);
     case "getConfig": {
       const snap = await db.collection("adminConfig").doc("global").get();
       return { config: snap.exists ? clean(snap.data()) : {} };
@@ -212,10 +264,10 @@ export const omniAdminApi = onRequest({ region: REGION, timeoutSeconds: 60, memo
     return;
   }
   try {
-    await authenticate(request.header("authorization"));
+    const context = await authenticate(request.header("authorization"));
     const action = String(request.body?.action ?? "");
     const data = (request.body?.data ?? {}) as Record<string, unknown>;
-    const result = await handleAction(action, data);
+    const result = await handleAction(context, action, data);
     response.status(200).json({ ok: true, result });
   } catch (error) {
     const authCode = (error as { code?: string })?.code ?? "";
