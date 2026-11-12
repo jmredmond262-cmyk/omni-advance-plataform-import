@@ -258,8 +258,33 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       }
       verifiedTotal += price * quantity;
     }
-    if (Math.abs(Math.round(verifiedTotal * 100) / 100 - amount) >= 0.005) {
-      throw new HttpsError("failed-precondition", "El total no coincide con los productos confirmados.");
+    const subtotal = order.subtotal == null ? verifiedTotal : Number(order.subtotal);
+    const deliveryFee = order.deliveryFee == null ? 0 : Number(order.deliveryFee);
+    const fulfillmentType = String(order.fulfillmentType || "RETIRO");
+    const minimumOrderAmount = Number(profileSnap.get("minimumOrderAmount") || 0);
+    if (!Number.isFinite(subtotal) || Math.abs(Math.round(verifiedTotal * 100) / 100 - subtotal) >= 0.005 ||
+        !Number.isFinite(deliveryFee) || deliveryFee < 0 || subtotal < minimumOrderAmount) {
+      throw new HttpsError("failed-precondition", "El subtotal, el mínimo de compra o el envío no coinciden con la configuración del comercio.");
+    }
+    if (fulfillmentType === "RETIRO") {
+      if (profileSnap.get("pickupEnabled") === false || deliveryFee !== 0) {
+        throw new HttpsError("failed-precondition", "El comercio no habilitó el retiro o el cargo de envío es inválido.");
+      }
+    } else if (fulfillmentType === "DELIVERY") {
+      if (profileSnap.get("deliveryEnabled") !== true || !String(order.deliveryAddress || "").trim()) {
+        throw new HttpsError("failed-precondition", "El comercio no habilitó delivery o falta la dirección.");
+      }
+      const freeFrom = profileSnap.get("freeDeliveryFrom");
+      const expectedFee = freeFrom != null && subtotal >= Number(freeFrom)
+        ? 0 : Number(profileSnap.get("deliveryFee") || 0);
+      if (Math.abs(expectedFee - deliveryFee) >= 0.005) {
+        throw new HttpsError("failed-precondition", "El costo de envío cambió. Actualizá el pedido.");
+      }
+    } else {
+      throw new HttpsError("invalid-argument", "La modalidad de entrega no es válida.");
+    }
+    if (Math.abs(Math.round((subtotal + deliveryFee) * 100) / 100 - amount) >= 0.005) {
+      throw new HttpsError("failed-precondition", "El total no coincide con subtotal y envío.");
     }
     const customerBalance = Number(customerSnap.get("balance") || 0);
     const merchantBalance = Number(merchantSnap.get("balance") || 0);
@@ -288,7 +313,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const monthlyRef = db.collection("cashbackMonthly").doc(`${storeId}_${customerUid}_${period}`);
     const monthlySnap = await tx.get(monthlyRef);
     const alreadyEarned = Number(monthlySnap.get("earnedTotal") || 0);
-    let cashbackAmount = enabled ? Math.round(amount * percentage) / 100 : 0;
+    let cashbackAmount = enabled ? Math.round(subtotal * percentage) / 100 : 0;
     if (capPerPurchase !== null) cashbackAmount = Math.min(cashbackAmount, capPerPurchase);
     if (monthlyCap !== null) cashbackAmount = Math.min(cashbackAmount, Math.max(0, monthlyCap - alreadyEarned));
     cashbackAmount = Math.round(cashbackAmount * 100) / 100;
@@ -297,7 +322,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const cashbackData = {
       orderId, storeId, merchantUid, customerUid, period,
       percentage: enabled ? percentage : 0,
-      orderAmount: amount, amount: cashbackAmount,
+      orderAmount: subtotal, amount: cashbackAmount,
       capPerPurchase, monthlyCap,
       status: cashbackAmount > 0 ? "ACREDITADO · DEMO" : "SIN_CASHBACK",
       environment: "DEMO", createdAt: now
