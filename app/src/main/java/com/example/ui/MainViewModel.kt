@@ -457,6 +457,31 @@ class MainViewModel : ViewModel() {
     private val _merchantProfileLoadingState = MutableStateFlow(false)
     val merchantProfileLoadingState: StateFlow<Boolean> = _merchantProfileLoadingState.asStateFlow()
 
+    fun activateClaimedDemoMerchant(storeId: String) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+        if (uid.isBlank() || storeId.isBlank()) { _merchantProfileMessage.value = "No se pudo identificar el comercio asignado."; return }
+        if (merchantProfileLoading) return
+        merchantProfileLoading = true
+        _merchantProfileLoadingState.value = true
+        MerchantProfileRepository.loadDemoStores { result ->
+            result.fold(
+                onSuccess = { stores ->
+                    val claimedStore = stores.firstOrNull { it.id == storeId }
+                    if (claimedStore == null) {
+                        merchantProfileLoading = false; _merchantProfileLoadingState.value = false
+                        _merchantProfileMessage.value = "El comercio asignado no aparece en el catálogo DEMO. Actualizá e intentá nuevamente."
+                    } else MerchantProfileRepository.loadOrClaim(claimedStore, uid) { claimedResult ->
+                        merchantProfileLoading = false; _merchantProfileLoadingState.value = false
+                        claimedResult.onSuccess { (store, news) ->
+                            _managedStore.value = store; _storeNews.value = news
+                            updateManagedStoreInCollections(store); merchantProfileReady = true; _merchantProfileMessage.value = null
+                        }.onFailure { error -> _merchantProfileMessage.value = error.localizedMessage ?: "No se pudo abrir el comercio asignado." }
+                    }
+                },
+                onFailure = { error -> merchantProfileLoading = false; _merchantProfileLoadingState.value = false; _merchantProfileMessage.value = error.localizedMessage ?: "No se pudo cargar el catálogo DEMO." }
+            )
+        }
+    }
     fun activateMerchantProfile() {
         val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
         if (uid.isBlank()) {
