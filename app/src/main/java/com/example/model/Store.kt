@@ -68,7 +68,9 @@ data class Store(
     val cashbackEnabled: Boolean = false,
     val cashbackPercent: Double = 0.0,
     val cashbackPerPurchaseCap: Double? = null,
-    val cashbackMonthlyCap: Double? = null
+    val cashbackMonthlyCap: Double? = null,
+    val demoSizeTier: String? = null,
+    val demoCapacityLabel: String? = null
 ) {
     val distanceText: String
         get() = if (distanceMeters < 1000) "${distanceMeters} m" else String.format("%.1f km", distanceMeters / 1000.0)
