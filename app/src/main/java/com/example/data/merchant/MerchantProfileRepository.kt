@@ -129,6 +129,63 @@ object MerchantProfileRepository {
      * Enriches real directory results with the merchant's latest public catalog.
      * It never claims a profile and falls back to the directory data if Firestore is unavailable.
      */
+
+    /** Loads only seeded sandbox merchants. Real directory records are never mixed into this list. */
+    fun loadDemoStores(callback: (Result<List<Store>>) -> Unit) {
+        db.collection("merchantProfiles")
+            .whereEqualTo("environment", "DEMO")
+            .get()
+            .addOnSuccessListener { snapshot ->
+                val stores = snapshot.documents.mapNotNull { doc ->
+                    runCatching {
+                        val type = runCatching {
+                            com.example.model.StoreType.valueOf(doc.getString("type") ?: "ALMACEN")
+                        }.getOrDefault(com.example.model.StoreType.ALMACEN)
+                        val base = Store(
+                            id = doc.id,
+                            name = doc.getString("storeName") ?: return@runCatching null,
+                            type = type,
+                            rating = (doc.get("rating") as? Number)?.toFloat() ?: 0f,
+                            reviewsCount = (doc.get("reviewsCount") as? Number)?.toInt() ?: 0,
+                            distanceMeters = (doc.get("distanceMeters") as? Number)?.toInt() ?: 0,
+                            address = doc.getString("address") ?: "Dirección ficticia · Entorno DEMO",
+                            isOpen = doc.getBoolean("isOpen") ?: true,
+                            hoursText = doc.getString("hoursText") ?: "Horario DEMO",
+                            accentColorHex = (doc.get("accentColorHex") as? Number)?.toLong() ?: 0xFF57DDF5,
+                            photosCount = (doc.get("photosCount") as? Number)?.toInt() ?: 0,
+                            hasVideoTour = doc.getBoolean("hasVideoTour") ?: false,
+                            videoTourDuration = doc.getString("videoTourDuration") ?: "",
+                            description = doc.getString("description") ?: "Comercio ficticio para pruebas OMNI.",
+                            specialOfferText = doc.getString("specialOfferText") ?: "",
+                            minSpendDiscountThreshold = (doc.get("minSpendDiscountThreshold") as? Number)?.toDouble() ?: 0.0,
+                            minSpendDiscountPercent = (doc.get("minSpendDiscountPercent") as? Number)?.toInt() ?: 0,
+                            comboDeals = emptyList(),
+                            inventory = emptyList(),
+                            mapOffsetX = 0.5f,
+                            mapOffsetY = 0.5f,
+                            openTime = doc.getString("openTime") ?: "08:00",
+                            closeTime = doc.getString("closeTime") ?: "20:00",
+                            weekendHoursText = doc.getString("weekendHoursText") ?: "Horario DEMO",
+                            is24Hours = doc.getBoolean("is24Hours") ?: false,
+                            isOnDuty = doc.getBoolean("isOnDuty") ?: false,
+                            openOnHolidays = doc.getBoolean("openOnHolidays") ?: false,
+                            scheduleNotes = doc.getString("scheduleNotes") ?: "",
+                            phone = doc.getString("phone") ?: "",
+                            demoSizeTier = doc.getString("sizeTier"),
+                            demoCapacityLabel = doc.getString("capacityLabel")
+                        )
+                        val decoded = decode(doc, base).first
+                        decoded.copy(
+                            demoSizeTier = doc.getString("sizeTier"),
+                            demoCapacityLabel = doc.getString("capacityLabel")
+                        )
+                    }.getOrNull()
+                }.sortedWith(compareBy<Store> { it.demoSizeTier ?: "" }.thenBy { it.name })
+                callback(Result.success(stores))
+            }
+            .addOnFailureListener { callback(Result.failure(it)) }
+    }
+
     fun loadPublicCatalogs(stores: List<Store>, callback: (List<Store>) -> Unit) {
         if (stores.isEmpty()) {
             callback(emptyList())
