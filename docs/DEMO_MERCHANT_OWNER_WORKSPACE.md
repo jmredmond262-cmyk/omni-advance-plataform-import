@@ -41,3 +41,18 @@ Completar la revisión de transiciones, preparación, despacho y entrega. Manten
 - La pasarela de tarjeta DEMO también se movió a Cloud Functions: no acepta datos de tarjeta reales y el cliente ya no actualiza directamente el estado de pago.
 - Los pedidos históricos y los comercios reales permanecen intactos.
 - Las coordenadas del comercio se ingresan en la configuración logística. No se usa geocodificación paga.
+
+
+## Ciclo de estados y trazabilidad del pedido
+
+Las transiciones de pedidos DEMO se ejecutan mediante la callable `updateDemoStoreOrderStatus`; el cliente ya no escribe directamente en `storeOrders`. El servidor vuelve a comprobar el comercio DEMO, su versión de provisión, la titularidad y el rol del actor antes de cada cambio.
+
+- Comprador: puede cancelar únicamente un pedido propio que siga en `RECIBIDO` y con pago pendiente.
+- Comercio: `RECIBIDO → ACEPTADO → EN_PREPARACION → LISTO`.
+- Retiro: desde `LISTO` pasa a `ENTREGADO`.
+- Delivery: desde `LISTO` pasa a `EN_CAMINO` y luego a `ENTREGADO`.
+- Rechazo: solo desde `RECIBIDO`, con motivo de 10 a 240 caracteres.
+- Cancelación del comercio: solo antes del pago y en `ACEPTADO` o `EN_PREPARACION`.
+- Pedidos pagados no se rechazan ni cancelan hasta contar con un circuito DEMO de devolución.
+
+Cada transición confirmada genera un documento en `storeOrders/{orderId}/statusHistory` con estado anterior/nuevo, actor, rol, comercio, entorno y fecha del servidor. La subcolección es de solo escritura del servidor; los pedidos y su historial existente no se migran ni se sobrescriben.
