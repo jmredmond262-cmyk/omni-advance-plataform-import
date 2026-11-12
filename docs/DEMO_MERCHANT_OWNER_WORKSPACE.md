@@ -13,17 +13,17 @@ El módulo existente `MerchantHubScreen` ya ofrece edición de datos operativos 
 - El circuito de pedidos ya existía; esta etapa endurece la autorización del titular y añade el motivo obligatorio y visible al rechazar.
 - La política de cashback conserva validación de porcentaje y topes.
 - Se limitan las colecciones de catálogo según tamaño DEMO: MICRO 20, PEQUEÑO 50, MEDIANO 100, GRANDE 250, ESPECIALIZADO 50 productos; hasta 30 combos y 50 novedades.
-- El repositorio valida antes de guardar nombres, precios, precio anterior, unidad, código de barras, descripción, identificadores duplicados y longitudes de combos/novedades.
+- El catálogo se guarda mediante la callable `saveDemoMerchantCatalog`: el servidor valida titularidad, tamaño del comercio, límites, campos, precios, disponibilidad e identificadores duplicados de productos y novedades. La app conserva una validación previa para dar mensajes rápidos.
 - La gestión de pedidos exige que el perfil siga siendo DEMO seedVersion 1 y que el UID titular y el storeId coincidan. Las transiciones operativas se verifican también en Firestore.
 - El rechazo de un pedido recibido exige un motivo de 10 a 240 caracteres, que queda visible en el seguimiento del comprador.
 
 ## Límites y validación pendiente
 
-- Estas reglas son una protección de servidor; no se desplegaron a Firebase.
+- Las reglas y la callable son cambios de código; no se desplegaron a Firebase.
 - No se ejecutó Emulator Suite ni pruebas instrumentadas en esta etapa.
-- La validación de campos de catálogo añadida en esta etapa corre en el cliente antes del guardado. Las reglas de Firestore validan los límites de cantidad, pero todavía no inspeccionan cada mapa de producto individual. Para una garantía anti-manipulación completa hace falta trasladar la escritura del catálogo a una callable que valide cada campo en servidor.
+- Firestore Rules ya no permite que el cliente escriba directamente `inventory`, `comboDeals` o `news`; esas tres colecciones embebidas solo se actualizan mediante la callable validada.
 - Los cambios no convierten comercios reales en DEMO y no habilitan escritura en perfiles `REAL`.
 
 ## Próximo paso
 
-Conectar y validar las acciones de catálogo del panel con mensajes claros de guardado/error; después abordar el flujo de pedidos del titular. Mantener la billetera y el cashback en modo DEMO, sin acreditaciones de dinero real.
+Continuar con la configuración comercial y logística del titular (retiro, delivery, cobertura, mínimos y horarios), y después completar el flujo operativo de pedidos. Mantener la billetera y el cashback en modo DEMO, sin acreditaciones de dinero real.
