@@ -282,17 +282,44 @@ service cloud.firestore {
               && request.resource.data.cashback.monthlyCap > 0));
       }
 
+      function validDemoCatalog() {
+        return request.resource.data.inventory is list
+          && request.resource.data.comboDeals is list
+          && request.resource.data.news is list
+          && request.resource.data.comboDeals.size() <= 30
+          && request.resource.data.news.size() <= 50
+          && (
+            (resource.data.sizeTier == "MICRO" && request.resource.data.inventory.size() <= 20)
+            || (resource.data.sizeTier == "PEQUENO" && request.resource.data.inventory.size() <= 50)
+            || (resource.data.sizeTier == "MEDIANO" && request.resource.data.inventory.size() <= 100)
+            || (resource.data.sizeTier == "GRANDE" && request.resource.data.inventory.size() <= 250)
+            || (resource.data.sizeTier == "ESPECIALIZADO" && request.resource.data.inventory.size() <= 50)
+          );
+      }
+
       allow read: if signedIn();
       // Demo profiles are provisioned and claimed only by trusted callable functions.
       allow create: if false;
       allow update: if signedIn()
+        && resource.data.environment == "DEMO"
+        && resource.data.seedVersion == 1
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid
-        && request.resource.data.storeId == resource.data.storeId
-        && request.resource.data.environment == "DEMO"
-        && (!("environment" in resource.data.keys()) || request.resource.data.environment == resource.data.environment)
+        && request.resource.data.storeId == storeId
+        && request.resource.data.environment == resource.data.environment
+        // A titular may edit operational fields only; identity, tier, seed and ownership stay immutable.
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "address", "phone", "description", "isOpen", "hoursText",
+          "openTime", "closeTime", "weekendHoursText", "is24Hours",
+          "isOnDuty", "openOnHolidays", "scheduleNotes",
+          "minSpendDiscountThreshold", "minSpendDiscountPercent",
+          "specialOfferText", "cashback", "comboDeals", "inventory",
+          "news", "updatedAt"
+        ])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["cashback"])
-          || validCashbackPolicy());
+          || validCashbackPolicy())
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["inventory", "comboDeals", "news"])
+          || validDemoCatalog());
       allow delete: if false;
     }
 
