@@ -89,6 +89,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.ProductCategory
+import com.example.data.api.RealLocationHelper
 import com.example.data.ai.ProductVisionAnalyzer
 import com.example.data.analytics.UsageAnalyticsRepository
 import com.example.ui.MainViewModel
@@ -154,6 +155,23 @@ fun MerchantHubScreen(
     var isAiAnalyzing by remember { mutableStateOf(false) }
     var aiAnalysisMessage by remember { mutableStateOf("") }
     val screenScope = rememberCoroutineScope()
+    var locatingMerchantGps by remember { mutableStateOf(false) }
+    val merchantGpsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants.values.any { it }) {
+            screenScope.launch {
+                locatingMerchantGps = true
+                val location = RealLocationHelper.getCurrentLocation(context)
+                if (location != null && location.accuracy > 0f && location.accuracy <= 50f) {
+                    editMerchantLatitude = location.latitude.toString()
+                    editMerchantLongitude = location.longitude.toString()
+                    logisticsValidationMessage = "Ubicación GPS del comercio capturada."
+                } else {
+                    logisticsValidationMessage = "No se obtuvo una ubicación con precisión suficiente (máximo 50 m). Activá el GPS e intentá desde el local."
+                }
+                locatingMerchantGps = false
+            }
+        } else logisticsValidationMessage = "Autorizá la ubicación mientras usás OMNI para capturar el punto del comercio."
+    }
     var prodCategory by remember { mutableStateOf(ProductCategory.ALMACEN) }
     var prodPrice by remember { mutableStateOf("") }
     var prodOriginalPrice by remember { mutableStateOf("") }
@@ -1603,6 +1621,22 @@ fun MerchantHubScreen(
                     OutlinedTextField(value = editPrepMinutes, onValueChange = { editPrepMinutes = it }, label = { Text("Preparación estimada (minutos)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                     if (editDeliveryEnabled) {
                         Text("Ubicación del comercio (coordenadas GPS)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Button(onClick = {
+                            if (RealLocationHelper.hasLocationPermission(context)) {
+                                screenScope.launch {
+                                    locatingMerchantGps = true
+                                    val location = RealLocationHelper.getCurrentLocation(context)
+                                    if (location != null && location.accuracy > 0f && location.accuracy <= 50f) {
+                                        editMerchantLatitude = location.latitude.toString()
+                                        editMerchantLongitude = location.longitude.toString()
+                                        logisticsValidationMessage = "Ubicación GPS del comercio capturada."
+                                    } else logisticsValidationMessage = "No se obtuvo una ubicación con precisión suficiente (máximo 50 m)."
+                                    locatingMerchantGps = false
+                                }
+                            } else merchantGpsPermission.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+                        }, enabled = !locatingMerchantGps, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (locatingMerchantGps) "Capturando GPS…" else "Usar ubicación actual del local")
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(value = editMerchantLatitude, onValueChange = { editMerchantLatitude = it }, label = { Text("Latitud") }, modifier = Modifier.weight(1f))
                             OutlinedTextField(value = editMerchantLongitude, onValueChange = { editMerchantLongitude = it }, label = { Text("Longitud") }, modifier = Modifier.weight(1f))
