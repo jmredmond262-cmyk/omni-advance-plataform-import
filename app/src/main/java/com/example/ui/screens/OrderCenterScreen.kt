@@ -578,7 +578,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                                 claimingMerchant = false
                             }
                     },
-                    enabled = merchantClaimCode.length >= 10 && !claimingMerchant,
+                    enabled = merchantClaimCode.length == 21 && !claimingMerchant,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(if (claimingMerchant) "Validando código…" else "Vincular este comercio") }
             }
