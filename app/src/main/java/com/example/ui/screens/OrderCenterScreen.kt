@@ -32,7 +32,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Store
-import com.example.data.SampleData
 import com.example.data.wallet.DemoWalletRepository
 import com.example.data.merchant.MerchantProfileRepository
 import com.example.data.wallet.DemoCardGatewayRepository
@@ -630,7 +629,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     color = Color(0xFFFFC978), fontSize = 12.sp
                 )
             } else if (demoMode) {
-                Text(listOfNotNull(store.demoSizeTier, store.demoCapacityLabel).joinToString(" · "), color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                Text(listOfNotNull(store.demoSizeTier, "${store.inventory.count { it.inStock }} productos activos", store.demoCapacityLabel).joinToString(" · "), color = Color(0xFF9AAAC2), fontSize = 10.sp)
             }
             if (demoMode && demoStores.isEmpty()) {
                 // No se utiliza el catálogo real como respaldo del mercado de prueba.
