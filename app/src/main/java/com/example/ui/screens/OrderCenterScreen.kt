@@ -413,7 +413,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         "fulfillmentType" to fulfillmentType,
                         "deliveryAddress" to deliveryAddress.trim(),
                         "customerPhone" to profile.phone,
-                        "expectedTotal" to total
+                        "expectedTotal" to total,
+                        "expectedCashbackPolicy" to cashbackPolicyData
                     )
                     if (fulfillmentType == "DELIVERY") {
                         requestData["deliveryLatitude"] = deliveryLatitude!!
