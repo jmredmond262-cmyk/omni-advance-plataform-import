@@ -28,7 +28,7 @@ El módulo existente `MerchantHubScreen` ya ofrece edición de datos operativos 
 
 ## Próximo paso
 
-Completar la validación geográfica del radio de cobertura (requiere ubicación del cliente y del comercio); después cerrar las transiciones, preparación, despacho y entrega. Mantener la billetera y el cashback en modo DEMO, sin acreditaciones de dinero real.
+Completar la revisión de transiciones, preparación, despacho y entrega. Mantener la billetera y el cashback en modo DEMO, sin acreditaciones de dinero real.
 
 
 ## Cobertura geográfica del delivery DEMO
