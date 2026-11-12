@@ -233,9 +233,11 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 if (doc.exists()) {
                     val ownerUid = doc.getString("ownerUid").orEmpty()
                     val environment = doc.getString("environment").orEmpty()
-                    if (ownerUid == uid) {
+                    val seedVersion = (doc.get("seedVersion") as? Number)?.toInt()
+                    val seededDemo = environment == "DEMO" && seedVersion == 1
+                    if (ownerUid == uid && seededDemo && doc.id == store.id) {
                         merchantReady = true
-                    } else if (ownerUid.isBlank() && environment == "DEMO") {
+                    } else if (ownerUid.isBlank() && seededDemo) {
                         requiresClaimCode = true
                     } else {
                         merchantError = "Este comercio ya está asociado a otra cuenta o no está habilitado para titularidad DEMO."
@@ -519,6 +521,16 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     fun advanceOrder(order: OmniStoreOrder, next: String) {
+        if (!merchantMode || !merchantReady || uid.isBlank() ||
+            order.storeId != store.id || order.merchantUid != uid ||
+            order.environment != "DEMO") {
+            feedback = "No tenés autorización para gestionar este pedido desde este comercio."
+            return
+        }
+        if (next !in listOf("ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO", "RECHAZADO")) {
+            feedback = "La transición solicitada no está permitida."
+            return
+        }
         if (next in listOf("RECHAZADO", "CANCELADO") && order.paymentStatus != "PENDIENTE") {
             feedback = "No se puede rechazar ni cancelar un pedido ya pagado sin un circuito de devolución DEMO."
             return
