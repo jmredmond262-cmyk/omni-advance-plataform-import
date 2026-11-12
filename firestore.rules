@@ -282,7 +282,6 @@ service cloud.firestore {
               && request.resource.data.cashback.monthlyCap > 0));
       }
 
-
       allow read: if signedIn();
       // Demo profiles are provisioned and claimed only by trusted callable functions.
       allow create: if false;
@@ -302,8 +301,7 @@ service cloud.firestore {
           "specialOfferText", "cashback", "updatedAt"
         ])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["cashback"])
-          || validCashbackPolicy())
-        ;
+          || validCashbackPolicy());
       allow delete: if false;
     }
 
