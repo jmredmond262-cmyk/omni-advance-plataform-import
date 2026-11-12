@@ -394,7 +394,11 @@ service cloud.firestore {
       function validNextStatus() {
         return
           (resource.data.status == "RECIBIDO" && request.resource.data.status == "ACEPTADO") ||
-          (resource.data.status == "RECIBIDO" && request.resource.data.status == "RECHAZADO" && resource.data.paymentStatus == "PENDIENTE") ||
+          (resource.data.status == "RECIBIDO" && request.resource.data.status == "RECHAZADO"
+            && resource.data.paymentStatus == "PENDIENTE"
+            && request.resource.data.rejectionReason is string
+            && request.resource.data.rejectionReason.size() >= 10
+            && request.resource.data.rejectionReason.size() <= 240) ||
           (resource.data.status == "ACEPTADO" && request.resource.data.status == "EN_PREPARACION") ||
           (resource.data.status == "ACEPTADO" && request.resource.data.status == "CANCELADO" && resource.data.paymentStatus == "PENDIENTE") ||
           (resource.data.status == "EN_PREPARACION" && request.resource.data.status == "LISTO") ||
@@ -445,7 +449,9 @@ service cloud.firestore {
         && get(merchantProfilePath()).data.storeId == resource.data.storeId
         && request.resource.data.merchantUid == request.auth.uid
         && request.resource.data.storeId == resource.data.storeId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt", "rejectionReason"])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["rejectionReason"])
+          || request.resource.data.status == "RECHAZADO")
         && request.resource.data.paymentStatus == resource.data.paymentStatus
         && request.resource.data.total == resource.data.total
         && request.resource.data.qrNonce == resource.data.qrNonce
