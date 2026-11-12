@@ -55,7 +55,50 @@ object MerchantProfileRepository {
             .addOnFailureListener { callback(Result.failure(it)) }
     }
 
+    private fun validateDemoCatalog(store: Store, news: List<StoreNews>): String? {
+        val productLimit = when (store.demoSizeTier) {
+            "MICRO" -> 20
+            "PEQUENO" -> 50
+            "MEDIANO" -> 100
+            "GRANDE" -> 250
+            "ESPECIALIZADO" -> 50
+            else -> return "El comercio no tiene un tamaño DEMO válido para administrar el catálogo."
+        }
+        if (store.inventory.size > productLimit) return "Este comercio admite hasta $productLimit productos."
+        if (store.comboDeals.size > 30) return "Este comercio admite hasta 30 combos."
+        if (news.size > 50) return "Este comercio admite hasta 50 novedades."
+        val ids = store.inventory.map { it.id.trim() }
+        if (ids.any { it.isBlank() } || ids.toSet().size != ids.size) return "Cada producto debe tener un identificador único."
+        store.inventory.forEachIndexed { index, product ->
+            val label = "Producto ${index + 1}"
+            if (product.name.trim().length !in 2..80) return "$label: el nombre debe tener entre 2 y 80 caracteres."
+            if (!product.price.isFinite() || product.price <= 0.0 || product.price > 50000.0) return "$label: el precio debe ser mayor a cero y no superar OM$ 50.000."
+            val original = product.originalPrice
+            if (original != null && (!original.isFinite() || original <= product.price || original > 100000.0)) return "$label: el precio anterior debe ser válido y mayor al precio actual."
+            if (product.unitLabel.trim().isEmpty() || product.unitLabel.length > 24) return "$label: revisá la unidad de venta."
+            if (product.barcode != null && product.barcode.length > 64) return "$label: el código de barras supera 64 caracteres."
+            if (product.description.length > 500) return "$label: la descripción supera 500 caracteres."
+        }
+        store.comboDeals.forEachIndexed { index, combo ->
+            if (combo.title.trim().length !in 2..80) return "Combo ${index + 1}: el título debe tener entre 2 y 80 caracteres."
+            if (combo.description.length > 300 || combo.discountBadge.length > 24 || combo.audience.length > 24) return "Combo ${index + 1}: revisá la descripción, etiqueta o público."
+        }
+        news.forEachIndexed { index, item ->
+            if (item.title.trim().length !in 2..100 || item.content.length > 1000 || item.badge.length > 40) return "Novedad ${index + 1}: revisá el título, contenido o etiqueta."
+        }
+        return null
+    }
+
     fun save(store: Store, news: List<StoreNews>, uid: String, callback: (Result<Unit>) -> Unit) {
+        val validationError = validateDemoCatalog(store, news)
+        if (validationError != null) {
+            callback(Result.failure(IllegalArgumentException(validationError)))
+            return
+        }
+        if (uid.isBlank() || store.id.isBlank()) {
+            callback(Result.failure(IllegalArgumentException("Falta identificar al titular o al comercio DEMO.")))
+            return
+        }
         val data = mapOf(
             "storeId" to store.id,
             "ownerUid" to uid,
