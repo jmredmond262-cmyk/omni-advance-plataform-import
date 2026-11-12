@@ -313,13 +313,11 @@ service cloud.firestore {
           "openTime", "closeTime", "weekendHoursText", "is24Hours",
           "isOnDuty", "openOnHolidays", "scheduleNotes",
           "minSpendDiscountThreshold", "minSpendDiscountPercent",
-          "specialOfferText", "cashback", "comboDeals", "inventory",
-          "news", "updatedAt"
+          "specialOfferText", "cashback", "updatedAt"
         ])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["cashback"])
           || validCashbackPolicy())
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["inventory", "comboDeals", "news"])
-          || validDemoCatalog());
+        ;
       allow delete: if false;
     }
 
