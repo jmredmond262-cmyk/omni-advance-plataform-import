@@ -244,7 +244,9 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
       throw new HttpsError("failed-precondition", "Cambió el precio o la disponibilidad de un producto. Actualizá el carrito.");
     }
     const name = String(current.name || "");
-    if (!name || name.length > 80) throw new HttpsError("failed-precondition", "El catálogo contiene un producto inválido.");
+    if (!name || name.length > 80 || String(line.name || "") !== name) {
+      throw new HttpsError("failed-precondition", "Cambió el nombre de un producto. Actualizá el carrito.");
+    }
     normalizedItems.push({ productId, name, price, quantity });
     subtotal += price * quantity;
   }
