@@ -143,6 +143,8 @@ fun MerchantHubScreen(
     var editFreeDeliveryFrom by remember { mutableStateOf(store.freeDeliveryFrom?.toString().orEmpty()) }
     var editMinimumOrder by remember { mutableStateOf(store.minimumOrderAmount.toString()) }
     var editPrepMinutes by remember { mutableStateOf(store.estimatedPrepMinutes.toString()) }
+    var editMerchantLatitude by remember { mutableStateOf(store.merchantLatitude?.toString().orEmpty()) }
+    var editMerchantLongitude by remember { mutableStateOf(store.merchantLongitude?.toString().orEmpty()) }
     var logisticsValidationMessage by remember { mutableStateOf("") }
 
     // Campos formulario producto
@@ -583,6 +585,8 @@ fun MerchantHubScreen(
                         editFreeDeliveryFrom = store.freeDeliveryFrom?.toString().orEmpty()
                         editMinimumOrder = store.minimumOrderAmount.toString()
                         editPrepMinutes = store.estimatedPrepMinutes.toString()
+                        editMerchantLatitude = store.merchantLatitude?.toString().orEmpty()
+                        editMerchantLongitude = store.merchantLongitude?.toString().orEmpty()
                         showLogisticsDialog = true
                     }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)) {
                         Text("Configurar retiro y delivery")
@@ -1598,6 +1602,11 @@ fun MerchantHubScreen(
                     OutlinedTextField(value = editMinimumOrder, onValueChange = { editMinimumOrder = it }, label = { Text("Compra mínima (OM$)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = editPrepMinutes, onValueChange = { editPrepMinutes = it }, label = { Text("Preparación estimada (minutos)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                     if (editDeliveryEnabled) {
+                        Text("Ubicación del comercio (coordenadas GPS)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = editMerchantLatitude, onValueChange = { editMerchantLatitude = it }, label = { Text("Latitud") }, modifier = Modifier.weight(1f))
+                            OutlinedTextField(value = editMerchantLongitude, onValueChange = { editMerchantLongitude = it }, label = { Text("Longitud") }, modifier = Modifier.weight(1f))
+                        }
                         OutlinedTextField(value = editDeliveryRadius, onValueChange = { editDeliveryRadius = it }, label = { Text("Radio de entrega (km)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(value = editDeliveryFee, onValueChange = { editDeliveryFee = it }, label = { Text("Costo de envío (OM$)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(value = editFreeDeliveryFrom, onValueChange = { editFreeDeliveryFrom = it }, label = { Text("Envío gratis desde (OM$ · opcional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
@@ -1611,17 +1620,20 @@ fun MerchantHubScreen(
                     val minimum = editMinimumOrder.replace(',', '.').toDoubleOrNull()
                     val freeFrom = if (editFreeDeliveryFrom.isBlank()) null else editFreeDeliveryFrom.replace(',', '.').toDoubleOrNull()
                     val prep = editPrepMinutes.toIntOrNull()
+                    val merchantLat = editMerchantLatitude.replace(',', '.').toDoubleOrNull()
+                    val merchantLon = editMerchantLongitude.replace(',', '.').toDoubleOrNull()
                     if (radius == null || fee == null || minimum == null || prep == null ||
                         (!editFreeDeliveryFrom.isBlank() && freeFrom == null) ||
                         !radius.isFinite() || !fee.isFinite() || !minimum.isFinite() ||
                         minimum < 0 || minimum > 50000 || radius <= 0 || radius > 50 ||
                         fee < 0 || fee > 50000 || (freeFrom != null && (!freeFrom.isFinite() || freeFrom <= 0 || freeFrom > 50000)) ||
-                        prep !in 1..240 || (!editPickupEnabled && !editDeliveryEnabled)) {
+                        prep !in 1..240 || (!editPickupEnabled && !editDeliveryEnabled) ||
+                        (editDeliveryEnabled && (merchantLat == null || merchantLon == null || !merchantLat.isFinite() || !merchantLon.isFinite() || merchantLat !in -90.0..90.0 || merchantLon !in -180.0..180.0))) {
                         logisticsValidationMessage = "Revisá los importes, el radio, el tiempo y habilitá al menos una modalidad."
                         return@Button
                     }
                     logisticsValidationMessage = ""
-                    viewModel.updateManagedStoreLogistics(editPickupEnabled, editDeliveryEnabled, radius, fee, freeFrom, minimum, prep)
+                    viewModel.updateManagedStoreLogistics(editPickupEnabled, editDeliveryEnabled, radius, fee, freeFrom, minimum, prep, merchantLat, merchantLon)
                     showLogisticsDialog = false
                 }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)) { Text("Guardar configuración") }
             },
