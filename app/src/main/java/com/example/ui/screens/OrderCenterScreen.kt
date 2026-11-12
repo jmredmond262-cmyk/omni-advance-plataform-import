@@ -206,6 +206,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var cardPaymentInProgress by remember { mutableStateOf(false) }
     var demoCardBrand by remember { mutableStateOf("VISA") }
     var demoCardApproved by remember { mutableStateOf(true) }
+    var selectedRefundOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
+    var refundReasonInput by remember { mutableStateOf("") }
+    var refundInProgress by remember { mutableStateOf(false) }
 
     fun decodeOrder(doc: com.google.firebase.firestore.DocumentSnapshot): OmniStoreOrder? = runCatching {
         val lines = (doc.get("items") as? List<*>)?.mapNotNull { raw ->
@@ -612,6 +615,34 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             .addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo actualizar el estado." }
     }
 
+    fun refundPaidOrder(order: OmniStoreOrder, reason: String) {
+        if (!merchantMode || !merchantReady || uid.isBlank() || order.storeId != store.id ||
+            order.merchantUid != uid || order.environment != "DEMO" ||
+            order.paymentStatus != "PAGADA · DEMO" || reason.trim().length !in 10..240) {
+            feedback = "La devolución no cumple las condiciones del comercio DEMO."
+            return
+        }
+        refundInProgress = true
+        FirebaseFunctions.getInstance("us-central1").getHttpsCallable("refundDemoStoreOrder")
+            .call(mapOf("orderId" to order.id, "reason" to reason.trim()))
+            .addOnSuccessListener { result ->
+                refundInProgress = false
+                val data = result.data as? Map<*, *>
+                val paymentMethod = data?.get("paymentMethod") as? String ?: order.paymentMethod
+                orders = orders.map { current ->
+                    if (current.id == order.id) current.copy(status = "CANCELADO", paymentStatus = "REEMBOLSADA · DEMO") else current
+                }
+                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO", paymentStatus = "REEMBOLSADA · DEMO")
+                UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_REFUNDED", mapOf("operationId" to order.id, "stage" to "REFUND_CONFIRMED", "paymentMethod" to paymentMethod, "success" to true))
+                selectedRefundOrder = null
+                feedback = if (paymentMethod == "TARJETA_DEMO") "Se anuló la simulación de tarjeta. No hubo movimientos de billetera." else "Devolución DEMO confirmada. Se revirtieron el pago y el cashback en forma atómica."
+            }
+            .addOnFailureListener { error ->
+                refundInProgress = false
+                feedback = error.localizedMessage ?: "No se pudo completar la devolución DEMO."
+            }
+    }
+
     fun cancelCustomerOrder(order: OmniStoreOrder) {
         if (order.customerUid != uid || order.status != "RECIBIDO" || order.paymentStatus != "PENDIENTE") {
             feedback = "Solo podés cancelar un pedido propio, pendiente de pago y todavía no aceptado."
@@ -856,6 +887,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                                 selectedScannedOrder = order
                                 rejectReasonInput = ""
                                 showRejectReasonDialog = true
+                            },
+                            onRefund = {
+                                selectedRefundOrder = order
+                                refundReasonInput = ""
                             }
                         )
                     }
@@ -963,6 +998,29 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     TextButton(onClick = { selectedScannedOrder = null }) { Text("Cerrar") }
                 }
             }
+        )
+    }
+
+    selectedRefundOrder?.let { order ->
+        AlertDialog(
+            onDismissRequest = { if (!refundInProgress) selectedRefundOrder = null },
+            containerColor = Color(0xFF101B30),
+            title = { Text("Devolución de pedido DEMO", color = Color.White) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Pedido ${order.id.take(9)} · OM$ ${String.format("%,.2f", order.total)}", color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold)
+                    Text(if (order.paymentMethod == "TARJETA_DEMO") "Se anulará el registro de tarjeta simulado; no hubo movimiento de billeteras." else "Se devolverá el pago al comprador y se revertirá el cashback de este pedido. El proceso requiere saldo suficiente en el comercio y que el cashback siga disponible en la billetera del comprador.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
+                    OutlinedTextField(value = refundReasonInput, onValueChange = { refundReasonInput = it.take(240) }, label = { Text("Motivo (10 a 240 caracteres)") }, minLines = 3, maxLines = 5, enabled = !refundInProgress)
+                    Text("${refundReasonInput.trim().length}/240", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                }
+            },
+            confirmButton = {
+                Button(enabled = !refundInProgress && refundReasonInput.trim().length in 10..240,
+                    onClick = { refundPaidOrder(order, refundReasonInput) }) {
+                    Text(if (refundInProgress) "Procesando devolución…" else "Confirmar devolución")
+                }
+            },
+            dismissButton = { TextButton(enabled = !refundInProgress, onClick = { selectedRefundOrder = null }) { Text("Volver") } }
         )
     }
 
@@ -1116,7 +1174,8 @@ private fun OrderStatusCard(
     onPay: (() -> Unit)? = null,
     onPayWithDemoCard: (() -> Unit)? = null,
     paying: Boolean = false,
-    onReject: (() -> Unit)? = null
+    onReject: (() -> Unit)? = null,
+    onRefund: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var history by remember(order.id) { mutableStateOf<List<OrderStatusEvent>>(emptyList()) }
@@ -1201,11 +1260,17 @@ private fun OrderStatusCard(
                 Text("No acreditable todavía: circuito DEMO de reintegro pendiente.", color = Color(0xFFFFC978), fontSize = 9.sp)
             }
             Text(
-                if (order.paymentStatus.startsWith("PAGADA")) "Pago: acreditado · ${if (order.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"}"
-                else "Pago: pendiente · OMNI Pay DEMO, tarjeta DEMO o al retirar/recibir",
-                color = if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
+                when {
+                    order.paymentStatus == "REEMBOLSADA · DEMO" -> "Pago: devuelto · ${if (order.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"}"
+                    order.paymentStatus.startsWith("PAGADA") -> "Pago: acreditado · ${if (order.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"}"
+                    else -> "Pago: pendiente · OMNI Pay DEMO, tarjeta DEMO o al retirar/recibir"
+                },
+                color = if (order.paymentStatus == "REEMBOLSADA · DEMO") Color(0xFF57DDF5) else if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
                 fontSize = 9.sp
             )
+            if (merchantMode && order.paymentStatus == "PAGADA · DEMO" && order.status in listOf("ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO") && onRefund != null) {
+                OutlinedButton(onClick = onRefund, modifier = Modifier.fillMaxWidth()) { Text("Resolver devolución DEMO", fontSize = 10.sp) }
+            }
             if (!merchantMode && onPay != null && order.paymentStatus == "PENDIENTE" &&
                 order.status !in listOf("ENTREGADO", "RECHAZADO", "CANCELADO")) {
                 if (order.total <= 50000.0) {
