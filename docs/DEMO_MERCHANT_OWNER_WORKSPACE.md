@@ -29,3 +29,15 @@ El módulo existente `MerchantHubScreen` ya ofrece edición de datos operativos 
 ## Próximo paso
 
 Completar la validación geográfica del radio de cobertura (requiere ubicación del cliente y del comercio); después cerrar las transiciones, preparación, despacho y entrega. Mantener la billetera y el cashback en modo DEMO, sin acreditaciones de dinero real.
+
+
+## Cobertura geográfica del delivery DEMO
+
+- El titular configura las coordenadas GPS del comercio junto con el radio de cobertura. La configuración se guarda en el perfil DEMO existente; no se reemplazan perfiles ni catálogos.
+- El comprador comparte su ubicación al confirmar un pedido con delivery mediante permiso explícito de Android. La ubicación se guarda solo en ese pedido y no se escribe en `geoPresence`, mapa ni perfil.
+- `createDemoStoreOrder` crea pedidos mediante Cloud Functions. Firestore bloquea la creación directa desde clientes; el servidor valida titularidad, catálogo, precios, mínimo, tarifa y distancia Haversine.
+- La distancia se compara con `deliveryRadiusKm`, con un margen técnico de 50 metros por imprecisión GPS.
+- Tanto `payStoreOrderDemo` como `simulateDemoCardPayment` vuelven a comprobar la cobertura antes de procesar el pago o aprobar la simulación.
+- La pasarela de tarjeta DEMO también se movió a Cloud Functions: no acepta datos de tarjeta reales y el cliente ya no actualiza directamente el estado de pago.
+- Los pedidos históricos y los comercios reales permanecen intactos.
+- Las coordenadas del comercio se ingresan en la configuración logística. No se usa geocodificación paga.
