@@ -491,7 +491,54 @@ async function finance(env) {
   };
 }
 
-async function handleAction(env, action, data) {
+function randomHex(byteCount) {
+  const bytes = new Uint8Array(byteCount);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(value => value.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
+}
+async function issueDemoMerchantCode(env, uid, storeId) {
+  if (!/^[A-Za-z0-9_-]{3,100}$/.test(storeId)) throw new ApiError(400, "invalid-argument", "Seleccioná un comercio DEMO válido.");
+  const transactionResult = await firestore(env, ":beginTransaction", { method: "POST", body: JSON.stringify({ options: { readWrite: {} } }) });
+  const transaction = transactionResult.transaction;
+  if (!transaction) throw new Error("No se pudo iniciar la transacción de titularidad.");
+  const profileName = `${FIRESTORE_ROOT}/merchantProfiles/${encodeURIComponent(storeId)}`;
+  const batch = await firestore(env, ":batchGet", { method: "POST", body: JSON.stringify({ documents: [profileName], transaction }) });
+  const profile = Array.isArray(batch) ? batch.find(item => item.found)?.found : null;
+  if (!profile) throw new ApiError(404, "not-found", "El comercio DEMO no existe.");
+  const data = decodeFields(profile.fields || {});
+  if (data.environment !== "DEMO" || Number(data.seedVersion || 0) !== 1) throw new ApiError(409, "failed-precondition", "Solo se pueden asignar comercios del catálogo DEMO provisionado.");
+  if (String(data.ownerUid || "").trim()) throw new ApiError(409, "already-exists", "Este comercio DEMO ya tiene titular.");
+  const code = "OMNI-" + randomHex(8);
+  const codeHash = await sha256Hex(code);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const codeName = `${FIRESTORE_ROOT}/demoMerchantClaimCodes/${codeHash}`;
+  await firestore(env, ":commit", {
+    method: "POST",
+    body: JSON.stringify({
+      transaction,
+      writes: [{
+        update: { name: codeName, fields: encodeFields({ storeId, active: true, createdByUid: uid, createdAt: now.toISOString(), expiresAt: expiresAt.toISOString() }) },
+        currentDocument: { exists: false }
+      }]
+    })
+  });
+  return { code, storeId, storeName: String(data.storeName || "Comercio DEMO"), expiresInDays: 30, singleUse: true };
+}
+async function demoMerchants(env) {
+  const snapshot = await listAllDocuments(env, "merchantProfiles", 5000);
+  const items = snapshot.items.filter(item => item.environment === "DEMO" && Number(item.seedVersion || 0) === 1).map(item => ({
+    id: item.id, storeName: String(item.storeName || "Comercio DEMO"), sizeTier: String(item.sizeTier || ""),
+    capacityLabel: String(item.capacityLabel || ""), claimed: String(item.ownerUid || "").trim().length > 0,
+    productCount: Array.isArray(item.inventory) ? item.inventory.length : 0
+  })).sort((a, b) => a.storeName.localeCompare(b.storeName, "es"));
+  return { items, complete: snapshot.complete };
+}
+async function handleAction(env, action, data, identity) {
   switch (action) {
     case "dashboard": return dashboard(env);
     case "geoPresence":
@@ -547,6 +594,8 @@ async function handleAction(env, action, data) {
       };
     }
     case "finance": return finance(env);
+    case "demoMerchants": return demoMerchants(env);
+    case "issueDemoMerchantClaimCode": return issueDemoMerchantCode(env, identity.uid, String(data.storeId || "").trim());
     case "list": {
       const collection = String(data.collection || "");
       const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
@@ -661,7 +710,7 @@ export default {
       const role = fields.role;
       if (fields.enabled !== true || !["owner", "admin"].includes(role)) throw new ApiError(403, "permission-denied", "Esta cuenta no está habilitada como administradora de OMNI.");
       const body = await request.json();
-      const result = await handleAction(env, String(body.action || ""), body.data && typeof body.data === "object" ? body.data : {});
+      const result = await handleAction(env, String(body.action || ""), body.data && typeof body.data === "object" ? body.data : {}, identity);
       return json({ ok: true, result });
     } catch (error) {
       if (error instanceof ApiError) return json({ ok: false, error: error.code, message: error.message }, error.status);
