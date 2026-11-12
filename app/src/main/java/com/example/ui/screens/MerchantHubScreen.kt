@@ -143,6 +143,7 @@ fun MerchantHubScreen(
     var editFreeDeliveryFrom by remember { mutableStateOf(store.freeDeliveryFrom?.toString().orEmpty()) }
     var editMinimumOrder by remember { mutableStateOf(store.minimumOrderAmount.toString()) }
     var editPrepMinutes by remember { mutableStateOf(store.estimatedPrepMinutes.toString()) }
+    var logisticsValidationMessage by remember { mutableStateOf("") }
 
     // Campos formulario producto
     val merchantBenefits by viewModel.merchantBenefits.collectAsState()
@@ -1583,6 +1584,9 @@ fun MerchantHubScreen(
             text = {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text("Definí cómo recibir pedidos y las condiciones de entrega. Valores de prueba DEMO.", fontSize = 11.sp, color = Color.Gray)
+                    if (logisticsValidationMessage.isNotBlank()) {
+                        Text(logisticsValidationMessage, fontSize = 11.sp, color = Color(0xFFB42318))
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.weight(1f)) { Text("Retiro en el local", fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text("El cliente retira el pedido", fontSize = 10.sp, color = Color.Gray) }
                         Switch(checked = editPickupEnabled, onCheckedChange = { editPickupEnabled = it })
@@ -1602,14 +1606,21 @@ fun MerchantHubScreen(
             },
             confirmButton = {
                 Button(onClick = {
-                    val radius = editDeliveryRadius.toDoubleOrNull() ?: 3.0
-                    val fee = editDeliveryFee.toDoubleOrNull() ?: 0.0
-                    val minimum = editMinimumOrder.toDoubleOrNull() ?: 0.0
-                    val freeFrom = editFreeDeliveryFrom.toDoubleOrNull()
-                    val prep = editPrepMinutes.toIntOrNull() ?: 20
-                    if (minimum < 0 || minimum > 50000 || radius <= 0 || radius > 50 ||
-                        fee < 0 || fee > 50000 || (freeFrom != null && (freeFrom <= 0 || freeFrom > 50000)) ||
-                        prep !in 1..240 || (!editPickupEnabled && !editDeliveryEnabled)) return@Button
+                    val radius = editDeliveryRadius.replace(',', '.').toDoubleOrNull()
+                    val fee = editDeliveryFee.replace(',', '.').toDoubleOrNull()
+                    val minimum = editMinimumOrder.replace(',', '.').toDoubleOrNull()
+                    val freeFrom = if (editFreeDeliveryFrom.isBlank()) null else editFreeDeliveryFrom.replace(',', '.').toDoubleOrNull()
+                    val prep = editPrepMinutes.toIntOrNull()
+                    if (radius == null || fee == null || minimum == null || prep == null ||
+                        (!editFreeDeliveryFrom.isBlank() && freeFrom == null) ||
+                        !radius.isFinite() || !fee.isFinite() || !minimum.isFinite() ||
+                        minimum < 0 || minimum > 50000 || radius <= 0 || radius > 50 ||
+                        fee < 0 || fee > 50000 || (freeFrom != null && (!freeFrom.isFinite() || freeFrom <= 0 || freeFrom > 50000)) ||
+                        prep !in 1..240 || (!editPickupEnabled && !editDeliveryEnabled)) {
+                        logisticsValidationMessage = "Revisá los importes, el radio, el tiempo y habilitá al menos una modalidad."
+                        return@Button
+                    }
+                    logisticsValidationMessage = ""
                     viewModel.updateManagedStoreLogistics(editPickupEnabled, editDeliveryEnabled, radius, fee, freeFrom, minimum, prep)
                     showLogisticsDialog = false
                 }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)) { Text("Guardar configuración") }
