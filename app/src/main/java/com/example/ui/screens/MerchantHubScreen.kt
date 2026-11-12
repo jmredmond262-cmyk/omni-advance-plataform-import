@@ -1633,7 +1633,7 @@ fun MerchantHubScreen(
                         return@Button
                     }
                     logisticsValidationMessage = ""
-                    viewModel.updateManagedStoreLogistics(editPickupEnabled, editDeliveryEnabled, radius, fee, freeFrom, minimum, prep, merchantLat, merchantLon)
+                    viewModel.updateManagedStoreLogistics(editPickupEnabled, editDeliveryEnabled, radius, fee, freeFrom, minimum, prep, merchantLat ?: store.merchantLatitude, merchantLon ?: store.merchantLongitude)
                     showLogisticsDialog = false
                 }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)) { Text("Guardar configuración") }
             },
