@@ -373,7 +373,7 @@ export const issueDemoMerchantClaimCode = onCall({ region: REGION }, async (requ
     throw new HttpsError("invalid-argument", "Indicá un comercio DEMO válido.");
   }
   const profileRef = db.collection("merchantProfiles").doc(storeId);
-  const code = `OMNI-${randomBytes(5).toString("hex").toUpperCase()}`;
+  const code = `OMNI-${randomBytes(8).toString("hex").toUpperCase()}`;
   const codeHash = hashMerchantClaimCode(code);
   const codeRef = db.collection("demoMerchantClaimCodes").doc(codeHash);
   await db.runTransaction(async (tx) => {
@@ -406,7 +406,7 @@ export const issueDemoMerchantClaimCode = onCall({ region: REGION }, async (requ
 export const claimDemoMerchant = onCall({ region: REGION }, async (request) => {
   const uid = requireUid(request);
   const code = String(request.data?.code || "").trim().toUpperCase();
-  if (!/^OMNI-[A-F0-9]{10}$/.test(code)) {
+  if (!/^OMNI-[A-F0-9]{16}$/.test(code)) {
     throw new HttpsError("invalid-argument", "El código de titularidad no tiene un formato válido.");
   }
   const codeHash = hashMerchantClaimCode(code);
