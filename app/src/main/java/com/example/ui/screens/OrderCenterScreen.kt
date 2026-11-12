@@ -237,6 +237,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         productSearch = ""
         selectedProductCategory = null
         deliveryAddress = ""
+        deliveryLatitude = null
+        deliveryLongitude = null
         fulfillmentType = if (store.pickupEnabled) "RETIRO" else "DELIVERY"
         createdOrder = null
         showOrderReview = false
