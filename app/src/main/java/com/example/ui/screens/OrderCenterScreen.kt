@@ -154,7 +154,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             screenScope.launch {
                 locatingDelivery = true
                 val location = RealLocationHelper.getCurrentLocation(context)
-                deliveryLatitude = location?.takeIf { it.hasAccuracy() && it.accuracy <= 100f }?.latitude
+                deliveryLatitude = location?.takeIf { it.accuracy > 0f && it.accuracy <= 100f }?.latitude
                 deliveryLongitude = location?.takeIf { it.hasAccuracy() && it.accuracy <= 100f }?.longitude
                 locatingDelivery = false
                 feedback = if (deliveryLatitude != null && deliveryLongitude != null) "Ubicación GPS confirmada para este pedido." else "La ubicación no tiene precisión suficiente (máximo 100 m). Activá el GPS o intentá desde un lugar abierto."
