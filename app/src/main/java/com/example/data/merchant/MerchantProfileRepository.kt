@@ -23,7 +23,9 @@ object MerchantProfileRepository {
             .addOnSuccessListener { snapshot ->
                 if (snapshot.exists()) {
                     val ownerUid = snapshot.getString("ownerUid").orEmpty()
-                    if (ownerUid != uid) {
+                    if (ownerUid.isBlank() && snapshot.getString("environment") == "DEMO") {
+                        callback(Result.failure(IllegalStateException("Este comercio DEMO requiere un código de titularidad de un solo uso.")))
+                    } else if (ownerUid != uid) {
                         callback(Result.failure(IllegalStateException("Este comercio ya está vinculado a otra cuenta OMNI.")))
                     } else if (snapshot.getString("environment") == "REAL") {
                         callback(Result.failure(IllegalStateException("Este perfil pertenece al directorio de comercios reales y no puede convertirse en comercio DEMO.")))
@@ -47,21 +49,7 @@ object MerchantProfileRepository {
                         callback(Result.success(decode(snapshot, store)))
                     }
                 } else {
-                    ref.set(mapOf(
-                        "storeId" to store.id,
-                        "ownerUid" to uid,
-                        "storeName" to store.name,
-                        "environment" to "DEMO",
-                        "cashback" to mapOf(
-                            "enabled" to false,
-                            "percentage" to 0.0,
-                            "capPerPurchase" to null,
-                            "monthlyCap" to null
-                        ),
-                        "createdAt" to FieldValue.serverTimestamp()
-                    )).addOnSuccessListener {
-                        callback(Result.success(store to emptyList()))
-                    }.addOnFailureListener { callback(Result.failure(it)) }
+                    callback(Result.failure(IllegalStateException("Este comercio todavía no está habilitado como DEMO. Necesita ser provisionado y asignado mediante un código de titularidad.")))
                 }
             }
             .addOnFailureListener { callback(Result.failure(it)) }
