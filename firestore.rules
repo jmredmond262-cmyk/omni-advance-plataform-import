@@ -426,6 +426,7 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.ownerUid
           == request.resource.data.merchantUid
         && get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.environment == "DEMO"
+        && get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.seedVersion == 1
         && validCashbackSnapshot();
       // Queries must constrain customerUid or merchantUid to the signed-in user.
       // merchantUid is copied from the claimed merchant profile at order creation.
@@ -437,7 +438,13 @@ service cloud.firestore {
       // se actualizan en la misma transacción DEMO.
       allow update: if (
         signedIn()
+        && resource.data.environment == "DEMO"
         && get(merchantProfilePath()).data.ownerUid == request.auth.uid
+        && get(merchantProfilePath()).data.environment == "DEMO"
+        && get(merchantProfilePath()).data.seedVersion == 1
+        && get(merchantProfilePath()).data.storeId == resource.data.storeId
+        && request.resource.data.merchantUid == request.auth.uid
+        && request.resource.data.storeId == resource.data.storeId
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
         && request.resource.data.paymentStatus == resource.data.paymentStatus
         && request.resource.data.total == resource.data.total
