@@ -311,7 +311,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
 
     fun submitOrder() {
         if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 ||
-            total <= 0.0 || total > 50000.0 || total < store.minimumOrderAmount ||
+            total <= 0.0 || total > 50000.0 || itemsSubtotal < store.minimumOrderAmount ||
             (fulfillmentType == "RETIRO" && !store.pickupEnabled) ||
             (fulfillmentType == "DELIVERY" && (!store.deliveryEnabled || deliveryAddress.isBlank()))) {
             feedback = "Revisá el pedido: modalidad habilitada, compra mínima OM$ ${store.minimumOrderAmount.toInt()}, máximo 30 productos y dirección obligatoria para delivery."
