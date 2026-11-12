@@ -285,6 +285,70 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
 });
 
 /**
+ * Pasarela de tarjeta ficticia. No recibe datos de tarjeta ni mueve fondos;
+ * toda aprobación se valida y registra desde servidor, incluida la cobertura delivery.
+ */
+export const simulateDemoCardPayment = onCall({ region: REGION }, async (request) => {
+  const customerUid = requireUid(request);
+  const orderId = String(request.data?.orderId || "").trim();
+  const amount = Number(request.data?.amount);
+  const cardBrand = String(request.data?.cardBrand || "");
+  const approved = request.data?.approved === true;
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(orderId) || !Number.isFinite(amount) ||
+      amount <= 0 || amount > 50000 || !["VISA", "MASTERCARD"].includes(cardBrand)) {
+    throw new HttpsError("invalid-argument", "El intento de tarjeta DEMO no es válido.");
+  }
+  const orderRef = db.collection("storeOrders").doc(orderId);
+  const paymentRef = db.collection("demoCardPayments").doc(`carddemo_${randomUUID().replace(/-/g, "")}`);
+  return db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError("not-found", "El pedido ya no está disponible.");
+    const order = orderSnap.data()!;
+    if (order.environment !== "DEMO" || order.customerUid !== customerUid) {
+      throw new HttpsError("permission-denied", "Solo el comprador puede simular el pago de este pedido DEMO.");
+    }
+    if (order.paymentStatus !== "PENDIENTE" ||
+        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || "")) ||
+        Math.abs(Number(order.total || 0) - amount) >= 0.005) {
+      throw new HttpsError("failed-precondition", "El pedido ya no admite este pago o cambió su importe.");
+    }
+    const createdAt = order.createdAt?.toDate?.();
+    if (!createdAt || Date.now() < createdAt.getTime() || Date.now() - createdAt.getTime() >= 24 * 60 * 60 * 1000) {
+      throw new HttpsError("deadline-exceeded", "El pedido venció. Solicitá uno nuevo.");
+    }
+    const profileRef = db.collection("merchantProfiles").doc(String(order.storeId || ""));
+    const profileSnap = await tx.get(profileRef);
+    if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
+        profileSnap.get("seedVersion") !== 1 || profileSnap.get("ownerUid") !== order.merchantUid) {
+      throw new HttpsError("failed-precondition", "El comercio ya no está habilitado para este pedido.");
+    }
+    if (String(order.fulfillmentType || "RETIRO") === "DELIVERY") {
+      const merchantLat = profileSnap.get("merchantLatitude");
+      const merchantLon = profileSnap.get("merchantLongitude");
+      const buyerLat = order.deliveryLatitude;
+      const buyerLon = order.deliveryLongitude;
+      const radius = Number(profileSnap.get("deliveryRadiusKm"));
+      if (!validCoordinates(merchantLat, merchantLon) || !validCoordinates(buyerLat, buyerLon) ||
+          !Number.isFinite(radius) || radius <= 0 ||
+          deliveryDistanceKm(merchantLat as number, merchantLon as number, buyerLat as number, buyerLon as number) > radius + 0.05) {
+        throw new HttpsError("failed-precondition", "La ubicación del pedido ya no supera la validación de cobertura. No se registró el pago.");
+      }
+    }
+    const status = approved ? "APROBADA · DEMO" : "RECHAZADA · DEMO";
+    tx.create(paymentRef, {
+      paymentId: paymentRef.id, orderId, customerUid, merchantUid: String(order.merchantUid),
+      amount, cardBrand, provider: "OMNI_DEMO_GATEWAY", status, environment: "DEMO",
+      createdAt: FieldValue.serverTimestamp()
+    });
+    if (approved) tx.update(orderRef, {
+      paymentStatus: "PAGADA · DEMO", paymentMethod: "TARJETA_DEMO",
+      cardPaymentId: paymentRef.id, updatedAt: FieldValue.serverTimestamp()
+    });
+    return { message: approved ? "PAGO DE TARJETA SIMULADO · APROBADO · DEMO" : "PAGO DE TARJETA SIMULADO · RECHAZADO · DEMO", approved };
+  });
+});
+
+/**
  * Confirma un pedido DEMO y acredita cashback en una única transacción confiable.
  * El cliente solo envía el ID del pedido: importe, titularidad y condiciones salen de Firestore.
  */
