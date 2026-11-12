@@ -290,7 +290,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             (selectedProductCategory == null || product.category == selectedProductCategory) &&
             (productSearch.isBlank() || product.name.contains(productSearch.trim(), ignoreCase = true) || product.category.displayName.contains(productSearch.trim(), ignoreCase = true))
     }
-    val cartLines = store.inventory.filter { (cart[it.id] ?: 0) > 0 && it.inStock }.map {
+    val cartLines = if (demoMode && demoStores.isEmpty()) emptyList() else store.inventory.filter {
+        (cart[it.id] ?: 0) > 0 && it.inStock
+    }.map {
         OrderLine(it.id, it.name, it.price, cart[it.id] ?: 0)
     }
     val total = cartLines.sumOf { it.price * it.quantity }
