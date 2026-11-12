@@ -350,6 +350,10 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
       throw new HttpsError("failed-precondition", "El total o la compra mínima ya no coinciden. No se registró el pago.");
     }
     const fulfillment = String(order.fulfillmentType || "RETIRO");
+    if ((fulfillment === "RETIRO" && profileSnap.get("pickupEnabled") === false) ||
+        (fulfillment === "DELIVERY" && (profileSnap.get("deliveryEnabled") !== true || !String(order.deliveryAddress || "").trim()))) {
+      throw new HttpsError("failed-precondition", "El comercio ya no ofrece esta modalidad de entrega. No se registró el pago.");
+    }
     const freeFrom = profileSnap.get("freeDeliveryFrom");
     const expectedFee = fulfillment === "DELIVERY" && !(freeFrom != null && subtotal >= Number(freeFrom))
       ? Number(profileSnap.get("deliveryFee") || 0) : 0;
