@@ -44,6 +44,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.functions.FirebaseFunctions
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.util.UUID
@@ -108,6 +109,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
 
     var merchantReady by remember { mutableStateOf(false) }
     var merchantError by remember { mutableStateOf<String?>(null) }
+    var requiresClaimCode by remember { mutableStateOf(false) }
+    var merchantClaimCode by remember { mutableStateOf("") }
+    var claimingMerchant by remember { mutableStateOf(false) }
     var orders by remember { mutableStateOf<List<OmniStoreOrder>>(emptyList()) }
     val cartPreferences = remember { context.getSharedPreferences("omni_order_cart_drafts", 0) }
     fun readSavedCart(storeId: String): Map<String, Int> {
@@ -199,28 +203,27 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         if (merchantMode && uid.isNotBlank()) {
             merchantReady = false
             merchantError = null
+            requiresClaimCode = false
+            merchantClaimCode = ""
             val profileRef = db.collection("merchantProfiles").document(store.id)
             profileRef.get().addOnSuccessListener { doc ->
                 if (doc.exists()) {
-                    if (doc.getString("ownerUid") == uid) {
+                    val ownerUid = doc.getString("ownerUid").orEmpty()
+                    val environment = doc.getString("environment").orEmpty()
+                    if (ownerUid == uid) {
                         merchantReady = true
+                    } else if (ownerUid.isBlank() && environment == "DEMO") {
+                        requiresClaimCode = true
                     } else {
-                        merchantError = "Este comercio ya está asociado a otra cuenta. No podés administrar sus pedidos."
+                        merchantError = "Este comercio ya está asociado a otra cuenta o no está habilitado para titularidad DEMO."
                     }
                 } else {
-                    profileRef.set(mapOf(
-                        "storeId" to store.id,
-                        "storeName" to store.name,
-                        "address" to store.address,
-                        "contactPhone" to store.phone,
-                        "ownerUid" to uid,
-                        "createdAt" to FieldValue.serverTimestamp()
-                    )).addOnSuccessListener { merchantReady = true }
-                        .addOnFailureListener { merchantError = it.localizedMessage ?: "No se pudo habilitar el panel de pedidos." }
+                    requiresClaimCode = true
                 }
             }.addOnFailureListener { merchantError = it.localizedMessage ?: "No se pudo verificar el comercio." }
         } else if (!merchantMode) {
             merchantReady = true
+            requiresClaimCode = false
         }
     }
 
@@ -541,8 +544,46 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     buttonColor = Color(0xFF087EAB)
                 )
             }
+            if (requiresClaimCode && !merchantReady && merchantError == null) {
+                Text("Este comercio DEMO requiere un código de titularidad de un solo uso.", color = Color(0xFFFFC978), fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                OutlinedTextField(
+                    value = merchantClaimCode,
+                    onValueChange = { merchantClaimCode = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(15) },
+                    label = { Text("Código de titularidad") },
+                    singleLine = true,
+                    enabled = !claimingMerchant,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(
+                    onClick = {
+                        if (merchantClaimCode.isBlank() || claimingMerchant) return@Button
+                        claimingMerchant = true
+                        FirebaseFunctions.getInstance("us-central1")
+                            .getHttpsCallable("claimDemoMerchant")
+                            .call(mapOf("code" to merchantClaimCode))
+                            .addOnSuccessListener { result ->
+                                val data = result.data as? Map<*, *>
+                                if (data?.get("storeId") == store.id) {
+                                    merchantReady = true
+                                    requiresClaimCode = false
+                                    merchantClaimCode = ""
+                                    merchantError = null
+                                } else {
+                                    merchantError = "El código corresponde a otro comercio. Verificá el local seleccionado."
+                                }
+                                claimingMerchant = false
+                            }
+                            .addOnFailureListener {
+                                merchantError = it.localizedMessage ?: "No se pudo validar el código de titularidad."
+                                claimingMerchant = false
+                            }
+                    },
+                    enabled = merchantClaimCode.length >= 10 && !claimingMerchant,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (claimingMerchant) "Validando código…" else "Vincular este comercio") }
+            }
             if (merchantError != null) Text(merchantError.orEmpty(), color = Color(0xFFFF9B8F), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
-            else if (!merchantReady) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
+            else if (!merchantReady && !requiresClaimCode) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
         } else {
             Text(if (demoMode) "Elegí un comercio de muestra, seleccioná productos y generá un QR DEMO." else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
             Text(if (demoMode) "CATÁLOGO DEMO INDEPENDIENTE · No requiere aceptación del comercio ni crea movimientos reales." else "CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
