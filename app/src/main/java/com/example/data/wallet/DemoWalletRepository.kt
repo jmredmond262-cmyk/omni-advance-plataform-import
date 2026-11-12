@@ -189,13 +189,14 @@ class DemoWalletRepository(
             .addOnSuccessListener { result ->
                 val data = result.data as? Map<*, *>
                 val status = data?.get("status") as? String
-                if (status.isNullOrBlank()) {
+                if (status.isNullOrBlank() || data == null) {
                     done(Result.failure(IllegalStateException("El servidor no devolvió la confirmación del pedido.")))
                 } else {
+                    val confirmedStatus = status.orEmpty()
                     val cashback = (data["cashbackAmount"] as? Number)?.toDouble() ?: 0.0
                     val message = if (cashback > 0.0) {
-                        "$status · Cashback acreditado: OM$ $cashback"
-                    } else status
+                        "$confirmedStatus · Cashback acreditado: OM$ $cashback"
+                    } else confirmedStatus
                     done(Result.success(message))
                 }
             }
