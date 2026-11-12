@@ -136,7 +136,9 @@ object MerchantProfileRepository {
             .whereEqualTo("environment", "DEMO")
             .get()
             .addOnSuccessListener { snapshot ->
-                val stores = snapshot.documents.mapNotNull { doc ->
+                val stores = snapshot.documents.filter { doc ->
+                    (doc.get("seedVersion") as? Number)?.toInt() == 1
+                }.mapNotNull { doc ->
                     runCatching {
                         val type = runCatching {
                             com.example.model.StoreType.valueOf(doc.getString("type") ?: "ALMACEN")
@@ -180,7 +182,7 @@ object MerchantProfileRepository {
                             demoCapacityLabel = doc.getString("capacityLabel")
                         )
                     }.getOrNull()
-                }.sortedWith(compareBy<Store> { it.demoSizeTier ?: "" }.thenBy { it.name })
+                }.sortedWith(compareBy<Store> { when (it.demoSizeTier) { "MICRO" -> 0; "PEQUENO" -> 1; "MEDIANO" -> 2; "GRANDE" -> 3; else -> 4 } }.thenBy { it.name })
                 callback(Result.success(stores))
             }
             .addOnFailureListener { callback(Result.failure(it)) }
