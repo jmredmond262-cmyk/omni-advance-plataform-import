@@ -9,10 +9,10 @@ Este catálogo pertenece exclusivamente al entorno `DEMO` y se almacena en `merc
 | Punto 24 · Kiosco DEMO | MICRO | 8 productos | Retiro |
 | Almacén La Esquina · DEMO | PEQUEÑO | 15 productos | Retiro y delivery |
 | Panadería Trigal · DEMO | PEQUEÑO | 12 productos | Retiro y delivery programado |
-| Supermercado Norte · DEMO | GRANDE | 30 productos | Retiro y delivery |
+| Supermercado Norte · DEMO | GRANDE | 31 productos | Retiro y delivery |
 | Pixel Lab · Tecnología DEMO | ESPECIALIZADO | 10 productos | Retiro y envío coordinado |
 
-Total inicial: 5 comercios ficticios y 75 productos con precios e inventario de prueba.
+Total inicial: 5 comercios ficticios y 76 productos con precios e inventario de prueba.
 
 ## Provisionamiento
 
