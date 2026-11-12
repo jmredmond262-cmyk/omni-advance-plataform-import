@@ -423,7 +423,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             val response = result.data as? Map<String, Any?> ?: emptyMap()
                             val orderId = response["orderId"] as? String
                             val nonce = response["qrNonce"] as? String
-                            if (orderId.isNullOrBlank() || nonce.isNullOrBlank()) {
+                            val confirmedSubtotal = (response["subtotal"] as? Number)?.toDouble()
+                            val confirmedFee = (response["deliveryFee"] as? Number)?.toDouble()
+                            val confirmedTotal = (response["total"] as? Number)?.toDouble()
+                            if (orderId.isNullOrBlank() || nonce.isNullOrBlank() || confirmedSubtotal == null || confirmedFee == null || confirmedTotal == null) {
                                 sending = false
                                 feedback = "El servidor no devolvió una confirmación válida del pedido."
                                 return@addOnSuccessListener
@@ -432,9 +435,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             sending = false
                             createdOrder = OmniStoreOrder(
                                 orderId, store.id, store.name, merchantUid, uid,
-                                profile.fullName, profile.phone, cartLines, total,
+                                profile.fullName, profile.phone, cartLines, confirmedTotal,
                                 "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
-                                cashbackPolicy, subtotal = itemsSubtotal, deliveryFee = deliveryFee
+                                cashbackPolicy, subtotal = confirmedSubtotal, deliveryFee = confirmedFee
                             )
                             updateCart(emptyMap())
                         }
