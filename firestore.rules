@@ -422,75 +422,8 @@ service cloud.firestore {
       // Pedidos nuevos solo pueden ser creados por createDemoStoreOrder (Admin SDK).
       // Así se valida cobertura geográfica en servidor y no se confía en coordenadas del cliente.
       allow create: if false;
-      allow update: if (
-        signedIn()
-        && resource.data.environment == "DEMO"
-        && get(merchantProfilePath()).data.ownerUid == request.auth.uid
-        && get(merchantProfilePath()).data.environment == "DEMO"
-        && get(merchantProfilePath()).data.seedVersion == 1
-        && get(merchantProfilePath()).data.storeId == resource.data.storeId
-        && request.resource.data.merchantUid == request.auth.uid
-        && request.resource.data.storeId == resource.data.storeId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt", "rejectionReason"])
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["rejectionReason"])
-          || request.resource.data.status == "RECHAZADO")
-        && request.resource.data.paymentStatus == resource.data.paymentStatus
-        && request.resource.data.total == resource.data.total
-        && request.resource.data.qrNonce == resource.data.qrNonce
-        && validNextStatus()
-      ) || (
-        signedIn()
-        && request.auth.uid == resource.data.customerUid
-        && resource.data.paymentStatus == "PENDIENTE"
-        && resource.data.createdAt is timestamp
-        && request.time < resource.data.createdAt + duration.value(24, 'h')
-        && request.resource.data.paymentStatus == "PAGADA · DEMO"
-        && request.resource.data.paymentMethod == "OMNI_PAY_DEMO"
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["paymentStatus", "paymentMethod", "updatedAt"])
-        && request.resource.data.status == resource.data.status
-        && request.resource.data.total == resource.data.total
-        && request.resource.data.qrNonce == resource.data.qrNonce
-        && resource.data.status in ["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"]
-        && existsAfter(operationPath("orderpay_" + orderId))
-        && getAfter(operationPath("orderpay_" + orderId)).data.operationId == "orderpay_" + orderId
-        && getAfter(operationPath("orderpay_" + orderId)).data.kind == "QR_PAYMENT"
-        && getAfter(operationPath("orderpay_" + orderId)).data.senderUid == request.auth.uid
-        && getAfter(operationPath("orderpay_" + orderId)).data.recipientUid == resource.data.merchantUid
-        && getAfter(operationPath("orderpay_" + orderId)).data.orderId == orderId
-        && getAfter(operationPath("orderpay_" + orderId)).data.amount == resource.data.total
-      ) || (
-        signedIn()
-        && request.auth.uid == resource.data.customerUid
-        && resource.data.paymentStatus == "PENDIENTE"
-        && resource.data.status in ["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"]
-        && resource.data.createdAt is timestamp
-        && request.time < resource.data.createdAt + duration.value(24, 'h')
-        && request.resource.data.paymentStatus == "PAGADA · DEMO"
-        && request.resource.data.paymentMethod == "TARJETA_DEMO"
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["paymentStatus", "paymentMethod", "cardPaymentId", "updatedAt"])
-        && request.resource.data.status == resource.data.status
-        && request.resource.data.total == resource.data.total
-        && request.resource.data.qrNonce == resource.data.qrNonce
-        && request.resource.data.cardPaymentId is string
-        && existsAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId))
-        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.paymentId == request.resource.data.cardPaymentId
-        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.orderId == orderId
-        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.customerUid == request.auth.uid
-        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.merchantUid == resource.data.merchantUid
-        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.amount == resource.data.total
-        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.provider == "OMNI_DEMO_GATEWAY"
-        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.status == "APROBADA · DEMO"
-        && getAfter(/databases/$(database)/documents/demoCardPayments/$(request.resource.data.cardPaymentId)).data.environment == "DEMO"
-      ) || (
-        signedIn()
-        && request.auth.uid == resource.data.customerUid
-        && resource.data.status == "RECIBIDO"
-        && resource.data.paymentStatus == "PENDIENTE"
-        && request.resource.data.status == "CANCELADO"
-        && request.resource.data.paymentStatus == resource.data.paymentStatus
-        && request.resource.data.paymentMethod == resource.data.paymentMethod
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
-      );
+      // Todas las transiciones y pagos de pedidos pasan por callables confiables (Admin SDK).
+      allow update: if false;
       allow delete: if false;
     }
 
