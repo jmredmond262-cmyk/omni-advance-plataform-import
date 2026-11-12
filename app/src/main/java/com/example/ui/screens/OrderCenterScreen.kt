@@ -1011,7 +1011,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Pedido ${order.id.take(9)} · OM$ ${String.format("%,.2f", order.total)}", color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold)
-                    Text(if (order.paymentMethod == "TARJETA_DEMO") "Se anulará el registro de tarjeta simulado; no hubo movimiento de billeteras." else "Se devolverá el pago al comprador y se revertirá el cashback de este pedido. El proceso requiere saldo suficiente en el comercio y que el cashback siga disponible en la billetera del comprador.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
+                    Text(if (order.paymentMethod == "TARJETA_DEMO") "Se anulará el registro de tarjeta simulado; no hubo movimiento de billeteras." else "Se devolverá el pago al comprador y se revertirá el cashback de este pedido. El proceso requiere saldo suficiente en el comercio y en la billetera del comprador para absorber la reversión del cashback.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
                     OutlinedTextField(value = refundReasonInput, onValueChange = { refundReasonInput = it.take(240) }, label = { Text("Motivo (10 a 240 caracteres)") }, minLines = 3, maxLines = 5, enabled = !refundInProgress)
                     Text("${refundReasonInput.trim().length}/240", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                 }
