@@ -99,6 +99,7 @@ import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.RosePromo
 import com.example.ui.theme.SlateNavy
+import com.google.firebase.functions.FirebaseFunctions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,6 +120,10 @@ fun MerchantHubScreen(
     var showPublishNewsDialog by remember { mutableStateOf(false) }
     var showThresholdDialog by remember { mutableStateOf(false) }
     var showScheduleDialog by remember { mutableStateOf(false) }
+    var showClaimCodeDialog by remember { mutableStateOf(false) }
+    var claimCodeInput by remember { mutableStateOf("") }
+    var claimCodeBusy by remember { mutableStateOf(false) }
+    var claimCodeMessage by remember { mutableStateOf("") }
 
     // Campos formulario horarios
     var editOpenTime by remember { mutableStateOf(store.openTime) }
@@ -242,6 +247,39 @@ fun MerchantHubScreen(
         viewModel.navigateTo(Screen.UserProfile)
     }
 
+    fun submitDemoClaimCode() {
+        val code = claimCodeInput.trim().uppercase()
+        if (!Regex("^OMNI-[A-F0-9]{16}$").matches(code)) { claimCodeMessage = "Revisá el formato del código OMNI."; return }
+        claimCodeBusy = true
+        claimCodeMessage = "Validando código y asignando comercio…"
+        screenScope.launch {
+            runCatching {
+                val task = FirebaseFunctions.getInstance("us-central1").getHttpsCallable("claimDemoMerchant").call(mapOf("code" to code))
+                task.continueWith { completed -> completed.result?.data as? Map<*, *> ?: error("El servidor no devolvió la asignación.") }.getResult()
+            }.onSuccess { result ->
+                val name = result["storeName"]?.toString().orEmpty()
+                claimCodeMessage = if (name.isNotBlank()) "Comercio asignado correctamente: $name" else "Comercio asignado correctamente."
+                claimCodeInput = ""; showClaimCodeDialog = false; viewModel.activateMerchantProfile()
+            }.onFailure { ex -> claimCodeMessage = ex.localizedMessage ?: "No se pudo validar el código." }
+            claimCodeBusy = false
+        }
+    }
+
+    if (showClaimCodeDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!claimCodeBusy) showClaimCodeDialog = false },
+            title = { Text("Reclamar comercio DEMO", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("Ingresá el código único que te entregó OMNI Admin. Al confirmarlo, ese comercio quedará vinculado a tu cuenta.", fontSize = 13.sp)
+                    OutlinedTextField(value = claimCodeInput, onValueChange = { claimCodeInput = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(21) }, label = { Text("Código de titularidad") }, placeholder = { Text("OMNI-XXXXXXXXXXXXXXXX") }, singleLine = true, enabled = !claimCodeBusy)
+                    if (claimCodeMessage.isNotBlank()) Text(claimCodeMessage, fontSize = 12.sp, color = if (claimCodeMessage.contains("correctamente")) EmeraldPrimary else Color(0xFFFFB45B))
+                }
+            },
+            confirmButton = { TextButton(onClick = { submitDemoClaimCode() }, enabled = !claimCodeBusy && claimCodeInput.isNotBlank()) { Text(if (claimCodeBusy) "Validando…" else "Confirmar titularidad") } },
+            dismissButton = { TextButton(onClick = { if (!claimCodeBusy) showClaimCodeDialog = false }) { Text("Cancelar") } }
+        )
+    }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -249,6 +287,17 @@ fun MerchantHubScreen(
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item {
+            Card(modifier = Modifier.fillMaxWidth().clickable { claimCodeMessage = ""; showClaimCodeDialog = true }, colors = CardDefaults.cardColors(containerColor = Color(0xFF10243A)), shape = RoundedCornerShape(16.dp)) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("¿Tenés un código de titularidad?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Vinculá un comercio DEMO a tu cuenta OMNI", color = Color(0xFF9CB5CC), fontSize = 11.sp)
+                    }
+                    Text("INGRESAR", color = EmeraldPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
+                }
+            }
+        }
         if (merchantProfileLoading || merchantProfileMessage != null) {
             item {
                 Card(
