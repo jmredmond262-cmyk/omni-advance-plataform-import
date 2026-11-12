@@ -279,7 +279,10 @@ service cloud.firestore {
           && request.resource.data.minimumOrderAmount <= 50000
           && request.resource.data.estimatedPrepMinutes is int
           && request.resource.data.estimatedPrepMinutes >= 1
-          && request.resource.data.estimatedPrepMinutes <= 240;
+          && request.resource.data.estimatedPrepMinutes <= 240
+          && (request.resource.data.merchantLatitude == null || (request.resource.data.merchantLatitude is number && request.resource.data.merchantLatitude >= -90 && request.resource.data.merchantLatitude <= 90))
+          && (request.resource.data.merchantLongitude == null || (request.resource.data.merchantLongitude is number && request.resource.data.merchantLongitude >= -180 && request.resource.data.merchantLongitude <= 180))
+          && (!request.resource.data.deliveryEnabled || (request.resource.data.merchantLatitude is number && request.resource.data.merchantLongitude is number));
       }
 
       function validCashbackPolicy() {
@@ -321,6 +324,7 @@ service cloud.firestore {
           "isOnDuty", "openOnHolidays", "scheduleNotes",
           "pickupEnabled", "deliveryEnabled", "deliveryRadiusKm", "deliveryFee",
           "freeDeliveryFrom", "minimumOrderAmount", "estimatedPrepMinutes",
+          "merchantLatitude", "merchantLongitude",
           "minSpendDiscountThreshold", "minSpendDiscountPercent",
           "specialOfferText", "cashback", "updatedAt"
         ])
@@ -328,7 +332,8 @@ service cloud.firestore {
           || validCashbackPolicy())
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
           "pickupEnabled", "deliveryEnabled", "deliveryRadiusKm", "deliveryFee",
-          "freeDeliveryFrom", "minimumOrderAmount", "estimatedPrepMinutes"
+          "freeDeliveryFrom", "minimumOrderAmount", "estimatedPrepMinutes",
+          "merchantLatitude", "merchantLongitude"
         ]) || validDemoLogistics());
       allow delete: if false;
     }
