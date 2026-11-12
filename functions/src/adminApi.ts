@@ -1,7 +1,7 @@
 import { initializeApp, getApps } from "firebase-admin/app";
 import { createHash, randomBytes } from "node:crypto";
 import { getAuth } from "firebase-admin/auth";
-import { FieldPath, getFirestore, Timestamp, type QuerySnapshot } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore, Timestamp, type QuerySnapshot } from "firebase-admin/firestore";
 import { defineString } from "firebase-functions/params";
 import { HttpsError, onRequest } from "firebase-functions/v2/https";
 
