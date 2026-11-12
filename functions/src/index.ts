@@ -158,6 +158,132 @@ export const topUpDemoWallet = onCall({ region: REGION }, async (request) => {
 });
 
 
+function deliveryDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const dLat = radians(lat2 - lat1);
+  const dLon = radians(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371.0088 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function validCoordinates(latitude: unknown, longitude: unknown): latitude is number {
+  return typeof latitude === "number" && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
+    typeof longitude === "number" && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+}
+
+/**
+ * Crea pedidos DEMO en servidor. La creación directa desde clientes queda bloqueada
+ * para que nadie pueda falsificar coordenadas ni eludir el radio de entrega.
+ */
+export const createDemoStoreOrder = onCall({ region: REGION }, async (request) => {
+  const customerUid = requireUid(request);
+  const data = request.data || {};
+  const storeId = String(data.storeId || "").trim();
+  const fulfillmentType = String(data.fulfillmentType || "RETIRO");
+  const address = String(data.deliveryAddress || "").trim();
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(storeId) ||
+      !["RETIRO", "DELIVERY"].includes(fulfillmentType)) {
+    throw new HttpsError("invalid-argument", "El comercio o la modalidad del pedido no son válidos.");
+  }
+  if (fulfillmentType === "DELIVERY" && (address.length < 5 || address.length > 240)) {
+    throw new HttpsError("invalid-argument", "Ingresá una dirección de entrega válida.");
+  }
+  const items = Array.isArray(data.items) ? data.items as Array<Record<string, unknown>> : [];
+  if (items.length < 1 || items.length > 30) {
+    throw new HttpsError("invalid-argument", "El pedido debe contener entre 1 y 30 productos.");
+  }
+  const profileRef = db.collection("merchantProfiles").doc(storeId);
+  const profileSnap = await profileRef.get();
+  if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
+      profileSnap.get("seedVersion") !== 1) {
+    throw new HttpsError("failed-precondition", "El comercio no está habilitado para pedidos DEMO.");
+  }
+  const merchantUid = String(profileSnap.get("ownerUid") || "");
+  if (!merchantUid || merchantUid === customerUid) {
+    throw new HttpsError("failed-precondition", "El comercio todavía no tiene un titular habilitado para recibir pedidos.");
+  }
+  if (fulfillmentType === "RETIRO" && profileSnap.get("pickupEnabled") === false) {
+    throw new HttpsError("failed-precondition", "El comercio no habilitó el retiro.");
+  }
+  let deliveryLatitude: number | null = null;
+  let deliveryLongitude: number | null = null;
+  if (fulfillmentType === "DELIVERY") {
+    const merchantLat = profileSnap.get("merchantLatitude");
+    const merchantLon = profileSnap.get("merchantLongitude");
+    const buyerLat = data.deliveryLatitude;
+    const buyerLon = data.deliveryLongitude;
+    if (profileSnap.get("deliveryEnabled") !== true ||
+        !validCoordinates(merchantLat, merchantLon) || !validCoordinates(buyerLat, buyerLon)) {
+      throw new HttpsError("failed-precondition", "El comercio o tu dispositivo todavía no tienen una ubicación válida para verificar la cobertura.");
+    }
+    const distance = deliveryDistanceKm(merchantLat, merchantLon, buyerLat, buyerLon);
+    const radius = Number(profileSnap.get("deliveryRadiusKm"));
+    if (!Number.isFinite(radius) || radius <= 0 || distance > radius + 0.05) {
+      throw new HttpsError("out-of-range", "La dirección está fuera del radio de delivery de este comercio.");
+    }
+    deliveryLatitude = buyerLat;
+    deliveryLongitude = buyerLon;
+  }
+  const catalog = Array.isArray(profileSnap.get("inventory"))
+    ? profileSnap.get("inventory") as Array<Record<string, unknown>> : [];
+  let subtotal = 0;
+  const normalizedItems: Array<{productId:string;name:string;price:number;quantity:number}> = [];
+  const seen = new Set<string>();
+  for (const line of items) {
+    const productId = String(line.productId || "");
+    const quantity = Number(line.quantity);
+    const price = Number(line.price);
+    if (!productId || seen.has(productId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 999 ||
+        !Number.isFinite(price) || price <= 0) {
+      throw new HttpsError("invalid-argument", "Hay productos o cantidades inválidas en el pedido.");
+    }
+    seen.add(productId);
+    const current = catalog.find((item) => String(item.id || "") === productId);
+    if (!current || current.inStock !== true || Math.abs(Number(current.price) - price) >= 0.005) {
+      throw new HttpsError("failed-precondition", "Cambió el precio o la disponibilidad de un producto. Actualizá el carrito.");
+    }
+    const name = String(current.name || "");
+    if (!name || name.length > 80) throw new HttpsError("failed-precondition", "El catálogo contiene un producto inválido.");
+    normalizedItems.push({ productId, name, price, quantity });
+    subtotal += price * quantity;
+  }
+  subtotal = Math.round(subtotal * 100) / 100;
+  const minimum = Number(profileSnap.get("minimumOrderAmount") || 0);
+  if (subtotal <= 0 || subtotal > 50000 || subtotal < minimum) {
+    throw new HttpsError("failed-precondition", "El pedido no alcanza la compra mínima o supera el máximo DEMO.");
+  }
+  const freeFrom = profileSnap.get("freeDeliveryFrom");
+  const deliveryFee = fulfillmentType === "DELIVERY" && !(freeFrom != null && subtotal >= Number(freeFrom))
+    ? Number(profileSnap.get("deliveryFee") || 0) : 0;
+  if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 50000) {
+    throw new HttpsError("failed-precondition", "La tarifa de envío del comercio no es válida.");
+  }
+  const total = Math.round((subtotal + deliveryFee) * 100) / 100;
+  const cashback = profileSnap.get("cashback");
+  const cashbackPolicy = cashback && typeof cashback === "object" ? cashback : {
+    enabled: false, percentage: 0, capPerPurchase: null, monthlyCap: null
+  };
+  const orderRef = db.collection("storeOrders").doc();
+  const qrNonce = randomUUID().replace(/-/g, "") + randomBytes(8).toString("hex");
+  await orderRef.create({
+    storeId, storeName: String(profileSnap.get("storeName") || "Comercio DEMO"),
+    environment: "DEMO", merchantUid, customerUid,
+    customerName: safeName(request.auth?.token.name),
+    customerPhone: String(data.customerPhone || "").slice(0, 40),
+    items: normalizedItems, subtotal, deliveryFee, total, cashbackPolicy,
+    status: "RECIBIDO", paymentStatus: "PENDIENTE", paymentMethod: "PAGO_AL_RETIRAR",
+    fulfillmentType, deliveryAddress: fulfillmentType === "DELIVERY" ? address : "",
+    ...(deliveryLatitude != null && deliveryLongitude != null
+      ? { deliveryLatitude, deliveryLongitude } : {}),
+    qrNonce, operationId: orderRef.id,
+    createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+  });
+  return { orderId: orderRef.id, qrNonce, subtotal, deliveryFee, total, items: normalizedItems,
+    storeId, storeName: String(profileSnap.get("storeName") || "Comercio DEMO"), merchantUid,
+    cashbackPolicy, deliveryLatitude, deliveryLongitude };
+});
+
 /**
  * Confirma un pedido DEMO y acredita cashback en una única transacción confiable.
  * El cliente solo envía el ID del pedido: importe, titularidad y condiciones salen de Firestore.
