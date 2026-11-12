@@ -360,6 +360,19 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       throw new HttpsError("failed-precondition", "El total del pedido no es válido.");
     }
     const orderItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+    if (String(order.fulfillmentType || "RETIRO") === "DELIVERY") {
+      const merchantLat = profileSnap.get("merchantLatitude");
+      const merchantLon = profileSnap.get("merchantLongitude");
+      const buyerLat = order.deliveryLatitude;
+      const buyerLon = order.deliveryLongitude;
+      const radius = Number(profileSnap.get("deliveryRadiusKm"));
+      if (!validCoordinates(merchantLat, merchantLon) || !validCoordinates(buyerLat, buyerLon) ||
+          !Number.isFinite(radius) || radius <= 0 ||
+          deliveryDistanceKm(merchantLat, merchantLon, buyerLat, buyerLon) > radius + 0.05) {
+        throw new HttpsError("failed-precondition", "La ubicación del pedido ya no supera la validación de cobertura. No se debitó el pago.");
+      }
+    }
+
     const catalog = Array.isArray(profileSnap.get("inventory"))
       ? profileSnap.get("inventory") as Array<Record<string, unknown>> : [];
     if (orderItems.length === 0 || orderItems.length > 30 || catalog.length === 0) {
