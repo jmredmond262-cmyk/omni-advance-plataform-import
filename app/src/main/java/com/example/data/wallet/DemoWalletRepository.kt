@@ -115,7 +115,9 @@ class DemoWalletRepository(
                     val displayAmount = when (type) {
                         TransactionType.TRANSFERENCIA_ENVIADA,
                         TransactionType.QR_PAGO,
-                        TransactionType.COMPRA_LOCAL -> -kotlin.math.abs(storedAmount)
+                        TransactionType.COMPRA_LOCAL,
+                        TransactionType.DEVOLUCION_PEDIDO,
+                        TransactionType.REVERSO_CASHBACK -> -kotlin.math.abs(storedAmount)
                         else -> kotlin.math.abs(storedAmount)
                     }
                     val dateText = document.getTimestamp("createdAt")?.toDate()?.let {
