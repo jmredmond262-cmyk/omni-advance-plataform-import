@@ -389,6 +389,10 @@ export const claimDemoMerchant = onCall({ region: REGION }, async (request) => {
       throw new HttpsError("not-found", "El código no existe, ya fue utilizado o fue deshabilitado.");
     }
     const storeId = String(codeSnap.get("storeId") || "");
+    const expectedStoreId = String(request.data?.storeId || "").trim();
+    if (expectedStoreId && expectedStoreId !== storeId) {
+      throw new HttpsError("failed-precondition", "El código pertenece a otro comercio. No se consumió.");
+    }
     const profileRef = db.collection("merchantProfiles").doc(storeId);
     const profileSnap = await tx.get(profileRef);
     if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
