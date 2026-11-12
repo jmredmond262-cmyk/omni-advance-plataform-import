@@ -193,6 +193,10 @@ private fun OmniAdminRoot() {
       onRefresh = ::refresh,
       onLoadMore = ::loadMore,
       hasMore = hasMore,
+      issuedClaimCode = issuedClaimCode,
+      issuedClaimStore = issuedClaimStore,
+      onIssueDemoCode = ::issueDemoCode,
+      onClearIssuedCode = { issuedClaimCode = ""; issuedClaimStore = "" },
       onSignOut = {
         auth.signOut()
         user = null
@@ -716,6 +720,48 @@ private fun FinanceMetric(label: String, value: String, icon: androidx.compose.u
   }
 }
 
+@Composable
+private fun DemoMerchantClaimsContent(payload: JSONObject, issuedCode: String, issuedStore: String, onIssue: (String, String) -> Unit, onClearCode: () -> Unit) {
+  val stores = jsonArrayToList(payload.optJSONArray("items"))
+  LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), contentPadding = PaddingValues(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+    item {
+      Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(Color(0xFF123A5D), Panel, Color(0xFF0A1426)))).border(1.dp, Color(0xFF1679A6), RoundedCornerShape(20.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text("ASIGNACIÓN CONTROLADA", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
+        Text("Titularidad de comercios DEMO", color = White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        Text("Emití un código para un comercio de prueba sin titular. Entregalo únicamente al usuario elegido. Cada código vence en 30 días y se consume una sola vez.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+        Text("${stores.size} comercios DEMO provisionados", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+      }
+    }
+    if (issuedCode.isNotBlank()) item {
+      Card(Modifier.fillMaxWidth().border(1.dp, Color(0xFF32E7A0), RoundedCornerShape(16.dp)), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("CÓDIGO EMITIDO · $issuedStore", color = Color(0xFF32E7A0), fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+          SelectionContainer { Text(issuedCode, color = White, fontSize = 21.sp, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp) }
+          Text("Copialo ahora y compartilo con el titular asignado. Por seguridad no se vuelve a mostrar.", color = Muted, fontSize = 11.sp)
+          TextButton(onClick = onClearCode) { Text("Ocultar código", color = Mint) }
+        }
+      }
+    }
+    if (stores.isEmpty()) item { EmptyState("No hay comercios DEMO provisionados. Primero debe ejecutarse la carga inicial autorizada.") }
+    items(stores) { store ->
+      val id = store["id"]?.toString().orEmpty()
+      val name = store["storeName"]?.toString() ?: "Comercio DEMO"
+      val tier = store["sizeTier"]?.toString().orEmpty()
+      val capacity = store["capacityLabel"]?.toString().orEmpty()
+      val claimed = store["claimed"] == true
+      Card(Modifier.fillMaxWidth().border(1.dp, if (claimed) Color(0xFF34445B) else Color(0xFF1A6078), RoundedCornerShape(15.dp)), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(15.dp)) {
+        Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { Text(name, color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold); Text(listOf(tier, capacity).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 10.sp) }
+            Text(if (claimed) "ASIGNADO" else "DISPONIBLE", color = if (claimed) Muted else Color(0xFF32E7A0), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+          }
+          Text("${store["productCount"] ?: 0} productos · ${if (claimed) "Titular vinculado" else "Sin titular asignado"}", color = Muted, fontSize = 10.sp)
+          if (!claimed && id.isNotBlank()) Button(onClick = { onIssue(id, name) }, modifier = Modifier.fillMaxWidth()) { Text("Emitir código de titularidad", fontSize = 11.sp) }
+        }
+      }
+    }
+  }
+}
 @Composable
 private fun RecordsContent(selected: String, array: JSONArray, hasMore: Boolean, onLoadMore: () -> Unit) {
   val records = jsonArrayToList(array)
