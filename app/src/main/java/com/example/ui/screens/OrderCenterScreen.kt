@@ -548,7 +548,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 Text("Este comercio DEMO requiere un código de titularidad de un solo uso.", color = Color(0xFFFFC978), fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
                 OutlinedTextField(
                     value = merchantClaimCode,
-                    onValueChange = { merchantClaimCode = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(15) },
+                    onValueChange = { merchantClaimCode = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(21) },
                     label = { Text("Código de titularidad") },
                     singleLine = true,
                     enabled = !claimingMerchant,
