@@ -283,12 +283,8 @@ service cloud.firestore {
       }
 
       allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.storeId == storeId
-        && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.storeName is string
-        && request.resource.data.environment == "DEMO"
-        && validCashbackPolicy();
+      // Demo profiles are provisioned and claimed only by trusted callable functions.
+      allow create: if false;
       allow update: if signedIn()
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid
