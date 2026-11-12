@@ -823,7 +823,7 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       throw new HttpsError("failed-precondition", "El saldo del comercio no alcanza para devolver el importe completo. No se modificó ninguna cuenta.");
     }
     if (customerBalance < cashbackAmount || customerCashbackTotal < cashbackAmount) {
-      throw new HttpsError("failed-precondition", "El cashback de este pedido ya no está disponible íntegramente para revertirlo. No se modificó ninguna cuenta.");
+      throw new HttpsError("failed-precondition", "La billetera del comprador no tiene saldo suficiente para revertir el cashback acreditado. No se modificó ninguna cuenta.");
     }
     if (cashbackAmount > 0 && (!monthlySnap?.exists || Number(monthlySnap.get("earnedTotal") || 0) < cashbackAmount)) {
       throw new HttpsError("data-loss", "El acumulado mensual de cashback no coincide; no se modificó ninguna cuenta.");
