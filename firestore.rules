@@ -297,6 +297,8 @@ service cloud.firestore {
           "address", "phone", "description", "isOpen", "hoursText",
           "openTime", "closeTime", "weekendHoursText", "is24Hours",
           "isOnDuty", "openOnHolidays", "scheduleNotes",
+          "pickupEnabled", "deliveryEnabled", "deliveryRadiusKm", "deliveryFee",
+          "freeDeliveryFrom", "minimumOrderAmount", "estimatedPrepMinutes",
           "minSpendDiscountThreshold", "minSpendDiscountPercent",
           "specialOfferText", "cashback", "updatedAt"
         ])
@@ -398,6 +400,24 @@ service cloud.firestore {
         && request.resource.data.paymentStatus == "PENDIENTE"
         && request.resource.data.paymentMethod == "PAGO_AL_RETIRAR"
         && request.resource.data.fulfillmentType in ["RETIRO", "DELIVERY"]
+        && (
+          request.resource.data.fulfillmentType != "RETIRO"
+          || !("pickupEnabled" in get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.keys())
+          || get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.pickupEnabled == true
+        )
+        && (
+          request.resource.data.fulfillmentType != "DELIVERY"
+          || (
+            (!("deliveryEnabled" in get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.keys())
+              || get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.deliveryEnabled == true)
+            && request.resource.data.deliveryAddress is string
+            && request.resource.data.deliveryAddress.size() > 0
+          )
+        )
+        && (
+          !("minimumOrderAmount" in get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.keys())
+          || request.resource.data.total >= get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.minimumOrderAmount
+        )
         && (request.resource.data.fulfillmentType == "RETIRO"
           || (request.resource.data.deliveryAddress is string && request.resource.data.deliveryAddress.size() > 0))
         && request.resource.data.total is number
