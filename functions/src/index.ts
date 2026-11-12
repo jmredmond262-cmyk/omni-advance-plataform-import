@@ -643,3 +643,4 @@ export const provisionDemoMerchants = onCall({ region: REGION }, async (request)
 });
 
 export { omniAdminApi } from "./adminApi.js";
+export { saveDemoMerchantCatalog } from "./demoMerchantCatalog.js";
