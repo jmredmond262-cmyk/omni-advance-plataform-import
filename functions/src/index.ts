@@ -746,7 +746,7 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       throw new HttpsError("failed-precondition", "El pedido ya está cerrado.");
     }
     if (order.paymentStatus !== "PAGADA · DEMO" ||
-        !["ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || ""))) {
+        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || ""))) {
       throw new HttpsError("failed-precondition", "Solo se pueden devolver pedidos pagados que todavía no fueron entregados.");
     }
     const profileRef = db.collection("merchantProfiles").doc(String(order.storeId));
