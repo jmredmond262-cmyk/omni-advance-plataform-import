@@ -262,6 +262,10 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
     throw new HttpsError("failed-precondition", "La tarifa de envío del comercio no es válida.");
   }
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
+  const expectedTotal = Number(data.expectedTotal);
+  if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.005) {
+    throw new HttpsError("failed-precondition", "El total cambió desde la revisión del carrito. Actualizá el pedido antes de confirmar.");
+  }
   const cashback = profileSnap.get("cashback");
   const cashbackPolicy = cashback && typeof cashback === "object" ? cashback : {
     enabled: false, percentage: 0, capPerPurchase: null, monthlyCap: null
