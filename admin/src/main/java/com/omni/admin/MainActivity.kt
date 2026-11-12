@@ -69,7 +69,7 @@ private data class AdminTab(val id: String, val label: String, val collection: S
 private val tabs = listOf(
   AdminTab("dashboard", "Panel ejecutivo"), AdminTab("liveMap", "Mapa en tiempo real"), AdminTab("users", "Cuentas de usuario", "users"),
   AdminTab("wallets", "Cuentas OMNI Pay", "walletAccounts"), AdminTab("operations", "Movimientos OMNI Pay", "walletOperations"), AdminTab("finance", "Control financiero DEMO"),
-  AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
+  AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("demoClaims", "Titularidad DEMO"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
   AdminTab("feedback", "Opiniones y reportes", "appFeedback"), AdminTab("activity", "Actividad de uso", "usageEvents"), AdminTab("modules", "Módulos y funciones", "moduleRegistry"),
   AdminTab("audit", "Auditoría y trazabilidad", "adminAuditLogs"), AdminTab("invitations", "Accesos de prueba", "betaInvitations"), AdminTab("settings", "Parámetros generales")
 )
@@ -77,7 +77,7 @@ private data class AdminNavGroup(val id: String, val label: String, val icon: an
 private val navGroups = listOf(
   AdminNavGroup("overview", "Panel", Icons.Default.Dashboard, listOf("dashboard")),
   AdminNavGroup("people", "Usuarios", Icons.Default.PeopleAlt, listOf("users", "feedback")),
-  AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "orders", "wallets", "operations", "finance")),
+  AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "demoClaims", "orders", "wallets", "operations", "finance")),
   AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
   AdminNavGroup("geography", "Mapa", Icons.Default.Public, listOf("liveMap"))
 )
@@ -93,6 +93,8 @@ private fun OmniAdminRoot() {
   var nextPageToken by remember { mutableStateOf("") }
   var nextOffset by remember { mutableStateOf(0) }
   var hasMore by remember { mutableStateOf(false) }
+  var issuedClaimCode by remember { mutableStateOf("") }
+  var issuedClaimStore by remember { mutableStateOf("") }
   val scope = rememberCoroutineScope()
 
   fun refresh() {
@@ -108,6 +110,7 @@ private fun OmniAdminRoot() {
           "dashboard" -> AdminApi.call(token, "dashboard")
           "liveMap" -> AdminApi.call(token, "geoPresence")
           "finance" -> AdminApi.call(token, "finance")
+          "demoClaims" -> AdminApi.call(token, "demoMerchants")
           "settings" -> AdminApi.call(token, "getConfig")
           else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
         }
@@ -115,6 +118,20 @@ private fun OmniAdminRoot() {
         nextOffset = payload.optInt("nextOffset", 0)
         hasMore = payload.optBoolean("hasMore", false)
       } catch (ex: Exception) { error = ex.message ?: "No se pudo conectar con OMNI Admin." }
+      finally { loading = false }
+    }
+  }
+
+  fun issueDemoCode(storeId: String, storeName: String) {
+    val current = auth.currentUser ?: return
+    scope.launch {
+      loading = true; error = ""; issuedClaimCode = ""; issuedClaimStore = ""
+      try {
+        val token = current.getIdToken(true).await().token ?: throw IllegalStateException("No se pudo renovar la sesión.")
+        val result = AdminApi.call(token, "issueDemoMerchantClaimCode", JSONObject().put("storeId", storeId))
+        issuedClaimCode = result.optString("code"); issuedClaimStore = storeName
+        payload = AdminApi.call(token, "demoMerchants")
+      } catch (ex: Exception) { error = ex.message ?: "No se pudo emitir el código." }
       finally { loading = false }
     }
   }
@@ -225,7 +242,9 @@ private fun AdminLogin(onLogin: (String, String) -> Unit, onReset: (String) -> U
 @Composable
 private fun AdminHome(
   email: String, selected: String, payload: JSONObject, loading: Boolean, error: String,
-  onSelect: (String) -> Unit, onRefresh: () -> Unit, onLoadMore: () -> Unit, hasMore: Boolean, onSignOut: () -> Unit
+  onSelect: (String) -> Unit, onRefresh: () -> Unit, onLoadMore: () -> Unit, hasMore: Boolean,
+  issuedClaimCode: String, issuedClaimStore: String, onIssueDemoCode: (String, String) -> Unit,
+  onClearIssuedCode: () -> Unit, onSignOut: () -> Unit
 ) {
   val activeGroup = navGroups.firstOrNull { selected in it.tabIds } ?: navGroups.first()
   val activeTab = tabs.firstOrNull { it.id == selected }
@@ -340,6 +359,7 @@ private fun AdminHome(
         "dashboard" -> DashboardContent(payload, onSelect, onRefresh)
         "liveMap" -> LiveMapScreen(payload, loading, error, onRefresh)
         "finance" -> FinanceContent(payload)
+        "demoClaims" -> DemoMerchantClaimsContent(payload, issuedClaimCode, issuedClaimStore, onIssueDemoCode, onClearIssuedCode)
         "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray())
         "settings" -> ConfigContent(payload.optJSONObject("config") ?: JSONObject())
         "invitations" -> InvitationContent(payload.optJSONArray("items") ?: JSONArray())
