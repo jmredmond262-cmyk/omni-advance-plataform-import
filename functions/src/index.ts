@@ -719,6 +719,179 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
   });
 });
 
+/**
+ * Reembolsa un pedido DEMO pagado. Solo el titular puede iniciar la devolución.
+ * OMNI Pay revierte ambos saldos y el cashback en una sola transacción;
+ * tarjeta DEMO solo revierte el registro simulado (nunca hubo movimiento de fondos).
+ */
+export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) => {
+  const uid = requireUid(request);
+  const orderId = String(request.data?.orderId || "").trim();
+  const reason = String(request.data?.reason || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(orderId) || reason.length < 10 || reason.length > 240) {
+    throw new HttpsError("invalid-argument", "Indicá un pedido válido y un motivo de 10 a 240 caracteres.");
+  }
+  const orderRef = db.collection("storeOrders").doc(orderId);
+  const refundOperationId = `orderrefund_${orderId}`;
+  const refundOperationRef = db.collection("walletOperations").doc(refundOperationId);
+  return db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError("not-found", "El pedido ya no existe.");
+    const order = orderSnap.data()!;
+    if (order.environment !== "DEMO" || order.merchantUid !== uid || !order.customerUid || !order.storeId) {
+      throw new HttpsError("permission-denied", "Solo el titular del comercio DEMO puede resolver esta devolución.");
+    }
+    if (order.paymentStatus === "REEMBOLSADA · DEMO" || order.status === "CANCELADO") {
+      if (order.refundOperationId === refundOperationId) return { orderId, refunded: true, duplicate: true };
+      throw new HttpsError("failed-precondition", "El pedido ya está cerrado.");
+    }
+    if (order.paymentStatus !== "PAGADA · DEMO" ||
+        !["ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || ""))) {
+      throw new HttpsError("failed-precondition", "Solo se pueden devolver pedidos pagados que todavía no fueron entregados.");
+    }
+    const profileRef = db.collection("merchantProfiles").doc(String(order.storeId));
+    const merchantRef = accountRef(uid);
+    const customerRef = accountRef(String(order.customerUid));
+    const [profileSnap, merchantSnap, customerSnap, operationSnap] = await Promise.all([
+      tx.get(profileRef), tx.get(merchantRef), tx.get(customerRef), tx.get(refundOperationRef)
+    ]);
+    if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
+        profileSnap.get("seedVersion") !== 1 || profileSnap.get("ownerUid") !== uid ||
+        profileSnap.get("storeId") !== order.storeId) {
+      throw new HttpsError("failed-precondition", "La titularidad DEMO del comercio no está vigente.");
+    }
+    if (operationSnap.exists) throw new HttpsError("data-loss", "Existe un registro de devolución previo; no se repetirán movimientos.");
+    if (!merchantSnap.exists || !customerSnap.exists) {
+      throw new HttpsError("failed-precondition", "No se encontraron ambas billeteras DEMO.");
+    }
+    const amount = Number(order.total);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 50000) {
+      throw new HttpsError("failed-precondition", "El importe original no es válido.");
+    }
+    const now = FieldValue.serverTimestamp();
+    const historyRef = orderRef.collection("statusHistory").doc();
+    if (order.paymentMethod === "TARJETA_DEMO") {
+      const cardPaymentId = String(order.cardPaymentId || "");
+      if (!cardPaymentId) throw new HttpsError("data-loss", "Falta el registro de la tarjeta DEMO; no se puede resolver automáticamente.");
+      const cardRef = db.collection("demoCardPayments").doc(cardPaymentId);
+      const cardSnap = await tx.get(cardRef);
+      if (!cardSnap.exists || cardSnap.get("status") !== "APROBADA · DEMO" ||
+          cardSnap.get("orderId") !== orderId || cardSnap.get("customerUid") !== order.customerUid) {
+        throw new HttpsError("data-loss", "El registro de tarjeta DEMO no coincide con el pedido.");
+      }
+      tx.update(cardRef, { status: "REVERSADA · DEMO", refundReason: reason, refundedAt: now });
+      tx.update(orderRef, {
+        status: "CANCELADO", paymentStatus: "REEMBOLSADA · DEMO",
+        refundOperationId: refundOperationId, refundReason: reason, refundedAt: now, updatedAt: now
+      });
+      tx.create(historyRef, {
+        orderId, storeId: order.storeId, environment: "DEMO", actorUid: uid,
+        actorRole: "COMERCIO", fromStatus: String(order.status), toStatus: "CANCELADO",
+        reason, eventType: "REFUND", paymentMethod: "TARJETA_DEMO",
+        note: "Se anuló el registro de pago simulado; no hubo movimiento de billeteras.",
+        createdAt: now
+      });
+      tx.create(refundOperationRef, {
+        operationId: refundOperationId, kind: "CARD_DEMO_REVERSAL",
+        orderId, senderUid: uid, recipientUid: order.customerUid,
+        amount: 0, originalAmount: amount, reason,
+        environment: "DEMO", createdAt: now
+      });
+      return { orderId, refunded: true, duplicate: false, paymentMethod: "TARJETA_DEMO", walletMovement: false };
+    }
+    if (order.paymentMethod !== "OMNI_PAY_DEMO") {
+      throw new HttpsError("failed-precondition", "El método de pago no admite devolución automática.");
+    }
+    const cashbackRef = db.collection("cashbackAccruals").doc(orderId);
+    const [cashbackSnap] = await Promise.all([tx.get(cashbackRef)]);
+    const cashbackAmount = cashbackSnap.exists ? Number(cashbackSnap.get("amount") || 0) : 0;
+    if (!Number.isFinite(cashbackAmount) || cashbackAmount < 0 || cashbackAmount > amount) {
+      throw new HttpsError("data-loss", "El cashback original no es válido; se requiere revisión manual.");
+    }
+    let monthlyRef: FirebaseFirestore.DocumentReference | null = null;
+    let monthlySnap: FirebaseFirestore.DocumentSnapshot | null = null;
+    if (cashbackAmount > 0) {
+      const period = String(cashbackSnap.get("period") || "");
+      if (!/^\\d{4}-\\d{2}$/.test(period)) throw new HttpsError("data-loss", "El período del cashback no es válido.");
+      monthlyRef = db.collection("cashbackMonthly").doc(`${order.storeId}_${order.customerUid}_${period}`);
+      monthlySnap = await tx.get(monthlyRef);
+    }
+    const merchantBalance = Number(merchantSnap.get("balance") || 0);
+    const customerBalance = Number(customerSnap.get("balance") || 0);
+    const customerCashbackTotal = Number(customerSnap.get("cashbackTotal") || 0);
+    if (merchantBalance < amount) {
+      throw new HttpsError("failed-precondition", "El saldo del comercio no alcanza para devolver el importe completo. No se modificó ninguna cuenta.");
+    }
+    if (customerBalance < cashbackAmount || customerCashbackTotal < cashbackAmount) {
+      throw new HttpsError("failed-precondition", "El cashback de este pedido ya no está disponible íntegramente para revertirlo. No se modificó ninguna cuenta.");
+    }
+    if (cashbackAmount > 0 && (!monthlySnap?.exists || Number(monthlySnap.get("earnedTotal") || 0) < cashbackAmount)) {
+      throw new HttpsError("data-loss", "El acumulado mensual de cashback no coincide; no se modificó ninguna cuenta.");
+    }
+    const merchantTxRef = merchantRef.collection("transactions").doc(refundOperationId);
+    const customerTxRef = customerRef.collection("transactions").doc(refundOperationId);
+    const cashbackReversalRef = customerRef.collection("transactions").doc(`cashback_reversal_${orderId}`);
+    const [merchantTxSnap, customerTxSnap, cashbackReversalSnap] = await Promise.all([
+      tx.get(merchantTxRef), tx.get(customerTxRef), tx.get(cashbackReversalRef)
+    ]);
+    if (merchantTxSnap.exists || customerTxSnap.exists || cashbackReversalSnap.exists) {
+      throw new HttpsError("data-loss", "La devolución tiene movimientos parciales previos; se bloqueó para evitar duplicados.");
+    }
+    tx.update(merchantRef, { balance: Math.round((merchantBalance - amount) * 100) / 100, lastOperationId: refundOperationId, updatedAt: now });
+    tx.update(customerRef, {
+      balance: Math.round((customerBalance + amount - cashbackAmount) * 100) / 100,
+      cashbackTotal: Math.round((customerCashbackTotal - cashbackAmount) * 100) / 100,
+      lastOperationId: refundOperationId, updatedAt: now
+    });
+    tx.create(refundOperationRef, {
+      operationId: refundOperationId, kind: "ORDER_REFUND",
+      senderUid: uid, recipientUid: order.customerUid,
+      amount, cashbackReversed: cashbackAmount, orderId, reason,
+      environment: "DEMO", createdAt: now
+    });
+    tx.create(merchantTxRef, {
+      operationId: refundOperationId, type: "DEVOLUCION_PEDIDO",
+      title: "Devolución de pedido DEMO", peerUid: order.customerUid,
+      peerName: String(order.customerName || "Cliente OMNI"),
+      amount: -amount, status: "REEMBOLSADA · DEMO", environment: "DEMO", createdAt: now
+    });
+    tx.create(customerTxRef, {
+      operationId: refundOperationId, type: "DEVOLUCION_COMPRA",
+      title: `Devolución de ${String(order.storeName || "comercio DEMO")}`,
+      peerUid: uid, peerName: String(order.storeName || "Comercio DEMO"),
+      amount: amount - cashbackAmount, status: "REEMBOLSADA · DEMO",
+      environment: "DEMO", createdAt: now
+    });
+    if (cashbackAmount > 0) {
+      tx.create(cashbackReversalRef, {
+        operationId: `cashback_reversal_${orderId}`, type: "REVERSO_CASHBACK",
+        title: `Reversión de cashback · ${String(order.storeName || "comercio DEMO")}`,
+        peerUid: uid, peerName: String(order.storeName || "Comercio DEMO"),
+        amount: -cashbackAmount, status: "REVERSADO · DEMO",
+        environment: "DEMO", createdAt: now
+      });
+      tx.update(monthlyRef!, {
+        earnedTotal: Math.round((Number(monthlySnap!.get("earnedTotal") || 0) - cashbackAmount) * 100) / 100,
+        updatedAt: now
+      });
+      tx.update(cashbackRef, { amount: 0, status: "REVERSADO · DEMO", reversedAmount: cashbackAmount, reversedAt: now });
+    }
+    tx.update(orderRef, {
+      status: "CANCELADO", paymentStatus: "REEMBOLSADA · DEMO",
+      refundOperationId: refundOperationId, refundReason: reason,
+      refundAmount: amount, cashbackReversed: cashbackAmount, refundedAt: now, updatedAt: now
+    });
+    tx.create(historyRef, {
+      orderId, storeId: order.storeId, environment: "DEMO", actorUid: uid,
+      actorRole: "COMERCIO", fromStatus: String(order.status), toStatus: "CANCELADO",
+      reason, eventType: "REFUND", paymentMethod: "OMNI_PAY_DEMO",
+      refundedAmount: amount, cashbackReversed: cashbackAmount, createdAt: now
+    });
+    return { orderId, refunded: true, duplicate: false, paymentMethod: "OMNI_PAY_DEMO",
+      refundedAmount: amount, cashbackReversed: cashbackAmount, walletMovement: true };
+  });
+});
+
 export const issueDemoMerchantClaimCode = onCall({ region: REGION }, async (request) => {
   const uid = requireUid(request);
   const adminSnap = await db.collection("systemAdmins").doc(uid).get();
