@@ -808,8 +808,8 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
     if (!Number.isFinite(cashbackAmount) || cashbackAmount < 0 || cashbackAmount > amount) {
       throw new HttpsError("data-loss", "El cashback original no es válido; se requiere revisión manual.");
     }
-    let monthlyRef: FirebaseFirestore.DocumentReference | null = null;
-    let monthlySnap: FirebaseFirestore.DocumentSnapshot | null = null;
+    let monthlyRef: any = null;
+    let monthlySnap: any = null;
     if (cashbackAmount > 0) {
       const period = String(cashbackSnap.get("period") || "");
       if (!/^\\d{4}-\\d{2}$/.test(period)) throw new HttpsError("data-loss", "El período del cashback no es válido.");
