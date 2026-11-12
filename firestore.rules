@@ -282,20 +282,6 @@ service cloud.firestore {
               && request.resource.data.cashback.monthlyCap > 0));
       }
 
-      function validDemoCatalog() {
-        return request.resource.data.inventory is list
-          && request.resource.data.comboDeals is list
-          && request.resource.data.news is list
-          && request.resource.data.comboDeals.size() <= 30
-          && request.resource.data.news.size() <= 50
-          && (
-            (resource.data.sizeTier == "MICRO" && request.resource.data.inventory.size() <= 20)
-            || (resource.data.sizeTier == "PEQUENO" && request.resource.data.inventory.size() <= 50)
-            || (resource.data.sizeTier == "MEDIANO" && request.resource.data.inventory.size() <= 100)
-            || (resource.data.sizeTier == "GRANDE" && request.resource.data.inventory.size() <= 250)
-            || (resource.data.sizeTier == "ESPECIALIZADO" && request.resource.data.inventory.size() <= 50)
-          );
-      }
 
       allow read: if signedIn();
       // Demo profiles are provisioned and claimed only by trusted callable functions.
