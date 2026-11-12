@@ -76,7 +76,9 @@ private data class OmniStoreOrder(
     val paymentMethod: String = "PAGO_AL_RETIRAR",
     val environment: String = "DEMO",
     val isLocalDemo: Boolean = false,
-    val rejectionReason: String = ""
+    val rejectionReason: String = "",
+    val subtotal: Double = 0.0,
+    val deliveryFee: Double = 0.0
 )
 
 private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
@@ -204,7 +206,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             cashbackPolicy = decodeCashbackTerms(doc.get("cashbackPolicy")),
             paymentMethod = doc.getString("paymentMethod") ?: "PAGO_AL_RETIRAR",
             environment = doc.getString("environment").orEmpty(),
-            rejectionReason = doc.getString("rejectionReason").orEmpty()
+            rejectionReason = doc.getString("rejectionReason").orEmpty(),
+            subtotal = (doc.get("subtotal") as? Number)?.toDouble() ?: ((doc.get("total") as? Number)?.toDouble() ?: 0.0),
+            deliveryFee = (doc.get("deliveryFee") as? Number)?.toDouble() ?: 0.0
         )
     }.getOrNull()
 
@@ -301,7 +305,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }.map {
         OrderLine(it.id, it.name, it.price, cart[it.id] ?: 0)
     }
-    val total = cartLines.sumOf { it.price * it.quantity }
+    val itemsSubtotal = cartLines.sumOf { it.price * it.quantity }
+    val deliveryFee = if (fulfillmentType == "DELIVERY" && (store.freeDeliveryFrom == null || itemsSubtotal < store.freeDeliveryFrom)) store.deliveryFee else 0.0
+    val total = itemsSubtotal + deliveryFee
 
     fun submitOrder() {
         if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 ||
@@ -330,7 +336,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 fulfillmentType = fulfillmentType,
                 deliveryAddress = deliveryAddress.trim(),
                 qrNonce = nonce,
-                isLocalDemo = true
+                isLocalDemo = true,
+                subtotal = itemsSubtotal,
+                deliveryFee = deliveryFee
             )
             updateCart(emptyMap())
             sending = false
@@ -385,7 +393,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         "environment" to "DEMO",
                         "merchantUid" to merchantUid, "customerUid" to uid,
                         "customerName" to profile.fullName, "customerPhone" to profile.phone,
-                        "items" to payloadItems, "total" to total,
+                        "items" to payloadItems, "subtotal" to itemsSubtotal, "deliveryFee" to deliveryFee, "total" to total,
                         "cashbackPolicy" to cashbackPolicyData,
                         "status" to "RECIBIDO", "paymentStatus" to "PENDIENTE",
                         "paymentMethod" to "PAGO_AL_RETIRAR",
