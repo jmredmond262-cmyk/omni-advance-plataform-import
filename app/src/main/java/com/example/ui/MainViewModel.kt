@@ -1635,7 +1635,9 @@ class MainViewModel : ViewModel() {
         deliveryFee: Double,
         freeDeliveryFrom: Double?,
         minimumOrderAmount: Double,
-        estimatedPrepMinutes: Int
+        estimatedPrepMinutes: Int,
+        merchantLatitude: Double? = _managedStore.value.merchantLatitude,
+        merchantLongitude: Double? = _managedStore.value.merchantLongitude
     ) {
         trackUsageAction("STORE_LOGISTICS_UPDATED", "merchant")
         val updated = _managedStore.value.copy(
@@ -1645,7 +1647,9 @@ class MainViewModel : ViewModel() {
             deliveryFee = deliveryFee,
             freeDeliveryFrom = freeDeliveryFrom,
             minimumOrderAmount = minimumOrderAmount,
-            estimatedPrepMinutes = estimatedPrepMinutes
+            estimatedPrepMinutes = estimatedPrepMinutes,
+            merchantLatitude = merchantLatitude,
+            merchantLongitude = merchantLongitude
         )
         _managedStore.value = updated
         updateManagedStoreInCollections(updated)
