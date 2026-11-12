@@ -702,8 +702,11 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
 
     const now = FieldValue.serverTimestamp();
     const historyRef = orderRef.collection("statusHistory").doc();
-    const update: Record<string, any> = { status: nextStatus, updatedAt: now };
-    if (nextStatus === "RECHAZADO") update.rejectionReason = rejectionReason;
+    const update = {
+      status: nextStatus,
+      updatedAt: now,
+      ...(nextStatus === "RECHAZADO" ? { rejectionReason } : {})
+    };
     tx.update(orderRef, update);
     tx.create(historyRef, {
       orderId, storeId: order.storeId, environment: "DEMO",
