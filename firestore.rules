@@ -260,6 +260,28 @@ service cloud.firestore {
     // Demo merchant ownership. The first authenticated account to activate a
     // store profile claims it for this sandbox; this is not real-world verification.
     match /merchantProfiles/{storeId} {
+      function validDemoLogistics() {
+        return request.resource.data.pickupEnabled is bool
+          && request.resource.data.deliveryEnabled is bool
+          && (request.resource.data.pickupEnabled || request.resource.data.deliveryEnabled)
+          && request.resource.data.deliveryRadiusKm is number
+          && request.resource.data.deliveryRadiusKm > 0
+          && request.resource.data.deliveryRadiusKm <= 50
+          && request.resource.data.deliveryFee is number
+          && request.resource.data.deliveryFee >= 0
+          && request.resource.data.deliveryFee <= 50000
+          && (request.resource.data.freeDeliveryFrom == null
+            || (request.resource.data.freeDeliveryFrom is number
+              && request.resource.data.freeDeliveryFrom > 0
+              && request.resource.data.freeDeliveryFrom <= 50000))
+          && request.resource.data.minimumOrderAmount is number
+          && request.resource.data.minimumOrderAmount >= 0
+          && request.resource.data.minimumOrderAmount <= 50000
+          && request.resource.data.estimatedPrepMinutes is int
+          && request.resource.data.estimatedPrepMinutes >= 1
+          && request.resource.data.estimatedPrepMinutes <= 240;
+      }
+
       function validCashbackPolicy() {
         return request.resource.data.cashback is map
           && request.resource.data.cashback.keys().hasAll([
@@ -303,7 +325,11 @@ service cloud.firestore {
           "specialOfferText", "cashback", "updatedAt"
         ])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["cashback"])
-          || validCashbackPolicy());
+          || validCashbackPolicy())
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "pickupEnabled", "deliveryEnabled", "deliveryRadiusKm", "deliveryFee",
+          "freeDeliveryFrom", "minimumOrderAmount", "estimatedPrepMinutes"
+        ]) || validDemoLogistics());
       allow delete: if false;
     }
 
@@ -408,8 +434,7 @@ service cloud.firestore {
         && (
           request.resource.data.fulfillmentType != "DELIVERY"
           || (
-            (!("deliveryEnabled" in get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.keys())
-              || get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.deliveryEnabled == true)
+            get(/databases/$(database)/documents/merchantProfiles/$(request.resource.data.storeId)).data.deliveryEnabled == true
             && request.resource.data.deliveryAddress is string
             && request.resource.data.deliveryAddress.size() > 0
           )
