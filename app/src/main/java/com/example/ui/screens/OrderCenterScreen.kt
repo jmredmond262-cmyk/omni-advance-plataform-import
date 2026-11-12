@@ -587,16 +587,20 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             feedback = "No se puede rechazar ni cancelar un pedido ya pagado sin un circuito de devolución DEMO."
             return
         }
-        val update = mutableMapOf<String, Any>(
-            "status" to next,
-            "updatedAt" to FieldValue.serverTimestamp()
-        )
-        if (next == "RECHAZADO") update["rejectionReason"] = rejectionReason.trim()
-        db.collection("storeOrders").document(order.id).update(update).addOnSuccessListener {
-            UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next", mapOf("operationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
-            orders = orders.map { current -> if (current.id == order.id) current.copy(status = next) else current }
-            if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next, rejectionReason = rejectionReason.trim())
-        }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo actualizar el estado." }
+        FirebaseFunctions.getInstance("us-central1")
+            .getHttpsCallable("updateDemoStoreOrderStatus")
+            .call(mapOf(
+                "orderId" to order.id,
+                "nextStatus" to next,
+                "rejectionReason" to rejectionReason.trim()
+            ))
+            .addOnSuccessListener {
+                UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next", mapOf("operationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
+                orders = orders.map { current -> if (current.id == order.id) current.copy(status = next, rejectionReason = rejectionReason.trim()) else current }
+                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next, rejectionReason = rejectionReason.trim())
+                feedback = "Pedido actualizado: $next."
+            }
+            .addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo actualizar el estado." }
     }
 
     fun cancelCustomerOrder(order: OmniStoreOrder) {
@@ -604,14 +608,16 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             feedback = "Solo podés cancelar un pedido propio, pendiente de pago y todavía no aceptado."
             return
         }
-        db.collection("storeOrders").document(order.id).update(
-            mapOf("status" to "CANCELADO", "updatedAt" to FieldValue.serverTimestamp())
-        ).addOnSuccessListener {
-            UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_CANCELLED_BY_CUSTOMER", mapOf("operationId" to order.id, "stage" to "CUSTOMER_CANCELLATION_CONFIRMED", "success" to true))
-            orders = orders.map { current -> if (current.id == order.id) current.copy(status = "CANCELADO") else current }
-            if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO")
-            feedback = "El pedido fue cancelado."
-        }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo cancelar el pedido." }
+        FirebaseFunctions.getInstance("us-central1")
+            .getHttpsCallable("updateDemoStoreOrderStatus")
+            .call(mapOf("orderId" to order.id, "nextStatus" to "CANCELADO"))
+            .addOnSuccessListener {
+                UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_CANCELLED_BY_CUSTOMER", mapOf("operationId" to order.id, "stage" to "CUSTOMER_CANCELLATION_CONFIRMED", "success" to true))
+                orders = orders.map { current -> if (current.id == order.id) current.copy(status = "CANCELADO") else current }
+                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO")
+                feedback = "El pedido fue cancelado."
+            }
+            .addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo cancelar el pedido." }
     }
 
     Column(Modifier.fillMaxSize().background(Color(0xFF070A14)).verticalScroll(rememberScrollState()).padding(16.dp)) {
