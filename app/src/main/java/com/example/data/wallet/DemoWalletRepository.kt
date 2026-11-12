@@ -6,6 +6,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import com.google.firebase.functions.FirebaseFunctions
 import com.example.data.analytics.UsageAnalyticsRepository
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -180,7 +181,25 @@ class DemoWalletRepository(
             done(Result.failure(IllegalArgumentException("No se pudo validar el pedido o el importe DEMO.")))
             return
         }
-        executeTransfer(merchantUid, amount, true, done, orderId)
+        // La callable vuelve a validar titular, total, saldo, vigencia y cashback
+        // desde Firestore; el cliente no decide el importe ni el crédito.
+        FirebaseFunctions.getInstance("us-central1")
+            .getHttpsCallable("payStoreOrderDemo")
+            .call(mapOf("orderId" to orderId))
+            .addOnSuccessListener { result ->
+                val data = result.data as? Map<*, *>
+                val status = data?.get("status") as? String
+                if (status.isNullOrBlank()) {
+                    done(Result.failure(IllegalStateException("El servidor no devolvió la confirmación del pedido.")))
+                } else {
+                    val cashback = (data["cashbackAmount"] as? Number)?.toDouble() ?: 0.0
+                    val message = if (cashback > 0.0) {
+                        "$status · Cashback acreditado: OM$ $cashback"
+                    } else status
+                    done(Result.success(message))
+                }
+            }
+            .addOnFailureListener { done(Result.failure(it)) }
     }
 
     fun topUpDemo(
