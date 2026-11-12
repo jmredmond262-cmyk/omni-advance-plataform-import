@@ -12,6 +12,8 @@ El módulo existente `MerchantHubScreen` ya ofrece edición de datos operativos 
 - La creación y eliminación directa de perfiles sigue bloqueada; la provisión y asignación se realizan mediante los flujos confiables ya existentes.
 - El circuito de pedidos ya existía; esta etapa endurece la autorización del titular y añade el motivo obligatorio y visible al rechazar.
 - La política de cashback conserva validación de porcentaje y topes.
+- El titular puede configurar retiro, delivery, radio máximo, costo de envío, umbral de envío gratis, compra mínima y tiempo estimado de preparación.
+- Firestore valida los rangos y tipos de esa configuración. La creación de pedidos respeta la modalidad habilitada y la compra mínima; el cálculo y la verificación del costo de envío quedan para la siguiente etapa del circuito de pedidos.
 - Se limitan las colecciones de catálogo según tamaño DEMO: MICRO 20, PEQUEÑO 50, MEDIANO 100, GRANDE 250, ESPECIALIZADO 50 productos; hasta 30 combos y 50 novedades.
 - El catálogo se guarda mediante la callable `saveDemoMerchantCatalog`: el servidor valida titularidad, tamaño del comercio, límites, campos, precios, disponibilidad e identificadores duplicados de productos y novedades. La app conserva una validación previa para dar mensajes rápidos.
 - La gestión de pedidos exige que el perfil siga siendo DEMO seedVersion 1 y que el UID titular y el storeId coincidan. Las transiciones operativas se verifican también en Firestore.
@@ -26,4 +28,4 @@ El módulo existente `MerchantHubScreen` ya ofrece edición de datos operativos 
 
 ## Próximo paso
 
-Continuar con la configuración comercial y logística del titular (retiro, delivery, cobertura, mínimos y horarios), y después completar el flujo operativo de pedidos. Mantener la billetera y el cashback en modo DEMO, sin acreditaciones de dinero real.
+Completar el cálculo verificable del costo de delivery y el radio de cobertura en el pedido; después cerrar las transiciones, preparación, despacho y entrega. Mantener la billetera y el cashback en modo DEMO, sin acreditaciones de dinero real.
