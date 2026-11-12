@@ -551,7 +551,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         db.collection("storeOrders").document(order.id).update(update).addOnSuccessListener {
             UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next", mapOf("operationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
             orders = orders.map { current -> if (current.id == order.id) current.copy(status = next) else current }
-            if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next)
+            if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next, rejectionReason = rejectionReason.trim())
         }.addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo actualizar el estado." }
     }
 
@@ -1052,6 +1052,9 @@ private fun OrderStatusCard(
             }
             order.items.forEach { Text("${it.quantity} × ${it.name}", color = Color(0xFFB8C8D9), fontSize = 10.sp) }
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+            if (order.status == "RECHAZADO" && order.rejectionReason.isNotBlank()) {
+                Text("Motivo del comercio: ${order.rejectionReason}", color = Color(0xFFFFC978), fontSize = 10.sp)
+            }
             if (order.cashbackPolicy.enabled) {
                 Text(
                     "Condiciones registradas al crear el pedido: ${order.cashbackPolicy.percentage}% de cashback" +
