@@ -51,10 +51,19 @@ import com.google.firebase.functions.FirebaseFunctions
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.util.UUID
+import java.util.Locale
+import java.text.SimpleDateFormat
 import org.json.JSONObject
 import kotlinx.coroutines.launch
 
 private data class OrderLine(val productId: String, val name: String, val price: Double, val quantity: Int)
+private data class OrderStatusEvent(
+    val fromStatus: String,
+    val toStatus: String,
+    val actorRole: String,
+    val reason: String,
+    val createdAt: com.google.firebase.Timestamp?
+)
 private data class CashbackTerms(
     val enabled: Boolean = false,
     val percentage: Double = 0.0,
@@ -155,7 +164,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 locatingDelivery = true
                 val location = RealLocationHelper.getCurrentLocation(context)
                 deliveryLatitude = location?.takeIf { it.accuracy > 0f && it.accuracy <= 50f }?.latitude
-                deliveryLongitude = location?.takeIf { it.hasAccuracy() && it.accuracy <= 100f }?.longitude
+                deliveryLongitude = location?.takeIf { it.accuracy > 0f && it.accuracy <= 50f }?.longitude
                 locatingDelivery = false
                 feedback = if (deliveryLatitude != null && deliveryLongitude != null) "Ubicación GPS confirmada para este pedido." else "La ubicación no tiene precisión suficiente (máximo 50 m). Activá el GPS o intentá desde un lugar abierto."
             }
@@ -840,7 +849,15 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             } else {
                 Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     orders.forEach { order ->
-                        OrderStatusCard(order, merchantMode = true, onAdvance = { next -> advanceOrder(order, next) })
+                        OrderStatusCard(
+                            order, merchantMode = true,
+                            onAdvance = { next -> advanceOrder(order, next) },
+                            onReject = {
+                                selectedScannedOrder = order
+                                rejectReasonInput = ""
+                                showRejectReasonDialog = true
+                            }
+                        )
                     }
                 }
             }
@@ -1098,9 +1115,30 @@ private fun OrderStatusCard(
     onAdvance: (String) -> Unit,
     onPay: (() -> Unit)? = null,
     onPayWithDemoCard: (() -> Unit)? = null,
-    paying: Boolean = false
+    paying: Boolean = false,
+    onReject: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    var history by remember(order.id) { mutableStateOf<List<OrderStatusEvent>>(emptyList()) }
+    var historyExpanded by remember(order.id) { mutableStateOf(false) }
+    DisposableEffect(order.id) {
+        val listener = FirebaseFirestore.getInstance()
+            .collection("storeOrders").document(order.id)
+            .collection("statusHistory").orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(8)
+            .addSnapshotListener { snapshot, _ ->
+                history = snapshot?.documents.orEmpty().map { doc ->
+                    OrderStatusEvent(
+                        fromStatus = doc.getString("fromStatus").orEmpty(),
+                        toStatus = doc.getString("toStatus").orEmpty(),
+                        actorRole = doc.getString("actorRole").orEmpty(),
+                        reason = doc.getString("reason").orEmpty(),
+                        createdAt = doc.getTimestamp("createdAt")
+                    )
+                }
+            }
+        onDispose { listener.remove() }
+    }
     val next = when (order.status) {
         "RECIBIDO" -> "ACEPTADO"
         "ACEPTADO" -> "EN_PREPARACION"
@@ -1133,6 +1171,25 @@ private fun OrderStatusCard(
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
             if (order.status == "RECHAZADO" && order.rejectionReason.isNotBlank()) {
                 Text("Motivo del comercio: ${order.rejectionReason}", color = Color(0xFFFFC978), fontSize = 10.sp)
+            }
+            TextButton(onClick = { historyExpanded = !historyExpanded }) {
+                Text(if (historyExpanded) "Ocultar trazabilidad" else "Ver trazabilidad del pedido", color = Color(0xFF57DDF5), fontSize = 10.sp)
+            }
+            if (historyExpanded) {
+                if (history.isEmpty()) {
+                    Text("Todavía no hay cambios de estado registrados.", color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                } else {
+                    history.forEach { event ->
+                        val time = event.createdAt?.toDate()?.let {
+                            SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(it)
+                        } ?: "Hora pendiente"
+                        Text(
+                            "${event.toStatus.replace("_", " ")} · ${if (event.actorRole == "COMERCIO") "Comercio" else "Comprador"} · $time",
+                            color = Color(0xFFB8C8D9), fontSize = 9.sp
+                        )
+                        if (event.reason.isNotBlank()) Text("Motivo: ${event.reason}", color = Color(0xFFFFC978), fontSize = 9.sp)
+                    }
+                }
             }
             if (order.cashbackPolicy.enabled) {
                 Text(
@@ -1187,8 +1244,8 @@ private fun OrderStatusCard(
                             else -> "Marcar entregado"
                         }, fontSize = 10.sp)
                     }
-                    if (order.status == "RECIBIDO") {
-                        OutlinedButton(onClick = { onAdvance("RECHAZADO") }) {
+                    if (order.status == "RECIBIDO" && onReject != null) {
+                        OutlinedButton(onClick = onReject) {
                             Text("Rechazar", fontSize = 10.sp)
                         }
                     }
