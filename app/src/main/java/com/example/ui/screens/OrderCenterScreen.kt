@@ -213,7 +213,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         productSearch = ""
         selectedProductCategory = null
         deliveryAddress = ""
-        fulfillmentType = "RETIRO"
+        fulfillmentType = if (store.pickupEnabled) "RETIRO" else "DELIVERY"
         createdOrder = null
         showOrderReview = false
     }
@@ -304,8 +304,11 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     val total = cartLines.sumOf { it.price * it.quantity }
 
     fun submitOrder() {
-        if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 || total <= 0.0 || total > 50000.0 || (fulfillmentType == "DELIVERY" && deliveryAddress.isBlank())) {
-            feedback = "Revisá el pedido: máximo 30 productos distintos, total hasta OM$ 50.000 y dirección obligatoria para delivery."
+        if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 ||
+            total <= 0.0 || total > 50000.0 || total < store.minimumOrderAmount ||
+            (fulfillmentType == "RETIRO" && !store.pickupEnabled) ||
+            (fulfillmentType == "DELIVERY" && (!store.deliveryEnabled || deliveryAddress.isBlank()))) {
+            feedback = "Revisá el pedido: modalidad habilitada, compra mínima OM$ ${store.minimumOrderAmount.toInt()}, máximo 30 productos y dirección obligatoria para delivery."
             return
         }
         sending = true
@@ -719,11 +722,18 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text("${cartLines.sumOf { it.quantity }} productos · Total estimado OM$ ${String.format("%,.2f", total)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = fulfillmentType == "RETIRO", onClick = { fulfillmentType = "RETIRO" }, label = { Text("Retirar") })
-                            FilterChip(selected = fulfillmentType == "DELIVERY", onClick = { fulfillmentType = "DELIVERY" }, label = { Text("Delivery") })
+                            if (store.pickupEnabled) {
+                                FilterChip(selected = fulfillmentType == "RETIRO", onClick = { fulfillmentType = "RETIRO" }, label = { Text("Retirar") })
+                            }
+                            if (store.deliveryEnabled) {
+                                FilterChip(selected = fulfillmentType == "DELIVERY", onClick = { fulfillmentType = "DELIVERY" }, label = { Text("Delivery") })
+                            }
                         }
                         if (fulfillmentType == "DELIVERY") {
                             OutlinedTextField(deliveryAddress, { deliveryAddress = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Dirección de entrega") }, singleLine = true)
+                        }
+                        if (store.minimumOrderAmount > 0) {
+                            Text("Compra mínima del comercio: OM$ ${store.minimumOrderAmount.toInt()}", color = Color(0xFF9AAAC2), fontSize = 11.sp)
                         }
                         Text("Podés seguir agregando productos. El QR se genera únicamente cuando confirmás el pedido.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                         Button(
