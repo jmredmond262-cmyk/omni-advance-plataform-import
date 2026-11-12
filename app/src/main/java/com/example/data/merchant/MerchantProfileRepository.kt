@@ -9,6 +9,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.functions.FirebaseFunctions
 
 /**
  * Persists the merchant-owned part of a Store in the existing merchantProfiles document.
@@ -161,9 +162,24 @@ object MerchantProfileRepository {
             },
             "updatedAt" to FieldValue.serverTimestamp()
         )
-        db.collection("merchantProfiles").document(store.id)
-            .set(data, SetOptions.merge())
-            .addOnSuccessListener { callback(Result.success(Unit)) }
+        val catalogPayload = mapOf(
+            "storeId" to store.id,
+            "inventory" to data["inventory"],
+            "comboDeals" to data["comboDeals"],
+            "news" to data["news"]
+        )
+        FirebaseFunctions.getInstance("us-central1")
+            .getHttpsCallable("saveDemoMerchantCatalog")
+            .call(catalogPayload)
+            .addOnSuccessListener {
+                // Catalog writes are accepted only by the server-side validator.
+                // Firestore rules intentionally reject direct client catalog edits.
+                val operationalData = data - setOf("inventory", "comboDeals", "news")
+                db.collection("merchantProfiles").document(store.id)
+                    .set(operationalData, SetOptions.merge())
+                    .addOnSuccessListener { callback(Result.success(Unit)) }
+                    .addOnFailureListener { callback(Result.failure(it)) }
+            }
             .addOnFailureListener { callback(Result.failure(it)) }
     }
 
