@@ -1,7 +1,7 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
@@ -323,6 +323,86 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       operationId, status: "PEDIDO PAGADO · OMNI PAY DEMO",
       duplicate: false, cashbackAmount
     };
+  });
+});
+
+
+function hashMerchantClaimCode(code: string): string {
+  return createHash("sha256").update(code.trim().toUpperCase()).digest("hex");
+}
+
+/** Emite un código de un solo uso. Solo cuentas habilitadas en systemAdmins pueden emitirlo. */
+export const issueDemoMerchantClaimCode = onCall({ region: REGION }, async (request) => {
+  const uid = requireUid(request);
+  const adminSnap = await db.collection("systemAdmins").doc(uid).get();
+  if (!adminSnap.exists || adminSnap.get("enabled") !== true ||
+      !["owner", "admin"].includes(String(adminSnap.get("role") || ""))) {
+    throw new HttpsError("permission-denied", "Solo una cuenta administradora habilitada puede emitir códigos.");
+  }
+  const storeId = String(request.data?.storeId || "").trim();
+  const storeName = String(request.data?.storeName || "").trim().slice(0, 100);
+  if (!/^[A-Za-z0-9_-]{3,100}$/.test(storeId) || !storeName) {
+    throw new HttpsError("invalid-argument", "Indicá un comercio DEMO válido.");
+  }
+  const profileRef = db.collection("merchantProfiles").doc(storeId);
+  const code = `OMNI-${randomBytes(5).toString("hex").toUpperCase()}`;
+  const codeHash = hashMerchantClaimCode(code);
+  const codeRef = db.collection("demoMerchantClaimCodes").doc(codeHash);
+  await db.runTransaction(async (tx) => {
+    const profile = await tx.get(profileRef);
+    if (profile.exists && profile.get("environment") !== "DEMO") {
+      throw new HttpsError("failed-precondition", "El código solo puede emitirse para un comercio DEMO.");
+    }
+    if (profile.exists && String(profile.get("ownerUid") || "").trim().length > 0) {
+      throw new HttpsError("already-exists", "El comercio DEMO ya tiene titular.");
+    }
+    const now = new Date();
+    tx.set(profileRef, {
+      storeId, storeName, environment: "DEMO",
+      ownerUid: "", cashback: {
+        enabled: false, percentage: 0, capPerPurchase: null, monthlyCap: null
+      },
+      ...(profile.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    tx.create(codeRef, {
+      storeId, active: true, createdByUid: uid,
+      createdAt: FieldValue.serverTimestamp(),
+      expiresAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+    });
+  });
+  return { code, storeId, storeName, expiresInDays: 30, singleUse: true };
+});
+
+/** Reclama un comercio DEMO usando un código secreto de un solo uso. */
+export const claimDemoMerchant = onCall({ region: REGION }, async (request) => {
+  const uid = requireUid(request);
+  const code = String(request.data?.code || "").trim().toUpperCase();
+  if (!/^OMNI-[A-F0-9]{10}$/.test(code)) {
+    throw new HttpsError("invalid-argument", "El código de titularidad no tiene un formato válido.");
+  }
+  const codeHash = hashMerchantClaimCode(code);
+  const codeRef = db.collection("demoMerchantClaimCodes").doc(codeHash);
+  return db.runTransaction(async (tx) => {
+    const codeSnap = await tx.get(codeRef);
+    if (!codeSnap.exists || codeSnap.get("active") !== true) {
+      throw new HttpsError("not-found", "El código no existe, ya fue utilizado o fue deshabilitado.");
+    }
+    const storeId = String(codeSnap.get("storeId") || "");
+    const profileRef = db.collection("merchantProfiles").doc(storeId);
+    const profileSnap = await tx.get(profileRef);
+    if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
+        String(profileSnap.get("ownerUid") || "").trim().length > 0) {
+      throw new HttpsError("already-exists", "Este comercio ya tiene titular o no está habilitado como DEMO.");
+    }
+    const expiresAt = codeSnap.get("expiresAt")?.toDate?.();
+    if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+      throw new HttpsError("deadline-exceeded", "El código de titularidad venció.");
+    }
+    const now = FieldValue.serverTimestamp();
+    tx.update(profileRef, { ownerUid: uid, claimedAt: now, updatedAt: now });
+    tx.update(codeRef, { active: false, claimedByUid: uid, claimedAt: now });
+    return { storeId, storeName: String(profileSnap.get("storeName") || "Comercio DEMO"), claimed: true };
   });
 });
 
