@@ -346,30 +346,8 @@ service cloud.firestore {
       allow read: if isSystemAdmin() || (signedIn()
         && (resource.data.customerUid == request.auth.uid
           || resource.data.merchantUid == request.auth.uid));
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly([
-          "paymentId", "orderId", "customerUid", "merchantUid", "amount",
-          "cardBrand", "provider", "status", "environment", "createdAt"
-        ])
-        && request.resource.data.paymentId == paymentId
-        && request.resource.data.customerUid == request.auth.uid
-        && request.resource.data.merchantUid is string
-        && request.resource.data.amount is number
-        && request.resource.data.amount > 0
-        && request.resource.data.amount <= 50000
-        && request.resource.data.cardBrand in ["VISA", "MASTERCARD"]
-        && request.resource.data.provider == "OMNI_DEMO_GATEWAY"
-        && request.resource.data.status in ["APROBADA · DEMO", "RECHAZADA · DEMO"]
-        && request.resource.data.environment == "DEMO"
-        && request.resource.data.createdAt is timestamp
-        && linkedOrder().customerUid == request.auth.uid
-        && linkedOrder().merchantUid == request.resource.data.merchantUid
-        && linkedOrder().environment == "DEMO"
-        && linkedOrder().paymentStatus == "PENDIENTE"
-        && linkedOrder().status in ["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"]
-        && linkedOrder().createdAt is timestamp
-        && request.time < linkedOrder().createdAt + duration.value(24, 'h')
-        && linkedOrder().total == request.resource.data.amount;
+      // Los intentos de tarjeta DEMO se registran solo desde simulateDemoCardPayment (Admin SDK).
+      allow create: if false;
       allow update, delete: if false;
     }
 
