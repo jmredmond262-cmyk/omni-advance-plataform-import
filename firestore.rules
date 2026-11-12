@@ -176,6 +176,7 @@ service cloud.firestore {
           ||
           (
             getAfter(operationPath(request.resource.data.lastOperationId)).data.kind in ["TRANSFER", "QR_PAYMENT"]
+            && !("orderId" in getAfter(operationPath(request.resource.data.lastOperationId)).data)
             && request.auth.uid == getAfter(operationPath(request.resource.data.lastOperationId)).data.senderUid
             && (
               (
@@ -613,6 +614,7 @@ service cloud.firestore {
           ||
           (
             request.resource.data.kind in ["TRANSFER", "QR_PAYMENT"]
+            && !("orderId" in request.resource.data)
             && request.resource.data.recipientUid is string
             && request.resource.data.recipientUid != request.auth.uid
             && get(walletPath(request.auth.uid)).data.balance >= request.resource.data.amount
