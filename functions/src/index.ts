@@ -368,31 +368,25 @@ export const issueDemoMerchantClaimCode = onCall({ region: REGION }, async (requ
     throw new HttpsError("permission-denied", "Solo una cuenta administradora habilitada puede emitir códigos.");
   }
   const storeId = String(request.data?.storeId || "").trim();
-  const storeName = String(request.data?.storeName || "").trim().slice(0, 100);
-  if (!/^[A-Za-z0-9_-]{3,100}$/.test(storeId) || !storeName) {
+  if (!/^[A-Za-z0-9_-]{3,100}$/.test(storeId)) {
     throw new HttpsError("invalid-argument", "Indicá un comercio DEMO válido.");
   }
   const profileRef = db.collection("merchantProfiles").doc(storeId);
   const code = `OMNI-${randomBytes(8).toString("hex").toUpperCase()}`;
   const codeHash = hashMerchantClaimCode(code);
   const codeRef = db.collection("demoMerchantClaimCodes").doc(codeHash);
+  let storeName = "";
   await db.runTransaction(async (tx) => {
     const profile = await tx.get(profileRef);
-    if (profile.exists && profile.get("environment") !== "DEMO") {
-      throw new HttpsError("failed-precondition", "El código solo puede emitirse para un comercio DEMO.");
+    if (!profile.exists || profile.get("environment") !== "DEMO" ||
+        Number(profile.get("seedVersion") || 0) !== 1) {
+      throw new HttpsError("failed-precondition", "El código solo puede emitirse para un comercio del catálogo DEMO provisionado.");
     }
-    if (profile.exists && String(profile.get("ownerUid") || "").trim().length > 0) {
+    if (String(profile.get("ownerUid") || "").trim().length > 0) {
       throw new HttpsError("already-exists", "El comercio DEMO ya tiene titular.");
     }
+    storeName = String(profile.get("storeName") || "Comercio DEMO");
     const now = new Date();
-    tx.set(profileRef, {
-      storeId, storeName, environment: "DEMO",
-      ownerUid: "", cashback: {
-        enabled: false, percentage: 0, capPerPurchase: null, monthlyCap: null
-      },
-      ...(profile.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
-      updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
     tx.create(codeRef, {
       storeId, active: true, createdByUid: uid,
       createdAt: FieldValue.serverTimestamp(),
