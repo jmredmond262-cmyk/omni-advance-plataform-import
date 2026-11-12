@@ -1268,7 +1268,7 @@ private fun OrderStatusCard(
                 color = if (order.paymentStatus == "REEMBOLSADA · DEMO") Color(0xFF57DDF5) else if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
                 fontSize = 9.sp
             )
-            if (merchantMode && order.paymentStatus == "PAGADA · DEMO" && order.status in listOf("ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO") && onRefund != null) {
+            if (merchantMode && order.paymentStatus == "PAGADA · DEMO" && order.status in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO") && onRefund != null) {
                 OutlinedButton(onClick = onRefund, modifier = Modifier.fillMaxWidth()) { Text("Resolver devolución DEMO", fontSize = 10.sp) }
             }
             if (!merchantMode && onPay != null && order.paymentStatus == "PENDIENTE" &&
