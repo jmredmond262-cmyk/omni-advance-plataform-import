@@ -418,6 +418,7 @@ export const claimDemoMerchant = onCall({ region: REGION }, async (request) => {
     const profileRef = db.collection("merchantProfiles").doc(storeId);
     const profileSnap = await tx.get(profileRef);
     if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
+        Number(profileSnap.get("seedVersion") || 0) !== 1 ||
         String(profileSnap.get("ownerUid") || "").trim().length > 0) {
       throw new HttpsError("already-exists", "Este comercio ya tiene titular o no está habilitado como DEMO.");
     }
