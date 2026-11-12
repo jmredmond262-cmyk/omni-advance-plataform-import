@@ -233,6 +233,34 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     if (!Number.isFinite(amount) || amount <= 0 || amount > 50000) {
       throw new HttpsError("failed-precondition", "El total del pedido no es válido.");
     }
+    const orderItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+    const catalog = Array.isArray(profileSnap.get("inventory"))
+      ? profileSnap.get("inventory") as Array<Record<string, unknown>> : [];
+    if (orderItems.length === 0 || orderItems.length > 30 || catalog.length === 0) {
+      throw new HttpsError("failed-precondition", "El catálogo o los artículos del pedido ya no están disponibles.");
+    }
+    const seenProducts = new Set<string>();
+    let verifiedTotal = 0;
+    for (const line of orderItems) {
+      const productId = String(line.productId || "");
+      const quantity = Number(line.quantity);
+      const price = Number(line.price);
+      if (!productId || seenProducts.has(productId) || !Number.isInteger(quantity) ||
+          quantity < 1 || quantity > 999 || !Number.isFinite(price) || price <= 0) {
+        throw new HttpsError("failed-precondition", "El detalle del pedido no es válido.");
+      }
+      seenProducts.add(productId);
+      const currentProduct = catalog.find((item) => String(item.id || "") === productId);
+      const currentPrice = Number(currentProduct?.price);
+      if (!currentProduct || currentProduct.inStock !== true || !Number.isFinite(currentPrice) ||
+          Math.abs(currentPrice - price) >= 0.005) {
+        throw new HttpsError("failed-precondition", "Cambió el precio o la disponibilidad de un producto. Actualizá el pedido.");
+      }
+      verifiedTotal += price * quantity;
+    }
+    if (Math.abs(Math.round(verifiedTotal * 100) / 100 - amount) >= 0.005) {
+      throw new HttpsError("failed-precondition", "El total no coincide con los productos confirmados.");
+    }
     const customerBalance = Number(customerSnap.get("balance") || 0);
     const merchantBalance = Number(merchantSnap.get("balance") || 0);
     if (customerBalance < amount) throw new HttpsError("failed-precondition", "Saldo virtual insuficiente.");
