@@ -643,6 +643,79 @@ function hashMerchantClaimCode(code: string): string {
 }
 
 /** Emite un código de un solo uso. Solo cuentas habilitadas en systemAdmins pueden emitirlo. */
+
+/**
+ * Cambia el estado de un pedido DEMO en servidor y deja una traza inmutable
+ * de cada transición. Ningún cliente puede escribir directamente el documento.
+ */
+export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (request) => {
+  const uid = requireUid(request);
+  const orderId = String(request.data?.orderId || "").trim();
+  const nextStatus = String(request.data?.nextStatus || "").trim();
+  const rejectionReason = String(request.data?.rejectionReason || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(orderId) ||
+      !["ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO", "RECHAZADO", "CANCELADO"].includes(nextStatus)) {
+    throw new HttpsError("invalid-argument", "El pedido o el estado solicitado no son válidos.");
+  }
+  if (nextStatus === "RECHAZADO" && (rejectionReason.length < 10 || rejectionReason.length > 240)) {
+    throw new HttpsError("invalid-argument", "El motivo de rechazo debe tener entre 10 y 240 caracteres.");
+  }
+  const orderRef = db.collection("storeOrders").doc(orderId);
+  return db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError("not-found", "El pedido ya no existe.");
+    const order = orderSnap.data()!;
+    if (order.environment !== "DEMO" || !order.storeId || !order.merchantUid || !order.customerUid) {
+      throw new HttpsError("failed-precondition", "El pedido no pertenece a un comercio DEMO válido.");
+    }
+    const profileRef = db.collection("merchantProfiles").doc(String(order.storeId));
+    const profileSnap = await tx.get(profileRef);
+    if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
+        profileSnap.get("seedVersion") !== 1 || profileSnap.get("storeId") !== order.storeId ||
+        profileSnap.get("ownerUid") !== order.merchantUid) {
+      throw new HttpsError("failed-precondition", "La titularidad DEMO del comercio ya no está habilitada.");
+    }
+
+    const current = String(order.status || "");
+    const isMerchant = uid === order.merchantUid;
+    const isCustomer = uid === order.customerUid;
+    let allowed = false;
+    if (isMerchant) {
+      allowed =
+        (current === "RECIBIDO" && ["ACEPTADO", "RECHAZADO"].includes(nextStatus)) ||
+        (current === "ACEPTADO" && ["EN_PREPARACION", "CANCELADO"].includes(nextStatus)) ||
+        (current === "EN_PREPARACION" && ["LISTO", "CANCELADO"].includes(nextStatus)) ||
+        (current === "LISTO" && (
+          (nextStatus === "EN_CAMINO" && order.fulfillmentType === "DELIVERY") ||
+          (nextStatus === "ENTREGADO" && order.fulfillmentType === "RETIRO")
+        )) ||
+        (current === "EN_CAMINO" && nextStatus === "ENTREGADO" && order.fulfillmentType === "DELIVERY");
+      if (["RECHAZADO", "CANCELADO"].includes(nextStatus) && order.paymentStatus !== "PENDIENTE") {
+        throw new HttpsError("failed-precondition", "No se puede rechazar ni cancelar un pedido pagado sin un circuito DEMO de devolución.");
+      }
+    } else if (isCustomer) {
+      allowed = current === "RECIBIDO" && nextStatus === "CANCELADO" && order.paymentStatus === "PENDIENTE";
+    } else {
+      throw new HttpsError("permission-denied", "Solo el comprador o el titular del comercio pueden actualizar este pedido.");
+    }
+    if (!allowed) throw new HttpsError("failed-precondition", "La transición no está permitida para el estado actual o la modalidad del pedido.");
+
+    const now = FieldValue.serverTimestamp();
+    const historyRef = orderRef.collection("statusHistory").doc();
+    const update: Record<string, unknown> = { status: nextStatus, updatedAt: now };
+    if (nextStatus === "RECHAZADO") update.rejectionReason = rejectionReason;
+    tx.update(orderRef, update);
+    tx.create(historyRef, {
+      orderId, storeId: order.storeId, environment: "DEMO",
+      actorUid: uid, actorRole: isMerchant ? "COMERCIO" : "COMPRADOR",
+      fromStatus: current, toStatus: nextStatus,
+      ...(nextStatus === "RECHAZADO" ? { reason: rejectionReason } : {}),
+      createdAt: now
+    });
+    return { orderId, status: nextStatus, previousStatus: current, actorRole: isMerchant ? "COMERCIO" : "COMPRADOR" };
+  });
+});
+
 export const issueDemoMerchantClaimCode = onCall({ region: REGION }, async (request) => {
   const uid = requireUid(request);
   const adminSnap = await db.collection("systemAdmins").doc(uid).get();
