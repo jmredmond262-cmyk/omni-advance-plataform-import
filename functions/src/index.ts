@@ -459,7 +459,7 @@ const DEMO_MERCHANT_SEEDS: DemoMerchantSeed[] = [
       {id:"kp_gaseosa_15",name:"Gaseosa cola 1.5L",category:"BEBIDAS",price:2450,originalPrice:2700,inStock:true,unitLabel:"bot.",description:"Bebida cola · botella 1.5 litros"},
       {id:"kp_galletas",name:"Galletitas surtidas 300g",category:"KIOSCO",price:1450,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Paquete familiar"},
       {id:"kp_chocolate",name:"Chocolate con leche 90g",category:"KIOSCO",price:1750,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Tableta individual"},
-      {id:"kp_papas",name:"Papas fritas  |  100g",category:"KIOSCO",price:1650,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Snack salado"},
+      {id:"kp_papas",name:"Papas fritas 100g",category:"KIOSCO",price:1650,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Snack salado"},
       {id:"kp_alfajor",name:"Alfajor triple",category:"KIOSCO",price:1250,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Alfajor de chocolate"},
       {id:"kp_yerba",name:"Yerba mate 500g",category:"ALMACEN",price:2350,originalPrice:null,inStock:true,unitLabel:"paq.",description:"Yerba tradicional"},
       {id:"kp_leche",name:"Leche larga vida 1L",category:"LACTEOS",price:1450,originalPrice:null,inStock:true,unitLabel:"litro",description:"Leche entera"}
@@ -512,7 +512,7 @@ const DEMO_MERCHANT_SEEDS: DemoMerchantSeed[] = [
     id: "demo_supermercado_norte", name: "Supermercado Norte · DEMO", type: "SUPERMERCADO",
     sizeTier: "GRANDE", capacityLabel: "Hasta 30 productos activos · retiro y delivery",
     description: "Supermercado ficticio de mayor escala para probar variedad, stock amplio, múltiples categorías y pedidos grandes.",
-    accentColorHex: 0FF0D9488, hoursText: "Lun. a sáb. · 07:30 a 21:00", openTime: "07:30", closeTime: "21:00",
+    accentColorHex: 0xFF0D9488, hoursText: "Lun. a sáb. · 07:30 a 21:00", openTime: "07:30", closeTime: "21:00",
     products: [
       {id:"sn_leche",name:"Leche entera 1L",category:"LACTEOS",price:1450,originalPrice:null,inStock:true,unitLabel:"litro",description:"Leche larga vida"},
       {id:"sn_yogur",name:"Yogur bebible 1L",category:"LACTEOS",price:2100,originalPrice:null,inStock:true,unitLabel:"bot.",description:"Yogur frutilla"},
@@ -551,7 +551,7 @@ const DEMO_MERCHANT_SEEDS: DemoMerchantSeed[] = [
     id: "demo_tecnologia_pixel", name: "Pixel Lab · Tecnología DEMO", type: "SERVICIOS",
     sizeTier: "ESPECIALIZADO", capacityLabel: "Hasta 10 productos activos · retiro y envío coordinado",
     description: "Tienda ficticia especializada para probar productos tecnológicos, variantes y stock unitario.",
-    accentColorHex: 0FF0A78BFA, hoursText: "Lun. a sáb. · 09:00 a 19:00", openTime: "09:00", closeTime: "19:00",
+    accentColorHex: 0xFFB69CFF, hoursText: "Lun. a sáb. · 09:00 a 19:00", openTime: "09:00", closeTime: "19:00",
     products: [
       {id:"pl_cable",name:"Cable USB-C reforzado 1m",category:"ALMACEN",price:4500,originalPrice:null,inStock:true,unitLabel:"unid.",description:"Cable de carga y datos"},
       {id:"pl_cargador",name:"Cargador USB-C 25W",category:"ALMACEN",price:12500,originalPrice:13900,inStock:true,unitLabel:"unid.",description:"Cargador de pared"},
