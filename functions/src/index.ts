@@ -510,7 +510,7 @@ const DEMO_MERCHANT_SEEDS: DemoMerchantSeed[] = [
   },
   {
     id: "demo_supermercado_norte", name: "Supermercado Norte · DEMO", type: "SUPERMERCADO",
-    sizeTier: "GRANDE", capacityLabel: "Hasta 30 productos activos · retiro y delivery",
+    sizeTier: "GRANDE", capacityLabel: "Hasta 31 productos activos · retiro y delivery",
     description: "Supermercado ficticio de mayor escala para probar variedad, stock amplio, múltiples categorías y pedidos grandes.",
     accentColorHex: 0xFF0D9488, hoursText: "Lun. a sáb. · 07:30 a 21:00", openTime: "07:30", closeTime: "21:00",
     products: [
