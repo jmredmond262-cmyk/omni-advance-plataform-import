@@ -468,7 +468,9 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const profileSnap = await tx.get(profileRef);
     if (!merchantSnap.exists || !profileSnap.exists ||
         profileSnap.get("ownerUid") !== merchantUid ||
-        profileSnap.get("environment") !== "DEMO") {
+        profileSnap.get("environment") !== "DEMO" ||
+        profileSnap.get("seedVersion") !== 1 ||
+        profileSnap.get("storeId") !== storeId) {
       throw new HttpsError("failed-precondition", "La billetera o titularidad del comercio no está disponible.");
     }
 
