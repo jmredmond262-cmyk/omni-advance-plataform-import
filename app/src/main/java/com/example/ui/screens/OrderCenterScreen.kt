@@ -560,7 +560,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         claimingMerchant = true
                         FirebaseFunctions.getInstance("us-central1")
                             .getHttpsCallable("claimDemoMerchant")
-                            .call(mapOf("code" to merchantClaimCode))
+                            .call(mapOf("code" to merchantClaimCode, "storeId" to store.id))
                             .addOnSuccessListener { result ->
                                 val data = result.data as? Map<*, *>
                                 if (data?.get("storeId") == store.id) {
