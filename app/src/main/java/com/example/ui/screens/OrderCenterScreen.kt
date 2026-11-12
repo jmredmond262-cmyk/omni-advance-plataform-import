@@ -154,10 +154,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             screenScope.launch {
                 locatingDelivery = true
                 val location = RealLocationHelper.getCurrentLocation(context)
-                deliveryLatitude = location?.latitude
-                deliveryLongitude = location?.longitude
+                deliveryLatitude = location?.takeIf { it.hasAccuracy() && it.accuracy <= 100f }?.latitude
+                deliveryLongitude = location?.takeIf { it.hasAccuracy() && it.accuracy <= 100f }?.longitude
                 locatingDelivery = false
-                feedback = if (location != null) "Ubicación GPS confirmada para este pedido." else "No se pudo obtener una ubicación GPS reciente. Intentá nuevamente."
+                feedback = if (deliveryLatitude != null && deliveryLongitude != null) "Ubicación GPS confirmada para este pedido." else "La ubicación no tiene precisión suficiente (máximo 100 m). Activá el GPS o intentá desde un lugar abierto."
             }
         } else feedback = "Para verificar la cobertura necesitás autorizar la ubicación mientras usás OMNI."
     }
@@ -436,7 +436,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             UsageAnalyticsRepository.trackEvent(uid, "orders", "STORE_ORDER_CREATED", mapOf("operationId" to orderId, "stage" to "SERVER_VALIDATION_CONFIRMED", "success" to true))
                             sending = false
                             createdOrder = OmniStoreOrder(
-                                orderId, store.id, store.name, merchantUid, uid,
+                                orderId, store.id, response["storeName"] as? String ?: store.name, merchantUid, uid,
                                 profile.fullName, profile.phone, cartLines, confirmedTotal,
                                 "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
                                 cashbackPolicy, subtotal = confirmedSubtotal, deliveryFee = confirmedFee
