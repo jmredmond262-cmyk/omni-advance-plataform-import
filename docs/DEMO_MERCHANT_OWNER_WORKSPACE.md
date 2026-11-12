@@ -63,3 +63,12 @@ Cada transición confirmada genera un documento en `storeOrders/{orderId}/status
 - Comprador y titular pueden desplegar la trazabilidad reciente desde la tarjeta del pedido; se muestran estado, actor, fecha y motivo de rechazo cuando corresponde. La lectura está limitada por reglas al comprador, titular o administrador.
 - El rechazo desde la lista del comercio abre el diálogo de motivo obligatorio (10–240 caracteres), igual que el rechazo desde el QR; no se permite intentar rechazar sin motivo.
 - La captura GPS del comprador aplica el mismo umbral de precisión (hasta 50 m) a latitud y longitud antes de enviar la solicitud.
+
+
+## Devoluciones de pedidos DEMO pagados
+
+- El titular puede iniciar una devolución con motivo obligatorio (10–240 caracteres) desde el panel del comercio para pedidos pagados aún no entregados, incluso si siguen en estado `RECIBIDO`.
+- `OMNI_PAY_DEMO`: una transacción atómica debita el importe total de la billetera del comercio, acredita al comprador el importe neto y revierte el cashback acreditado (saldo, total acumulado, registro de cashback y tope mensual). Si el comercio no tiene saldo suficiente o el cashback ya no está disponible íntegramente para revertir, se bloquea la operación completa sin modificar cuentas.
+- `TARJETA_DEMO`: se marca como reversado el registro de autorización ficticia y se cierra el pedido; no se mueven saldos porque la simulación de tarjeta nunca debitó ni acreditó billeteras.
+- Se crea una operación de devolución idempotente, movimientos identificados en ambas billeteras cuando corresponde y un evento en `statusHistory`. El pedido queda `CANCELADO` con pago `REEMBOLSADA · DEMO`.
+- No se permite la devolución automática de pedidos ya entregados, de pagos con métodos desconocidos ni de comercios reales.
