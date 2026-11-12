@@ -3,6 +3,8 @@ package com.example.ui.screens
 import android.content.Intent
 import android.graphics.Bitmap
 import android.content.ClipData
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Store
+import com.example.data.api.RealLocationHelper
 import com.example.data.wallet.DemoWalletRepository
 import com.example.data.merchant.MerchantProfileRepository
 import com.example.data.wallet.DemoCardGatewayRepository
@@ -49,6 +52,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.util.UUID
 import org.json.JSONObject
+import kotlinx.coroutines.launch
 
 private data class OrderLine(val productId: String, val name: String, val price: Double, val quantity: Int)
 private data class CashbackTerms(
@@ -98,6 +102,7 @@ private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
 @Composable
 fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: () -> Unit, demoMode: Boolean = false) {
     val context = LocalContext.current
+    val screenScope = rememberCoroutineScope()
     val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     val profile by viewModel.userProfile.collectAsState()
     val selectedStore by viewModel.selectedStore.collectAsState()
@@ -141,6 +146,21 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var deliveryAddress by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
+    var deliveryLatitude by remember { mutableStateOf<Double?>(null) }
+    var deliveryLongitude by remember { mutableStateOf<Double?>(null) }
+    var locatingDelivery by remember { mutableStateOf(false) }
+    val deliveryLocationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants.values.any { it }) {
+            screenScope.launch {
+                locatingDelivery = true
+                val location = RealLocationHelper.getCurrentLocation(context)
+                deliveryLatitude = location?.latitude
+                deliveryLongitude = location?.longitude
+                locatingDelivery = false
+                feedback = if (location != null) "Ubicación GPS confirmada para este pedido." else "No se pudo obtener una ubicación GPS reciente. Intentá nuevamente."
+            }
+        } else feedback = "Para verificar la cobertura necesitás autorizar la ubicación mientras usás OMNI."
+    }
     var showRejectReasonDialog by remember { mutableStateOf(false) }
     var rejectReasonInput by remember { mutableStateOf("") }
 
@@ -313,8 +333,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 ||
             total <= 0.0 || total > 50000.0 || itemsSubtotal < store.minimumOrderAmount ||
             (fulfillmentType == "RETIRO" && !store.pickupEnabled) ||
-            (fulfillmentType == "DELIVERY" && (!store.deliveryEnabled || deliveryAddress.isBlank()))) {
-            feedback = "Revisá el pedido: modalidad habilitada, compra mínima OM$ ${store.minimumOrderAmount.toInt()}, máximo 30 productos y dirección obligatoria para delivery."
+            (fulfillmentType == "DELIVERY" && (!store.deliveryEnabled || deliveryAddress.isBlank() || deliveryLatitude == null || deliveryLongitude == null))) {
+            feedback = if (fulfillmentType == "DELIVERY" && (deliveryLatitude == null || deliveryLongitude == null)) "Compartí tu ubicación GPS para comprobar que el domicilio esté dentro del radio del comercio." else "Revisá el pedido: modalidad habilitada, compra mínima OM$ ${store.minimumOrderAmount.toInt()}, máximo 30 productos y dirección obligatoria para delivery."
             return
         }
         sending = true
@@ -382,42 +402,46 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         "capPerPurchase" to cashbackPolicy.capPerPurchase,
                         "monthlyCap" to cashbackPolicy.monthlyCap
                     )
-                    val ref = db.collection("storeOrders").document()
-                    val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
                     val payloadItems = cartLines.map { mapOf(
                         "productId" to it.productId, "name" to it.name,
                         "price" to it.price, "quantity" to it.quantity
                     ) }
-                    ref.set(mapOf(
-                        "storeId" to store.id, "storeName" to store.name,
-                        "environment" to "DEMO",
-                        "merchantUid" to merchantUid, "customerUid" to uid,
-                        "customerName" to profile.fullName, "customerPhone" to profile.phone,
-                        "items" to payloadItems, "subtotal" to itemsSubtotal, "deliveryFee" to deliveryFee, "total" to total,
-                        "cashbackPolicy" to cashbackPolicyData,
-                        "status" to "RECIBIDO", "paymentStatus" to "PENDIENTE",
-                        "paymentMethod" to "PAGO_AL_RETIRAR",
-                        "fulfillmentType" to fulfillmentType, "deliveryAddress" to deliveryAddress.trim(),
-                        "qrNonce" to nonce,
-                        "operationId" to ref.id,
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )).addOnSuccessListener {
-                        UsageAnalyticsRepository.trackEvent(uid, "orders", "STORE_ORDER_CREATED", mapOf("operationId" to ref.id, "stage" to "FIRESTORE_WRITE_CONFIRMED", "success" to true))
-                        sending = false
-                        createdOrder = OmniStoreOrder(
-                            ref.id, store.id, store.name, merchantUid, uid,
-                            profile.fullName, profile.phone, cartLines, total,
-                            "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
-                            cashbackPolicy,
-                            subtotal = itemsSubtotal,
-                            deliveryFee = deliveryFee
-                        )
-                        updateCart(emptyMap())
-                    }.addOnFailureListener { e ->
-                        sending = false
-                        feedback = e.localizedMessage ?: "No se pudo registrar el pedido. Revisá las reglas de Firestore."
+                    val requestData = mutableMapOf<String, Any>(
+                        "storeId" to store.id, "items" to payloadItems,
+                        "fulfillmentType" to fulfillmentType,
+                        "deliveryAddress" to deliveryAddress.trim(),
+                        "customerPhone" to profile.phone
+                    )
+                    if (fulfillmentType == "DELIVERY") {
+                        requestData["deliveryLatitude"] = deliveryLatitude!!
+                        requestData["deliveryLongitude"] = deliveryLongitude!!
                     }
+                    FirebaseFunctions.getInstance("us-central1").getHttpsCallable("createDemoStoreOrder")
+                        .call(requestData)
+                        .addOnSuccessListener { result ->
+                            @Suppress("UNCHECKED_CAST")
+                            val response = result.data as? Map<String, Any?> ?: emptyMap()
+                            val orderId = response["orderId"] as? String
+                            val nonce = response["qrNonce"] as? String
+                            if (orderId.isNullOrBlank() || nonce.isNullOrBlank()) {
+                                sending = false
+                                feedback = "El servidor no devolvió una confirmación válida del pedido."
+                                return@addOnSuccessListener
+                            }
+                            UsageAnalyticsRepository.trackEvent(uid, "orders", "STORE_ORDER_CREATED", mapOf("operationId" to orderId, "stage" to "SERVER_VALIDATION_CONFIRMED", "success" to true))
+                            sending = false
+                            createdOrder = OmniStoreOrder(
+                                orderId, store.id, store.name, merchantUid, uid,
+                                profile.fullName, profile.phone, cartLines, total,
+                                "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
+                                cashbackPolicy, subtotal = itemsSubtotal, deliveryFee = deliveryFee
+                            )
+                            updateCart(emptyMap())
+                        }
+                        .addOnFailureListener { e ->
+                            sending = false
+                            feedback = e.localizedMessage ?: "No se pudo validar y registrar el pedido en el servidor."
+                        }
                 }
             }.addOnFailureListener { e ->
                 sending = false
@@ -741,6 +765,21 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         }
                         if (fulfillmentType == "DELIVERY") {
                             OutlinedTextField(deliveryAddress, { deliveryAddress = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Dirección de entrega") }, singleLine = true)
+                            Button(onClick = {
+                                if (RealLocationHelper.hasLocationPermission(context)) {
+                                    screenScope.launch {
+                                        locatingDelivery = true
+                                        val location = RealLocationHelper.getCurrentLocation(context)
+                                        deliveryLatitude = location?.latitude
+                                        deliveryLongitude = location?.longitude
+                                        locatingDelivery = false
+                                        feedback = if (location != null) "Ubicación GPS lista para validar la cobertura." else "No se pudo obtener la ubicación. Activá el GPS e intentá nuevamente."
+                                    }
+                                } else deliveryLocationPermission.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+                            }, enabled = !locatingDelivery, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (locatingDelivery) "Obteniendo ubicación…" else if (deliveryLatitude != null) "Ubicación GPS confirmada ✓" else "Compartir ubicación para verificar cobertura")
+                            }
+                            Text("Se usa solo para validar este pedido; no se publica en el mapa ni en tu perfil.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                         }
                         if (fulfillmentType == "DELIVERY" && store.deliveryEnabled) {
                             Text(
