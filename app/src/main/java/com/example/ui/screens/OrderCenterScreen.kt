@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.example.model.Store
 import com.example.data.SampleData
 import com.example.data.wallet.DemoWalletRepository
+import com.example.data.merchant.MerchantProfileRepository
 import com.example.data.wallet.DemoCardGatewayRepository
 import com.example.model.StoreProduct
 import com.example.model.ProductCategory
@@ -99,10 +100,14 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     val profile by viewModel.userProfile.collectAsState()
     val selectedStore by viewModel.selectedStore.collectAsState()
     val liveStores by viewModel.stores.collectAsState()
-    // El mercado DEMO usa un catálogo de muestra independiente del directorio real.
-    val availableStores = if (demoMode) SampleData.sampleStores else liveStores
     val managedStore by viewModel.managedStore.collectAsState()
-    val store = if (merchantMode) managedStore else (selectedStore ?: managedStore)
+    var demoStores by remember { mutableStateOf<List<Store>>(emptyList()) }
+    var demoStoresLoading by remember { mutableStateOf(false) }
+    val availableStores = if (demoMode) demoStores else liveStores
+    val selectedDemoStore = demoStores.firstOrNull { it.id == selectedStore?.id } ?: demoStores.firstOrNull()
+    val store = if (merchantMode) managedStore else if (demoMode) {
+        selectedDemoStore ?: (selectedStore ?: managedStore)
+    } else (selectedStore ?: managedStore)
     val db = remember { FirebaseFirestore.getInstance() }
     val walletRepository = remember { DemoWalletRepository() }
     val demoCardGateway = remember { DemoCardGatewayRepository() }
@@ -134,6 +139,25 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var deliveryAddress by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(demoMode) {
+        if (demoMode) {
+            demoStoresLoading = true
+            MerchantProfileRepository.loadDemoStores { result ->
+                demoStoresLoading = false
+                result.onSuccess { loaded ->
+                    demoStores = loaded
+                    if (loaded.isNotEmpty() && loaded.none { it.id == selectedStore?.id }) {
+                        viewModel.selectStoreForOrders(loaded.first())
+                    }
+                }.onFailure { error ->
+                    feedback = error.localizedMessage ?: "No se pudieron cargar los comercios DEMO."
+                }
+            }
+        } else {
+            demoStores = emptyList()
+        }
+    }
     var createdOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var showOrderReview by remember { mutableStateOf(false) }
     var reviewCashbackTerms by remember(store.id) {
@@ -527,7 +551,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver", tint = Color.White) }
             Column(Modifier.weight(1f)) {
                 Text(if (merchantMode) "PANEL DE PEDIDOS" else "PEDIDOS OMNI", color = Color(0xFF57DDF5), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                Text(if (merchantMode) store.name else "Pedido QR · ${store.name}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(if (merchantMode) store.name else if (demoMode && demoStores.isEmpty()) "Mercado DEMO" else "Pedido QR · ${store.name}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -596,11 +620,21 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     FilterChip(
                         selected = candidate.id == store.id,
                         onClick = { if (candidate.id != store.id) viewModel.selectStoreForOrders(candidate) },
-                        label = { Text(candidate.name.substringBefore(" - ").take(22), maxLines = 1) }
+                        label = { Text(candidate.name.substringBefore(" · ").take(22), maxLines = 1) }
                     )
                 }
             }
-            if (store.inventory.none { it.inStock }) Text("Este comercio todavía no publicó productos para pedidos.", color = Color(0xFFFFC978), fontSize = 12.sp)
+            if (demoMode && demoStores.isEmpty()) {
+                Text(
+                    if (demoStoresLoading) "Cargando comercios y catálogos DEMO…" else "Todavía no hay comercios DEMO provisionados. No se mostrarán comercios reales en este espacio.",
+                    color = Color(0xFFFFC978), fontSize = 12.sp
+                )
+            } else if (demoMode) {
+                Text(listOfNotNull(store.demoSizeTier, store.demoCapacityLabel).joinToString(" · "), color = Color(0xFF9AAAC2), fontSize = 10.sp)
+            }
+            if (demoMode && demoStores.isEmpty()) {
+                // No se utiliza el catálogo real como respaldo del mercado de prueba.
+            } else if (store.inventory.none { it.inStock }) Text("Este comercio todavía no publicó productos para pedidos.", color = Color(0xFFFFC978), fontSize = 12.sp)
             else {
                 OutlinedTextField(
                     value = productSearch,
