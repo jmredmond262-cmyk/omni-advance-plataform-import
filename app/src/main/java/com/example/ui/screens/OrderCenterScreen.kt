@@ -154,10 +154,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             screenScope.launch {
                 locatingDelivery = true
                 val location = RealLocationHelper.getCurrentLocation(context)
-                deliveryLatitude = location?.takeIf { it.accuracy > 0f && it.accuracy <= 100f }?.latitude
+                deliveryLatitude = location?.takeIf { it.accuracy > 0f && it.accuracy <= 50f }?.latitude
                 deliveryLongitude = location?.takeIf { it.hasAccuracy() && it.accuracy <= 100f }?.longitude
                 locatingDelivery = false
-                feedback = if (deliveryLatitude != null && deliveryLongitude != null) "Ubicación GPS confirmada para este pedido." else "La ubicación no tiene precisión suficiente (máximo 100 m). Activá el GPS o intentá desde un lugar abierto."
+                feedback = if (deliveryLatitude != null && deliveryLongitude != null) "Ubicación GPS confirmada para este pedido." else "La ubicación no tiene precisión suficiente (máximo 50 m). Activá el GPS o intentá desde un lugar abierto."
             }
         } else feedback = "Para verificar la cobertura necesitás autorizar la ubicación mientras usás OMNI."
     }
@@ -784,7 +784,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             }, enabled = !locatingDelivery, modifier = Modifier.fillMaxWidth()) {
                                 Text(if (locatingDelivery) "Obteniendo ubicación…" else if (deliveryLatitude != null) "Ubicación GPS confirmada ✓" else "Compartir ubicación para verificar cobertura")
                             }
-                            Text("Se usa solo para validar este pedido; no se publica en el mapa ni en tu perfil.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
+                            Text("Compartí la ubicación desde el domicilio de entrega. Se usa solo para validar este pedido; no se publica en el mapa ni en tu perfil.", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                         }
                         if (fulfillmentType == "DELIVERY" && store.deliveryEnabled) {
                             Text(
