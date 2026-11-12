@@ -56,3 +56,10 @@ Las transiciones de pedidos DEMO se ejecutan mediante la callable `updateDemoSto
 - Pedidos pagados no se rechazan ni cancelan hasta contar con un circuito DEMO de devolución.
 
 Cada transición confirmada genera un documento en `storeOrders/{orderId}/statusHistory` con estado anterior/nuevo, actor, rol, comercio, entorno y fecha del servidor. La subcolección es de solo escritura del servidor; los pedidos y su historial existente no se migran ni se sobrescriben.
+
+
+## Ajustes de uso y consulta de pedidos
+
+- Comprador y titular pueden desplegar la trazabilidad reciente desde la tarjeta del pedido; se muestran estado, actor, fecha y motivo de rechazo cuando corresponde. La lectura está limitada por reglas al comprador, titular o administrador.
+- El rechazo desde la lista del comercio abre el diálogo de motivo obligatorio (10–240 caracteres), igual que el rechazo desde el QR; no se permite intentar rechazar sin motivo.
+- La captura GPS del comprador aplica el mismo umbral de precisión (hasta 50 m) a latitud y longitud antes de enviar la solicitud.
