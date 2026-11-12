@@ -157,4 +157,173 @@ export const topUpDemoWallet = onCall({ region: REGION }, async (request) => {
   });
 });
 
+
+/**
+ * Confirma un pedido DEMO y acredita cashback en una única transacción confiable.
+ * El cliente solo envía el ID del pedido: importe, titularidad y condiciones salen de Firestore.
+ */
+export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
+  const customerUid = requireUid(request);
+  const orderId = String(request.data?.orderId || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(orderId)) {
+    throw new HttpsError("invalid-argument", "El identificador del pedido no es válido.");
+  }
+
+  const orderRef = db.collection("storeOrders").doc(orderId);
+  const operationId = `orderpay_${orderId}`;
+  const operationRef = db.collection("walletOperations").doc(operationId);
+  const customerRef = accountRef(customerUid);
+  const customerPaymentRef = customerRef.collection("transactions").doc(operationId);
+
+  return db.runTransaction(async (tx) => {
+    const [orderSnap, customerSnap, operationSnap, customerPaymentSnap] = await Promise.all([
+      tx.get(orderRef), tx.get(customerRef), tx.get(operationRef), tx.get(customerPaymentRef)
+    ]);
+    if (!orderSnap.exists) throw new HttpsError("not-found", "El pedido ya no está disponible.");
+    const order = orderSnap.data()!;
+    if (order.customerUid !== customerUid) {
+      throw new HttpsError("permission-denied", "Solo quien creó el pedido puede pagarlo.");
+    }
+    const merchantUid = String(order.merchantUid || "");
+    const storeId = String(order.storeId || "");
+    if (!merchantUid || !storeId || merchantUid === customerUid || order.environment !== "DEMO") {
+      throw new HttpsError("failed-precondition", "El pedido no pertenece a un comercio DEMO válido.");
+    }
+    const merchantRef = accountRef(merchantUid);
+    const merchantPaymentRef = merchantRef.collection("transactions").doc(operationId);
+    const cashbackRef = db.collection("cashbackAccruals").doc(orderId);
+
+    if (operationSnap.exists || customerPaymentSnap.exists) {
+      const existingMerchantPayment = await tx.get(merchantPaymentRef);
+      const existingCashback = await tx.get(cashbackRef);
+      const previous = operationSnap.data()!;
+      if (previous.orderId !== orderId || previous.senderUid !== customerUid ||
+          previous.recipientUid !== merchantUid || previous.kind !== "QR_PAYMENT" ||
+          !customerPaymentSnap.exists || !existingMerchantPayment.exists ||
+          !existingCashback.exists || order.paymentStatus !== "PAGADA · DEMO") {
+        throw new HttpsError("data-loss", "El pedido tiene un registro de pago incompleto. No se volverá a debitar.");
+      }
+      return {
+        operationId, status: "PEDIDO YA PAGADO · DEMO",
+        duplicate: true, cashbackAmount: Number(existingCashback.get("amount") || 0)
+      };
+    }
+
+    if (!customerSnap.exists) throw new HttpsError("failed-precondition", "Tu billetera DEMO no está inicializada.");
+    if (order.paymentStatus !== "PENDIENTE" ||
+        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || ""))) {
+      throw new HttpsError("failed-precondition", "El pedido ya fue pagado o está cerrado.");
+    }
+    const createdAt = order.createdAt?.toDate?.();
+    if (!createdAt || Date.now() < createdAt.getTime() ||
+        Date.now() - createdAt.getTime() > 24 * 60 * 60 * 1000) {
+      throw new HttpsError("deadline-exceeded", "El pedido venció. Solicitá al comercio uno nuevo.");
+    }
+
+    const profileRef = db.collection("merchantProfiles").doc(storeId);
+    const merchantSnap = await tx.get(merchantRef);
+    const profileSnap = await tx.get(profileRef);
+    if (!merchantSnap.exists || !profileSnap.exists ||
+        profileSnap.get("ownerUid") !== merchantUid ||
+        profileSnap.get("environment") !== "DEMO") {
+      throw new HttpsError("failed-precondition", "La billetera o titularidad del comercio no está disponible.");
+    }
+
+    const amount = Number(order.total);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 50000) {
+      throw new HttpsError("failed-precondition", "El total del pedido no es válido.");
+    }
+    const customerBalance = Number(customerSnap.get("balance") || 0);
+    const merchantBalance = Number(merchantSnap.get("balance") || 0);
+    if (customerBalance < amount) throw new HttpsError("failed-precondition", "Saldo virtual insuficiente.");
+
+    const policy = order.cashbackPolicy && typeof order.cashbackPolicy === "object"
+      ? order.cashbackPolicy as Record<string, unknown> : {};
+    const enabled = policy.enabled === true;
+    const percentage = Number(policy.percentage || 0);
+    if (enabled && (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100)) {
+      throw new HttpsError("failed-precondition", "Las condiciones de cashback guardadas en el pedido no son válidas.");
+    }
+    const capPerPurchase = policy.capPerPurchase == null ? null : Number(policy.capPerPurchase);
+    const monthlyCap = policy.monthlyCap == null ? null : Number(policy.monthlyCap);
+    if ((capPerPurchase !== null && (!Number.isFinite(capPerPurchase) || capPerPurchase <= 0)) ||
+        (monthlyCap !== null && (!Number.isFinite(monthlyCap) || monthlyCap <= 0))) {
+      throw new HttpsError("failed-precondition", "Los topes de cashback del pedido no son válidos.");
+    }
+
+    const dateParts = new Intl.DateTimeFormat("en", {
+      timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit"
+    }).formatToParts(new Date());
+    const year = dateParts.find((part) => part.type === "year")?.value || "";
+    const month = dateParts.find((part) => part.type === "month")?.value || "";
+    const period = `${year}-${month}`;
+    const monthlyRef = db.collection("cashbackMonthly").doc(`${storeId}_${customerUid}_${period}`);
+    const monthlySnap = await tx.get(monthlyRef);
+    const alreadyEarned = Number(monthlySnap.get("earnedTotal") || 0);
+    let cashbackAmount = enabled ? Math.round(amount * percentage) / 100 : 0;
+    if (capPerPurchase !== null) cashbackAmount = Math.min(cashbackAmount, capPerPurchase);
+    if (monthlyCap !== null) cashbackAmount = Math.min(cashbackAmount, Math.max(0, monthlyCap - alreadyEarned));
+    cashbackAmount = Math.round(cashbackAmount * 100) / 100;
+
+    const now = FieldValue.serverTimestamp();
+    const cashbackData = {
+      orderId, storeId, merchantUid, customerUid, period,
+      percentage: enabled ? percentage : 0,
+      orderAmount: amount, amount: cashbackAmount,
+      capPerPurchase, monthlyCap,
+      status: cashbackAmount > 0 ? "ACREDITADO · DEMO" : "SIN_CASHBACK",
+      environment: "DEMO", createdAt: now
+    };
+
+    tx.update(customerRef, {
+      balance: Math.round((customerBalance - amount + cashbackAmount) * 100) / 100,
+      cashbackTotal: Math.round((Number(customerSnap.get("cashbackTotal") || 0) + cashbackAmount) * 100) / 100,
+      lastOperationId: operationId, updatedAt: now
+    });
+    tx.update(merchantRef, {
+      balance: Math.round((merchantBalance + amount) * 100) / 100,
+      lastOperationId: operationId, updatedAt: now
+    });
+    tx.create(operationRef, {
+      operationId, kind: "QR_PAYMENT", senderUid: customerUid,
+      recipientUid: merchantUid, amount, orderId,
+      cashbackAmount, createdAt: now, environment: "DEMO"
+    });
+    tx.create(customerPaymentRef, {
+      operationId, type: "COMPRA_LOCAL", title: "Compra en comercio OMNI",
+      peerUid: merchantUid, peerName: String(order.storeName || "Comercio DEMO"),
+      amount, status: "APROBADA · DEMO", environment: "DEMO", createdAt: now
+    });
+    tx.create(merchantPaymentRef, {
+      operationId, type: "QR_COBRO", title: "Cobro de pedido OMNI",
+      peerUid: customerUid, peerName: String(order.customerName || "Cliente OMNI"),
+      amount, status: "APROBADA · DEMO", environment: "DEMO", createdAt: now
+    });
+    if (cashbackAmount > 0) {
+      tx.create(customerRef.collection("transactions").doc(`cashback_${orderId}`), {
+        operationId: `cashback_${orderId}`, type: "REINTEGRO_CASHBACK",
+        title: `Cashback de ${String(order.storeName || "comercio OMNI")}`,
+        peerUid: merchantUid, peerName: String(order.storeName || "Comercio DEMO"),
+        amount: cashbackAmount, status: "ACREDITADO · DEMO",
+        environment: "DEMO", createdAt: now
+      });
+      tx.set(monthlyRef, {
+        storeId, customerUid, period,
+        earnedTotal: Math.round((alreadyEarned + cashbackAmount) * 100) / 100,
+        updatedAt: now
+      }, { merge: true });
+    }
+    tx.create(cashbackRef, cashbackData);
+    tx.update(orderRef, {
+      paymentStatus: "PAGADA · DEMO", paymentMethod: "OMNI_PAY_DEMO",
+      cashbackAmount, updatedAt: now
+    });
+
+    return {
+      operationId, status: "PEDIDO PAGADO · OMNI PAY DEMO",
+      duplicate: false, cashbackAmount
+    };
+  });
+});
+
 export { omniAdminApi } from "./adminApi.js";
