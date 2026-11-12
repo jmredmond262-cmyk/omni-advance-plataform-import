@@ -1628,6 +1628,30 @@ class MainViewModel : ViewModel() {
         persistManagedStore()
     }
 
+    fun updateManagedStoreLogistics(
+        pickupEnabled: Boolean,
+        deliveryEnabled: Boolean,
+        deliveryRadiusKm: Double,
+        deliveryFee: Double,
+        freeDeliveryFrom: Double?,
+        minimumOrderAmount: Double,
+        estimatedPrepMinutes: Int
+    ) {
+        trackUsageAction("STORE_LOGISTICS_UPDATED", "merchant")
+        val updated = _managedStore.value.copy(
+            pickupEnabled = pickupEnabled,
+            deliveryEnabled = deliveryEnabled,
+            deliveryRadiusKm = deliveryRadiusKm,
+            deliveryFee = deliveryFee,
+            freeDeliveryFrom = freeDeliveryFrom,
+            minimumOrderAmount = minimumOrderAmount,
+            estimatedPrepMinutes = estimatedPrepMinutes
+        )
+        _managedStore.value = updated
+        updateManagedStoreInCollections(updated)
+        persistManagedStore()
+    }
+
     // ==========================================
     // OMNI AI: ASISTENTE INTELIGENTE PROPIO
     // ==========================================
