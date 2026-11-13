@@ -942,15 +942,6 @@ export const confirmDemoCashCollection = onCall({ region: REGION }, async (reque
     if (order.environment !== "DEMO" || order.merchantUid !== uid || !order.storeId) {
       throw new HttpsError("permission-denied", "Solo el titular del comercio DEMO puede registrar este cobro.");
     }
-    if (order.paymentStatus === "PAGADA · EFECTIVO_DEMO" &&
-        order.paymentMethod === "EFECTIVO_DEMO" &&
-        order.cashCollectionConfirmedBy === uid) {
-      return { orderId, confirmed: true, duplicate: true, walletMovement: false };
-    }
-    if (order.paymentStatus !== "PENDIENTE" || order.paymentMethod !== "PAGO_AL_RETIRAR" ||
-        order.status !== "ENTREGADO_POR_COMERCIO") {
-      throw new HttpsError("failed-precondition", "El cobro presencial solo se registra cuando el comercio informó la entrega y el pedido sigue pendiente de pago al retirar/recibir.");
-    }
     const profileRef = db.collection("merchantProfiles").doc(String(order.storeId));
     const profileSnap = await tx.get(profileRef);
     if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
@@ -958,14 +949,85 @@ export const confirmDemoCashCollection = onCall({ region: REGION }, async (reque
         profileSnap.get("ownerUid") !== uid) {
       throw new HttpsError("failed-precondition", "La titularidad DEMO del comercio ya no está habilitada.");
     }
+    const items = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+    const inventory = Array.isArray(profileSnap.get("inventory"))
+      ? profileSnap.get("inventory") as Array<Record<string, unknown>> : [];
+    const nextInventory = [...inventory];
+    const deductions: Array<{productId:string;productName:string;quantity:number;stockBefore:number;stockAfter:number;ref:any}> = [];
+    const seen = new Set<string>();
+    if (items.length === 0 || items.length > 30) {
+      throw new HttpsError("failed-precondition", "El detalle del pedido ya no es válido para cerrar el cobro.");
+    }
+    for (const line of items) {
+      const productId = String(line.productId || "");
+      const quantity = Number(line.quantity);
+      const price = Number(line.price);
+      const product = inventory.find((item) => String(item.id || "") === productId);
+      const stockBefore = Number(product?.stockQuantity);
+      const currentPrice = Number(product?.price);
+      if (!productId || seen.has(productId) || !product ||
+          !Number.isInteger(quantity) || quantity < 1 || quantity > 999 ||
+          !Number.isInteger(stockBefore) || stockBefore < quantity ||
+          product.inStock !== (stockBefore > 0) ||
+          !Number.isFinite(price) || price <= 0 || !Number.isFinite(currentPrice) ||
+          Math.abs(currentPrice - price) >= 0.005 ||
+          String(line.name || "") !== String(product.name || "")) {
+        throw new HttpsError("failed-precondition", "El catálogo, el stock o el detalle del pedido cambió. No se registró el cobro.");
+      }
+      seen.add(productId);
+      const productIndex = nextInventory.findIndex((item) => String(item.id || "") === productId);
+      const stockAfter = stockBefore - quantity;
+      nextInventory[productIndex] = { ...product, stockQuantity: stockAfter, inStock: stockAfter > 0 };
+      const movementRef = profileRef.collection("inventoryMovements")
+        .doc(inventoryMovementId("sale", orderId, productId));
+      deductions.push({
+        productId, productName: String(product.name || ""), quantity,
+        stockBefore, stockAfter, ref: movementRef
+      });
+    }
+    const movementSnaps = await Promise.all(deductions.map((item) => tx.get(item.ref)));
+    if (order.paymentStatus === "PAGADA · EFECTIVO_DEMO" &&
+        order.paymentMethod === "EFECTIVO_DEMO" &&
+        order.cashCollectionConfirmedBy === uid) {
+      if (order.inventoryDeducted !== true ||
+          movementSnaps.length !== deductions.length ||
+          movementSnaps.some((snapshot) => !snapshot.exists ||
+            snapshot.get("type") !== "VENTA_EFECTIVO_DEMO")) {
+        throw new HttpsError("data-loss", "El cobro figura confirmado pero falta su descuento de inventario.");
+      }
+      return { orderId, confirmed: true, duplicate: true, walletMovement: false };
+    }
+    if (order.paymentStatus !== "PENDIENTE" || order.paymentMethod !== "PAGO_AL_RETIRAR" ||
+        order.status !== "ENTREGADO_POR_COMERCIO") {
+      throw new HttpsError("failed-precondition", "El cobro presencial solo se registra cuando el comercio informó la entrega y el pedido sigue pendiente de pago al retirar/recibir.");
+    }
+    if (movementSnaps.some((snapshot) => snapshot.exists)) {
+      throw new HttpsError("data-loss", "Ya existe un movimiento de stock para este pedido sin un cobro presencial confirmado.");
+    }
+    const total = Number(order.total);
+    if (!Number.isFinite(total) || total <= 0 || total > 50000) {
+      throw new HttpsError("failed-precondition", "El importe del pedido no es válido.");
+    }
     const now = FieldValue.serverTimestamp();
+    tx.update(profileRef, { inventory: nextInventory, inventoryUpdatedAt: now });
+    for (const item of deductions) {
+      tx.create(item.ref, {
+        movementId: item.ref.id, storeId: String(order.storeId), orderId,
+        productId: item.productId, productName: item.productName,
+        type: "VENTA_EFECTIVO_DEMO", quantityDelta: -item.quantity,
+        stockBefore: item.stockBefore, stockAfter: item.stockAfter,
+        actorUid: uid, paymentMethod: "EFECTIVO_DEMO",
+        environment: "DEMO", createdAt: now
+      });
+    }
     const historyRef = orderRef.collection("statusHistory").doc();
     tx.update(orderRef, {
       paymentStatus: "PAGADA · EFECTIVO_DEMO",
       paymentMethod: "EFECTIVO_DEMO",
       cashCollectionConfirmedAt: now,
       cashCollectionConfirmedBy: uid,
-      cashCollectionAmount: Number(order.total || 0),
+      cashCollectionAmount: total,
+      inventoryDeducted: true,
       updatedAt: now
     });
     tx.create(historyRef, {
