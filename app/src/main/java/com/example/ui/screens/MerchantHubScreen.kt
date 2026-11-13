@@ -117,6 +117,15 @@ fun MerchantHubScreen(
     val merchantProfileMessage by viewModel.merchantProfileMessage.collectAsState()
     val merchantProfileLoading by viewModel.merchantProfileLoadingState.collectAsState()
     val inventoryMovements = remember(store.id) { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    val merchantOrders = remember(store.id) { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    DisposableEffect(store.id) {
+        val registration = FirebaseFirestore.getInstance().collection("storeOrders")
+            .whereEqualTo("storeId", store.id).limit(300)
+            .addSnapshotListener { snapshot, _ ->
+                merchantOrders.value = snapshot?.documents?.map { it.data ?: emptyMap() } ?: emptyList()
+            }
+        onDispose { registration.remove() }
+    }
     DisposableEffect(store.id) {
         val registration = FirebaseFirestore.getInstance()
             .collection("merchantProfiles").document(store.id)
@@ -359,6 +368,24 @@ fun MerchantHubScreen(
                         fontSize = 11.sp,
                         modifier = Modifier.padding(12.dp)
                     )
+                }
+            }
+        }
+        item {
+            val orders = merchantOrders.value
+            val paidOrders = orders.filter { (it["paymentStatus"] as? String)?.startsWith("PAGADA") == true }
+            val refundedOrders = orders.filter { (it["paymentStatus"] as? String) == "REEMBOLSADA · DEMO" }
+            val grossSales = paidOrders.sumOf { (it["total"] as? Number)?.toDouble() ?: 0.0 }
+            val omniPay = paidOrders.filter { it["paymentMethod"] == "OMNI_PAY_DEMO" }.sumOf { (it["total"] as? Number)?.toDouble() ?: 0.0 }
+            val cardSales = paidOrders.filter { it["paymentMethod"] == "TARJETA_DEMO" }.sumOf { (it["total"] as? Number)?.toDouble() ?: 0.0 }
+            val cashSales = paidOrders.filter { it["paymentMethod"] == "EFECTIVO_DEMO" }.sumOf { (it["total"] as? Number)?.toDouble() ?: 0.0 }
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B30)), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("Resumen comercial · histórico DEMO", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Ventas confirmadas: OM$ ${String.format("%,.2f", grossSales)}", color = EmeraldPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("${orders.size} pedidos · ${paidOrders.size} cobros confirmados · ${refundedOrders.size} devoluciones", color = Color(0xFFB8C8D9), fontSize = 10.sp)
+                    Text("OMNI Pay: OM$ ${String.format("%,.2f", omniPay)} · Tarjeta DEMO: OM$ ${String.format("%,.2f", cardSales)} · Efectivo DEMO: OM$ ${String.format("%,.2f", cashSales)}", color = Color(0xFF9CB5CC), fontSize = 9.sp)
+                    Text("Importes informativos del entorno DEMO. Efectivo y tarjeta no representan acreditaciones en billetera.", color = Color(0xFFFFC978), fontSize = 9.sp)
                 }
             }
         }
