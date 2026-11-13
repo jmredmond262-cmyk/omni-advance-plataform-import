@@ -297,6 +297,7 @@ object MerchantProfileRepository {
             )
         } ?: base.comboDeals
 
+        val isDemoInventory = snapshot.getString("environment") == "DEMO"
         val products = (snapshot.get("inventory") as? List<*>)?.mapNotNull { raw ->
             val map = raw as? Map<*, *> ?: return@mapNotNull null
             val categoryName = map["category"] as? String ?: ProductCategory.ALMACEN.name
@@ -307,7 +308,9 @@ object MerchantProfileRepository {
                 category = category,
                 price = (map["price"] as? Number)?.toDouble() ?: 0.0,
                 originalPrice = (map["originalPrice"] as? Number)?.toDouble(),
-                inStock = ((map["stockQuantity"] as? Number)?.toInt() ?: 0) > 0,
+                inStock = if (isDemoInventory && map["stockQuantity"] is Number) {
+                    ((map["stockQuantity"] as? Number)?.toInt() ?: 0) > 0
+                } else map["inStock"] as? Boolean ?: true,
                 stockQuantity = (map["stockQuantity"] as? Number)?.toInt() ?: 0,
                 unitLabel = map["unitLabel"] as? String ?: "unid.",
                 photoUri = map["photoUri"] as? String,
