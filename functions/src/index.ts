@@ -821,7 +821,9 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
           ]);
           const originalAmount = Number(order.refundAmount);
           const cashbackReversed = Number(order.cashbackReversed ?? 0);
-          if (!merchantRefundSnap.exists || !customerRefundSnap.exists ||
+          if (existingRefundOperation.get("kind") !== "ORDER_REFUND" ||
+              Number(existingRefundOperation.get("amount")) !== originalAmount ||
+              !merchantRefundSnap.exists || !customerRefundSnap.exists ||
               Number(merchantRefundSnap.get("amount")) !== -originalAmount ||
               Number(customerRefundSnap.get("amount")) !== originalAmount - cashbackReversed ||
               (cashbackReversed > 0
