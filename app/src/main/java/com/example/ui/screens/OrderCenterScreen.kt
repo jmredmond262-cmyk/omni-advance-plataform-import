@@ -1279,13 +1279,18 @@ private fun OrderStatusCard(
     val context = LocalContext.current
     var history by remember(order.id) { mutableStateOf<List<OrderStatusEvent>>(emptyList()) }
     var historyExpanded by remember(order.id) { mutableStateOf(false) }
+    var historyError by remember(order.id) { mutableStateOf<String?>(null) }
     DisposableEffect(order.id) {
         val listener = FirebaseFirestore.getInstance()
             .collection("storeOrders").document(order.id)
             .collection("statusHistory").orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(8)
-            .addSnapshotListener { snapshot, _ ->
-                history = snapshot?.documents.orEmpty().map { doc ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    historyError = error.localizedMessage ?: "No se pudo cargar la trazabilidad."
+                } else {
+                    historyError = null
+                    history = snapshot?.documents.orEmpty().map { doc ->
                     OrderStatusEvent(
                         fromStatus = doc.getString("fromStatus").orEmpty(),
                         toStatus = doc.getString("toStatus").orEmpty(),
@@ -1298,6 +1303,7 @@ private fun OrderStatusCard(
                         note = doc.getString("note").orEmpty(),
                         createdAt = doc.getTimestamp("createdAt")
                     )
+                    }
                 }
             }
         onDispose { listener.remove() }
@@ -1354,7 +1360,9 @@ private fun OrderStatusCard(
                 Text(if (historyExpanded) "Ocultar trazabilidad" else "Ver trazabilidad del pedido", color = Color(0xFF57DDF5), fontSize = 10.sp)
             }
             if (historyExpanded) {
-                if (history.isEmpty()) {
+                if (historyError != null) {
+                    Text("No se pudo consultar el historial: $historyError", color = Color(0xFFFFC978), fontSize = 9.sp)
+                } else if (history.isEmpty()) {
                     Text("Todavía no hay cambios de estado registrados.", color = Color(0xFF9AAAC2), fontSize = 9.sp)
                 } else {
                     history.forEach { event ->
