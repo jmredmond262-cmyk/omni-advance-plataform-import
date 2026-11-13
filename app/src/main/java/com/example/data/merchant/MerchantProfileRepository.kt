@@ -79,6 +79,7 @@ object MerchantProfileRepository {
             if (product.unitLabel.trim().isEmpty() || product.unitLabel.length > 24) return "$label: revisá la unidad de venta."
             if (product.barcode != null && product.barcode.length > 64) return "$label: el código de barras supera 64 caracteres."
             if (product.description.length > 500) return "$label: la descripción supera 500 caracteres."
+            if (product.stockQuantity !in 0..100000 || product.inStock != (product.stockQuantity > 0)) return "$label: el stock debe ser un entero entre 0 y 100.000 y coincidir con la disponibilidad."
         }
         store.comboDeals.forEachIndexed { index, combo ->
             if (combo.title.trim().length !in 2..80) return "Combo ${index + 1}: el título debe tener entre 2 y 80 caracteres."
@@ -151,6 +152,7 @@ object MerchantProfileRepository {
                     "price" to product.price,
                     "originalPrice" to product.originalPrice,
                     "inStock" to product.inStock,
+                    "stockQuantity" to product.stockQuantity,
                     "unitLabel" to product.unitLabel,
                     "photoUri" to product.photoUri,
                     "barcode" to product.barcode,
@@ -305,7 +307,8 @@ object MerchantProfileRepository {
                 category = category,
                 price = (map["price"] as? Number)?.toDouble() ?: 0.0,
                 originalPrice = (map["originalPrice"] as? Number)?.toDouble(),
-                inStock = map["inStock"] as? Boolean ?: true,
+                inStock = ((map["stockQuantity"] as? Number)?.toInt() ?: 0) > 0,
+                stockQuantity = (map["stockQuantity"] as? Number)?.toInt() ?: 0,
                 unitLabel = map["unitLabel"] as? String ?: "unid.",
                 photoUri = map["photoUri"] as? String,
                 barcode = map["barcode"] as? String,
