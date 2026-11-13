@@ -382,14 +382,14 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     val visibleProducts = store.inventory.filter { product ->
-        product.inStock &&
+        product.inStock && product.stockQuantity > 0 &&
             (selectedProductCategory == null || product.category == selectedProductCategory) &&
             (productSearch.isBlank() || product.name.contains(productSearch.trim(), ignoreCase = true) || product.category.displayName.contains(productSearch.trim(), ignoreCase = true))
     }
     val cartLines = if (demoMode && demoStores.isEmpty()) emptyList() else store.inventory.filter {
-        (cart[it.id] ?: 0) > 0 && it.inStock
+        (cart[it.id] ?: 0) > 0 && it.inStock && it.stockQuantity > 0
     }.map {
-        OrderLine(it.id, it.name, it.price, cart[it.id] ?: 0)
+        OrderLine(it.id, it.name, it.price, minOf(cart[it.id] ?: 0, it.stockQuantity))
     }
     val itemsSubtotal = cartLines.sumOf { it.price * it.quantity }
     val deliveryFee = if (fulfillmentType == "DELIVERY" && (store.freeDeliveryFrom == null || itemsSubtotal < store.freeDeliveryFrom)) store.deliveryFee else 0.0
@@ -900,10 +900,13 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 visibleProducts.forEach { product ->
                     OrderProductRow(product, cart[product.id] ?: 0,
                         onAdd = {
+                            val nextQuantity = (cart[product.id] ?: 0) + 1
                             if (!cart.containsKey(product.id) && cart.size >= 30) {
                                 feedback = "El pedido admite hasta 30 productos distintos."
+                            } else if (nextQuantity > product.stockQuantity) {
+                                feedback = "Solo quedan ${product.stockQuantity} unidades de ${product.name}."
                             } else {
-                                updateCart(cart + (product.id to ((cart[product.id] ?: 0) + 1)))
+                                updateCart(cart + (product.id to nextQuantity))
                             }
                         },
                         onRemove = {
@@ -1294,10 +1297,11 @@ private fun OrderProductRow(product: StoreProduct, quantity: Int, onAdd: () -> U
             Column(Modifier.weight(1f)) {
                 Text(product.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Text("OM$ ${String.format("%,.2f", product.price)} · ${product.unitLabel}", color = Color(0xFF57DDF5), fontSize = 10.sp)
+                Text("Disponibles: ${product.stockQuantity}", color = Color(0xFF9AAAC2), fontSize = 9.sp)
             }
             IconButton(onClick = onRemove, enabled = quantity > 0) { Icon(Icons.Default.Remove, "Quitar", tint = Color(0xFFB8C8D9)) }
             Text(quantity.toString(), color = Color.White, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "Agregar", tint = Color(0xFF57DDF5)) }
+            IconButton(onClick = onAdd, enabled = quantity < product.stockQuantity) { Icon(Icons.Default.Add, "Agregar", tint = Color(0xFF57DDF5)) }
         }
     }
 }
