@@ -286,7 +286,10 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
   }
   const orderRef = db.collection("storeOrders").doc();
   const qrNonce = randomUUID().replace(/-/g, "") + randomBytes(8).toString("hex");
-  await orderRef.create({
+  const createdAt = FieldValue.serverTimestamp();
+  const initialHistoryRef = orderRef.collection("statusHistory").doc();
+  const createBatch = db.batch();
+  createBatch.create(orderRef, {
     storeId, storeName: String(profileSnap.get("storeName") || "Comercio DEMO"),
     environment: "DEMO", merchantUid, customerUid,
     customerName: safeName(request.auth?.token.name),
@@ -297,8 +300,17 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
     ...(deliveryLatitude != null && deliveryLongitude != null
       ? { deliveryLatitude, deliveryLongitude } : {}),
     qrNonce, operationId: orderRef.id,
-    createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    createdAt, updatedAt: createdAt
   });
+  createBatch.create(initialHistoryRef, {
+    orderId: orderRef.id, storeId, environment: "DEMO",
+    actorUid: customerUid, actorRole: "COMPRADOR",
+    fromStatus: "", toStatus: "RECIBIDO",
+    eventType: "ESTADO_PEDIDO",
+    note: "Pedido creado y enviado al comercio",
+    createdAt
+  });
+  await createBatch.commit();
   return { orderId: orderRef.id, qrNonce, subtotal, deliveryFee, total, items: normalizedItems,
     storeId, storeName: String(profileSnap.get("storeName") || "Comercio DEMO"), merchantUid,
     cashbackPolicy, deliveryLatitude, deliveryLongitude };
