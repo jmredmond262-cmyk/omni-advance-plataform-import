@@ -706,20 +706,26 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     fun cancelCustomerOrder(order: OmniStoreOrder) {
+        if (order.id in statusUpdatingOrderIds) return
         if (order.customerUid != uid || order.status != "RECIBIDO" || order.paymentStatus != "PENDIENTE") {
             feedback = "Solo podés cancelar un pedido propio, pendiente de pago y todavía no aceptado."
             return
         }
+        statusUpdatingOrderIds = statusUpdatingOrderIds + order.id
         FirebaseFunctions.getInstance("us-central1")
             .getHttpsCallable("updateDemoStoreOrderStatus")
             .call(mapOf("orderId" to order.id, "nextStatus" to "CANCELADO"))
             .addOnSuccessListener {
+                statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
                 UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_CANCELLED_BY_CUSTOMER", mapOf("operationId" to order.id, "stage" to "CUSTOMER_CANCELLATION_CONFIRMED", "success" to true))
                 orders = orders.map { current -> if (current.id == order.id) current.copy(status = "CANCELADO") else current }
                 if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO")
                 feedback = "El pedido fue cancelado."
             }
-            .addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo cancelar el pedido." }
+            .addOnFailureListener {
+                statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
+                feedback = it.localizedMessage ?: "No se pudo cancelar el pedido. Podés reintentar sin duplicar el cambio."
+            }
     }
 
     Column(Modifier.fillMaxSize().background(Color(0xFF070A14)).verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -968,6 +974,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         OrderStatusCard(
                             order, merchantMode = false,
                             onAdvance = { next -> if (next == "CANCELADO") cancelCustomerOrder(order) },
+                            statusUpdating = order.id in statusUpdatingOrderIds,
                             onPay = { payOrderDemo(order) },
                             onPayWithDemoCard = if (order.environment == "DEMO") ({ selectedCardOrder = order }) else null,
                             paying = payingOrderId == order.id
@@ -1444,8 +1451,8 @@ private fun OrderStatusCard(
                 }) { Text("Contactar cliente por WhatsApp", color = Color(0xFF57DDF5), fontSize = 10.sp) }
             }
             if (!merchantMode && order.status == "RECIBIDO") {
-                OutlinedButton(onClick = { onAdvance("CANCELADO") }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Cancelar pedido", fontSize = 10.sp)
+                OutlinedButton(onClick = { onAdvance("CANCELADO") }, enabled = !statusUpdating, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (statusUpdating) "Cancelando pedido…" else "Cancelar pedido", fontSize = 10.sp)
                 }
             }
             if (merchantMode && next.isNotBlank()) {
