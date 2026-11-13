@@ -361,6 +361,15 @@ service cloud.firestore {
     }
 
     // QR codes identify orders only. They never confirm payment.
+    match /storeReceipts/{receiptId} {
+      allow read: if signedIn() && (
+        resource.data.customerUid == request.auth.uid
+        || resource.data.merchantUid == request.auth.uid
+        || isSystemAdmin()
+      );
+      allow create, update, delete: if false;
+    }
+
     match /storeOrders/{orderId} {
       function merchantProfilePath() {
         return /databases/$(database)/documents/merchantProfiles/$(resource.data.storeId);
