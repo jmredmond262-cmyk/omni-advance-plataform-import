@@ -324,15 +324,41 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         .filter { !merchantMode || it.storeId == store.id }
                         .sortedByDescending { it.id }
                     orders = loadedOrders
+                    // Reconciliación al abrir/recibir cambios: la orden puede haberse
+                    // pagado en el servidor aunque el cliente haya perdido la respuesta.
                     loadedOrders.filter { it.paymentStatus == "PENDIENTE" }.forEach { pendingOrder ->
-                        db.collection("walletOperations")
+                        val operationQuery = db.collection("walletOperations")
                             .whereEqualTo(if (merchantMode) "recipientUid" else "senderUid", uid)
                             .whereEqualTo("orderId", pendingOrder.id)
+                            .limit(1)
+                        operationQuery.get().addOnSuccessListener { payment ->
+                            val operation = payment.documents.firstOrNull()
+                            if (operation != null && operation.getString("kind") == "QR_PAYMENT") {
+                                orders = orders.map { current ->
+                                    if (current.id == pendingOrder.id && current.paymentStatus == "PENDIENTE") {
+                                        current.copy(
+                                            paymentStatus = "PAGADA · DEMO",
+                                            paymentMethod = "OMNI_PAY_DEMO"
+                                        )
+                                    } else current
+                                }
+                            }
+                        }
+                        db.collection("demoCardPayments")
+                            .whereEqualTo("orderId", pendingOrder.id)
+                            .whereEqualTo("customerUid", pendingOrder.customerUid)
+                            .whereEqualTo("approved", true)
                             .limit(1).get()
-                            .addOnSuccessListener { payment ->
-                                if (!payment.isEmpty) {
+                            .addOnSuccessListener { payments ->
+                                val cardPayment = payments.documents.firstOrNull()
+                                if (cardPayment != null && cardPayment.getString("status") == "APROBADA · DEMO") {
                                     orders = orders.map { current ->
-                                        if (current.id == pendingOrder.id) current.copy(paymentStatus = "PAGADA · DEMO") else current
+                                        if (current.id == pendingOrder.id && current.paymentStatus == "PENDIENTE") {
+                                            current.copy(
+                                                paymentStatus = "PAGADA · DEMO",
+                                                paymentMethod = "TARJETA_DEMO"
+                                            )
+                                        } else current
                                     }
                                 }
                             }
