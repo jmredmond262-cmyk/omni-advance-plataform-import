@@ -653,6 +653,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next", mapOf("operationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
                 orders = orders.map { current -> if (current.id == order.id) current.copy(status = next, rejectionReason = rejectionReason.trim()) else current }
                 if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next, rejectionReason = rejectionReason.trim())
+                if (next == "RECHAZADO") {
+                    showRejectReasonDialog = false
+                    selectedScannedOrder = null
+                }
                 feedback = "Pedido actualizado: $next."
             }
             .addOnFailureListener {
@@ -1096,7 +1100,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
 
     if (showRejectReasonDialog && selectedScannedOrder != null) {
         AlertDialog(
-            onDismissRequest = { showRejectReasonDialog = false },
+            onDismissRequest = {
+                val orderId = selectedScannedOrder?.id
+                if (orderId == null || orderId !in statusUpdatingOrderIds) showRejectReasonDialog = false
+            },
             containerColor = Color(0xFF101B30),
             title = { Text("Motivo del rechazo", color = Color.White) },
             text = {
@@ -1114,17 +1121,21 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             },
             confirmButton = {
                 TextButton(
-                    enabled = rejectReasonInput.trim().length in 10..240,
+                    enabled = rejectReasonInput.trim().length in 10..240 &&
+                        (selectedScannedOrder?.id !in statusUpdatingOrderIds),
                     onClick = {
                         val order = selectedScannedOrder ?: return@TextButton
-                        showRejectReasonDialog = false
                         advanceOrder(order, "RECHAZADO", rejectReasonInput)
-                        selectedScannedOrder = null
                     }
-                ) { Text("Confirmar rechazo") }
+                ) {
+                    Text(if (selectedScannedOrder?.id in statusUpdatingOrderIds) "Registrando rechazo…" else "Confirmar rechazo")
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showRejectReasonDialog = false }) { Text("Volver") }
+                TextButton(
+                    enabled = selectedScannedOrder?.id !in statusUpdatingOrderIds,
+                    onClick = { showRejectReasonDialog = false }
+                ) { Text("Volver") }
             }
         )
     }
