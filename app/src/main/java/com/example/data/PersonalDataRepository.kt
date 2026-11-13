@@ -11,6 +11,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Source
 
 data class PersonalSyncResult<T>(
     val value: T,
@@ -149,9 +150,15 @@ class PersonalDataRepository(
     }
 
     fun replaceShoppingItems(uid: String, items: List<NeedItem>, callback: (Result<Unit>) -> Unit = {}) {
+        val ids = items.map { it.id }
+        if (ids.any { it.isBlank() } || ids.toSet().size != ids.size) {
+            callback(Result.failure(IllegalArgumentException("La lista contiene identificadores vacíos o duplicados.")))
+            return
+        }
         val collection = user(uid).collection("shoppingListItems")
-        collection.get().addOnSuccessListener { snapshot ->
-            val nextIds = items.map { it.id }.toSet()
+        // A cached/incomplete collection must never be used as the basis for deleting remote items.
+        collection.get(Source.SERVER).addOnSuccessListener { snapshot ->
+            val nextIds = ids.toSet()
             val staleDocuments = snapshot.documents.filter { it.id !in nextIds }
             if (staleDocuments.size + items.size > 450) {
                 callback(Result.failure(IllegalStateException("La lista supera el límite seguro de elementos para una sola actualización.")))
