@@ -637,10 +637,26 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 refundInProgress = false
                 val data = result.data as? Map<*, *>
                 val paymentMethod = data?.get("paymentMethod") as? String ?: order.paymentMethod
+                val refundedAmount = (data?.get("refundedAmount") as? Number)?.toDouble() ?: order.total
+                val cashbackReversed = (data?.get("cashbackReversed") as? Number)?.toDouble() ?: 0.0
                 orders = orders.map { current ->
-                    if (current.id == order.id) current.copy(status = "CANCELADO", paymentStatus = "REEMBOLSADA · DEMO", cashbackAmount = 0.0) else current
+                    if (current.id == order.id) current.copy(
+                        status = "CANCELADO",
+                        paymentStatus = "REEMBOLSADA · DEMO",
+                        cashbackAmount = 0.0,
+                        refundReason = reason.trim(),
+                        refundAmount = refundedAmount,
+                        cashbackReversed = cashbackReversed
+                    ) else current
                 }
-                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO", paymentStatus = "REEMBOLSADA · DEMO", cashbackAmount = 0.0)
+                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(
+                    status = "CANCELADO",
+                    paymentStatus = "REEMBOLSADA · DEMO",
+                    cashbackAmount = 0.0,
+                    refundReason = reason.trim(),
+                    refundAmount = refundedAmount,
+                    cashbackReversed = cashbackReversed
+                )
                 UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_REFUNDED", mapOf("operationId" to order.id, "stage" to "REFUND_CONFIRMED", "paymentMethod" to paymentMethod, "success" to true))
                 selectedRefundOrder = null
                 feedback = if (paymentMethod == "TARJETA_DEMO") "Se anuló la simulación de tarjeta. No hubo movimientos de billetera." else "Devolución DEMO confirmada. Se revirtieron el pago y el cashback en forma atómica."
