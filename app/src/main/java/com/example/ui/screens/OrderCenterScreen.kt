@@ -813,6 +813,44 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             }
     }
 
+    fun confirmCashCollection(order: OmniStoreOrder) {
+        if (order.id in statusUpdatingOrderIds) return
+        if (!merchantMode || order.merchantUid != uid || order.environment != "DEMO" ||
+            order.status != "ENTREGADO_POR_COMERCIO" || order.paymentStatus != "PENDIENTE" ||
+            order.paymentMethod != "PAGO_AL_RETIRAR") {
+            feedback = "El cobro presencial solo puede registrarlo el titular cuando informó la entrega y el pedido sigue pendiente."
+            return
+        }
+        statusUpdatingOrderIds = statusUpdatingOrderIds + order.id
+        FirebaseFunctions.getInstance("us-central1")
+            .getHttpsCallable("confirmDemoCashCollection")
+            .call(mapOf("orderId" to order.id))
+            .addOnSuccessListener {
+                statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
+                orders = orders.map { current ->
+                    if (current.id == order.id) current.copy(
+                        paymentStatus = "PAGADA · EFECTIVO_DEMO",
+                        paymentMethod = "EFECTIVO_DEMO"
+                    ) else current
+                }
+                if (selectedScannedOrder?.id == order.id) {
+                    selectedScannedOrder = selectedScannedOrder?.copy(
+                        paymentStatus = "PAGADA · EFECTIVO_DEMO",
+                        paymentMethod = "EFECTIVO_DEMO"
+                    )
+                }
+                UsageAnalyticsRepository.trackEvent(
+                    uid, "orders", "ORDER_CASH_COLLECTION_CONFIRMED",
+                    mapOf("operationId" to order.id, "stage" to "CASH_COLLECTION_CONFIRMED", "success" to true)
+                )
+                feedback = "Cobro presencial registrado. No se modificaron las billeteras OMNI; el comprador ya puede confirmar la recepción."
+            }
+            .addOnFailureListener { error ->
+                statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
+                feedback = error.localizedMessage ?: "No se pudo registrar el cobro presencial. Podés reintentar sin duplicarlo."
+            }
+    }
+
     Column(Modifier.fillMaxSize().background(Color(0xFF070A14)).verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver", tint = Color.White) }
@@ -1066,6 +1104,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             onPay = { payOrderDemo(order) },
                             onPayWithDemoCard = if (order.environment == "DEMO") ({ selectedCardOrder = order }) else null,
                             onConfirmReceipt = { confirmCustomerReceipt(order) },
+                            onConfirmCashCollection = { confirmCashCollection(order) },
                             paying = payingOrderId == order.id
                         )
                     }
@@ -1361,7 +1400,8 @@ private fun OrderStatusCard(
     statusUpdating: Boolean = false,
     onReject: (() -> Unit)? = null,
     onRefund: (() -> Unit)? = null,
-    onConfirmReceipt: (() -> Unit)? = null
+    onConfirmReceipt: (() -> Unit)? = null,
+    onConfirmCashCollection: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var history by remember(order.id) { mutableStateOf<List<OrderStatusEvent>>(emptyList()) }
@@ -1497,7 +1537,11 @@ private fun OrderStatusCard(
                             if (event.note.isNotBlank()) Text(event.note, color = Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
                         if (event.eventType in listOf("PAYMENT", "PAYMENT_ATTEMPT") && event.note.isNotBlank()) {
-                            val method = if (event.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"
+                            val method = when (event.paymentMethod) {
+                                "TARJETA_DEMO" -> "Tarjeta DEMO"
+                                "EFECTIVO_DEMO" -> "Cobro presencial DEMO"
+                                else -> "OMNI Pay DEMO"
+                            }
                             Text("$method · ${event.note}", color = if (event.eventType == "PAYMENT_ATTEMPT") Color(0xFFFFC978) else Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
                         if (event.reason.isNotBlank()) Text("Motivo: ${event.reason}", color = Color(0xFFFFC978), fontSize = 9.sp)
@@ -1529,6 +1573,7 @@ private fun OrderStatusCard(
                 order.paymentStatus == "PENDIENTE" -> "Aún sin método confirmado"
                 order.paymentMethod == "OMNI_PAY_DEMO" -> "OMNI Pay DEMO"
                 order.paymentMethod == "TARJETA_DEMO" -> "Tarjeta DEMO"
+                order.paymentMethod == "EFECTIVO_DEMO" -> "Cobro presencial DEMO · sin movimiento de billetera"
                 else -> "Pago al retirar/recibir"
             }
             Text(
@@ -1589,6 +1634,11 @@ private fun OrderStatusCard(
             if (!merchantMode && order.status == "RECIBIDO") {
                 OutlinedButton(onClick = { onAdvance("CANCELADO") }, enabled = !statusUpdating, modifier = Modifier.fillMaxWidth()) {
                     Text(if (statusUpdating) "Cancelando pedido…" else "Cancelar pedido", fontSize = 10.sp)
+                }
+            }
+            if (merchantMode && order.status == "ENTREGADO_POR_COMERCIO" && order.paymentStatus == "PENDIENTE" && order.paymentMethod == "PAGO_AL_RETIRAR" && onConfirmCashCollection != null) {
+                OutlinedButton(onClick = onConfirmCashCollection, enabled = !statusUpdating, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (statusUpdating) "Registrando cobro…" else "Confirmar cobro presencial", fontSize = 10.sp)
                 }
             }
             if (!merchantMode && order.status == "ENTREGADO_POR_COMERCIO" && onConfirmReceipt != null) {
