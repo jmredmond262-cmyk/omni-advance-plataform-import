@@ -351,6 +351,15 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Inventory movements are server-authored; only the assigned DEMO merchant owner and admins can read them.
+    match /merchantProfiles/{storeId}/inventoryMovements/{movementId} {
+      allow read: if signedIn() && (
+        isSystemAdmin()
+        || get(/databases/$(database)/documents/merchantProfiles/$(storeId)).data.ownerUid == request.auth.uid
+      );
+      allow create, update, delete: if false;
+    }
+
     // QR codes identify orders only. They never confirm payment.
     match /storeOrders/{orderId} {
       function merchantProfilePath() {
