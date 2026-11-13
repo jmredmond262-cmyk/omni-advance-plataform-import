@@ -161,7 +161,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     LaunchedEffect(store.id, store.inventory, usesManagedDemoStock) {
-        if (!usesManagedDemoStock) return@LaunchedEffect
+        if (!usesManagedDemoStock || (demoMode && demoStores.isEmpty())) return@LaunchedEffect
         val availableById = store.inventory.associate { it.id to it.stockQuantity }
         val adjusted = cart.mapNotNull { (productId, quantity) ->
             val available = availableById[productId] ?: 0
