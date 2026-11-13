@@ -1364,6 +1364,7 @@ private fun OrderStatusCard(
                         val transition = when (event.eventType) {
                             "REFUND" -> "Devolución confirmada"
                             "PAYMENT" -> "Pago confirmado"
+                            "PAYMENT_ATTEMPT" -> "Intento de pago rechazado"
                             else -> if (event.fromStatus.isBlank()) {
                                 event.toStatus.replace("_", " ")
                             } else {
@@ -1393,9 +1394,9 @@ private fun OrderStatusCard(
                             )
                             if (event.note.isNotBlank()) Text(event.note, color = Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
-                        if (event.eventType == "PAYMENT" && event.note.isNotBlank()) {
+                        if (event.eventType in listOf("PAYMENT", "PAYMENT_ATTEMPT") && event.note.isNotBlank()) {
                             val method = if (event.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"
-                            Text("$method · ${event.note}", color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                            Text("$method · ${event.note}", color = if (event.eventType == "PAYMENT_ATTEMPT") Color(0xFFFFC978) else Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
                         if (event.reason.isNotBlank()) Text("Motivo: ${event.reason}", color = Color(0xFFFFC978), fontSize = 9.sp)
                     }
