@@ -1,5 +1,6 @@
 package com.example.data.wallet
 
+import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.functions.FirebaseFunctions
 import java.util.UUID
@@ -9,10 +10,25 @@ import java.util.UUID
  * La validación del pedido y el registro de la simulación ocurren en Cloud Functions.
  */
 class DemoCardGatewayRepository(
+    context: Context,
     private val functions: FirebaseFunctions = FirebaseFunctions.getInstance("us-central1")
 ) {
-    // Se conserva ante fallos de red para que el reintento use la misma clave idempotente.
+    // Persistencia local: el mismo intento se recupera incluso si Android mata el proceso.
+    private val preferences = context.applicationContext.getSharedPreferences("omni_demo_card_attempts", Context.MODE_PRIVATE)
     private val pendingAttemptIds = mutableMapOf<String, String>()
+
+    private fun persistedAttemptId(key: String): String = synchronized(pendingAttemptIds) {
+        pendingAttemptIds.getOrPut(key) {
+            preferences.getString(key, null) ?: UUID.randomUUID().toString().replace("-", "").also { generated ->
+                preferences.edit().putString(key, generated).apply()
+            }
+        }
+    }
+
+    private fun clearAttemptId(key: String) {
+        synchronized(pendingAttemptIds) { pendingAttemptIds.remove(key) }
+        preferences.edit().remove(key).apply()
+    }
     fun simulateOrderPayment(
         orderId: String,
         merchantUid: String,
@@ -30,9 +46,7 @@ class DemoCardGatewayRepository(
             return
         }
         val attemptKey = "$orderId|$cardBrand|$approved"
-        val attemptId = synchronized(pendingAttemptIds) {
-            pendingAttemptIds.getOrPut(attemptKey) { UUID.randomUUID().toString().replace("-", "") }
-        }
+        val attemptId = persistedAttemptId(attemptKey)
         functions.getHttpsCallable("simulateDemoCardPayment")
             .call(mapOf(
                 "orderId" to orderId,
@@ -47,7 +61,7 @@ class DemoCardGatewayRepository(
                 val message = response["message"] as? String
                 if (message.isNullOrBlank()) done(Result.failure(IllegalStateException("La pasarela no devolvió un resultado válido.")))
                 else {
-                    synchronized(pendingAttemptIds) { pendingAttemptIds.remove(attemptKey) }
+                    clearAttemptId(attemptKey)
                     done(Result.success(message))
                 }
             }
