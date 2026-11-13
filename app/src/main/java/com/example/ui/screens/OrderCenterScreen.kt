@@ -485,9 +485,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             sending = false
                             createdOrder = OmniStoreOrder(
                                 orderId, store.id, response["storeName"] as? String ?: store.name, merchantUid, uid,
-                                profile.fullName, profile.phone, confirmedItems, confirmedTotal,
+                                profile.fullName, profile.phone, confirmedItems ?: emptyList(), confirmedTotal ?: 0.0,
                                 "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
-                                cashbackPolicy, subtotal = confirmedSubtotal, deliveryFee = confirmedFee
+                                cashbackPolicy, subtotal = confirmedSubtotal ?: 0.0, deliveryFee = confirmedFee ?: 0.0
                             )
                             updateCart(emptyMap())
                         }
