@@ -92,7 +92,10 @@ private data class OmniStoreOrder(
     val rejectionReason: String = "",
     val subtotal: Double = 0.0,
     val deliveryFee: Double = 0.0,
-    val cashbackAmount: Double = 0.0
+    val cashbackAmount: Double = 0.0,
+    val refundReason: String = "",
+    val refundAmount: Double = 0.0,
+    val cashbackReversed: Double = 0.0
 )
 
 private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
@@ -242,7 +245,10 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             rejectionReason = doc.getString("rejectionReason").orEmpty(),
             subtotal = (doc.get("subtotal") as? Number)?.toDouble() ?: ((doc.get("total") as? Number)?.toDouble() ?: 0.0),
             deliveryFee = (doc.get("deliveryFee") as? Number)?.toDouble() ?: 0.0,
-            cashbackAmount = (doc.get("cashbackAmount") as? Number)?.toDouble() ?: 0.0
+            cashbackAmount = (doc.get("cashbackAmount") as? Number)?.toDouble() ?: 0.0,
+            refundReason = doc.getString("refundReason").orEmpty(),
+            refundAmount = (doc.get("refundAmount") as? Number)?.toDouble() ?: 0.0,
+            cashbackReversed = (doc.get("cashbackReversed") as? Number)?.toDouble() ?: 0.0
         )
     }.getOrNull()
 
@@ -1279,6 +1285,21 @@ private fun OrderStatusCard(
                 color = if (order.paymentStatus == "REEMBOLSADA · DEMO") Color(0xFF57DDF5) else if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
                 fontSize = 9.sp
             )
+            if (!merchantMode && order.paymentStatus == "REEMBOLSADA · DEMO") {
+                Text(
+                    "Devolución confirmada · Importe reintegrado: OM$ ${String.format("%,.2f", order.refundAmount.takeIf { it > 0.0 } ?: order.total)}",
+                    color = Color(0xFF65E6A5), fontSize = 10.sp, fontWeight = FontWeight.Bold
+                )
+                if (order.cashbackReversed > 0.0) {
+                    Text(
+                        "Cashback revertido: OM$ ${String.format("%,.2f", order.cashbackReversed)}",
+                        color = Color(0xFFFFC978), fontSize = 9.sp
+                    )
+                }
+                if (order.refundReason.isNotBlank()) {
+                    Text("Motivo informado por el comercio: ${order.refundReason}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+                }
+            }
             if (merchantMode && order.paymentStatus == "PAGADA · DEMO" && order.status in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO") && onRefund != null) {
                 OutlinedButton(onClick = onRefund, modifier = Modifier.fillMaxWidth()) { Text("Resolver devolución DEMO", fontSize = 10.sp) }
             }
