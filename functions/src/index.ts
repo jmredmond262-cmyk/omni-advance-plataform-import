@@ -349,6 +349,20 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
           previous.approved !== approved) {
         throw new HttpsError("already-exists", "El identificador de intento ya fue utilizado con otros datos.");
       }
+      if (previous.status === "APROBADA · DEMO") {
+        const savedOrderSnap = await tx.get(orderRef);
+        if (!savedOrderSnap.exists) throw new HttpsError("data-loss", "El pago de tarjeta existe pero falta el pedido asociado.");
+        const savedOrder = savedOrderSnap.data()!;
+        if (savedOrder.inventoryDeducted === true) {
+          const savedItems = Array.isArray(savedOrder.items) ? savedOrder.items as Array<Record<string, unknown>> : [];
+          const savedMovementRefs = savedItems.map((line) => db.collection("merchantProfiles").doc(String(savedOrder.storeId))
+            .collection("inventoryMovements").doc(inventoryMovementId("sale", orderId, String(line.productId || ""))));
+          const savedMovements = await Promise.all(savedMovementRefs.map((ref) => tx.get(ref)));
+          if (savedMovements.some((movement) => !movement.exists || !String(movement.get("type") || "").startsWith("VENTA_"))) {
+            throw new HttpsError("data-loss", "El pago de tarjeta figura aprobado pero falta su descuento de inventario.");
+          }
+        }
+      }
       return {
         message: approved ? "PAGO DE TARJETA SIMULADO · APROBADO · DEMO" : "PAGO DE TARJETA SIMULADO · RECHAZADO · DEMO",
         approved: previous.status === "APROBADA · DEMO", duplicate: true, paymentId: paymentRef.id
@@ -530,6 +544,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const merchantPaymentRef = merchantRef.collection("transactions").doc(operationId);
     const cashbackRef = db.collection("cashbackAccruals").doc(orderId);
     const cashbackTransactionRef = customerRef.collection("transactions").doc(`cashback_${orderId}`);
+    const orderItemsForLedger = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
     const [existingMerchantPayment, existingCashback, existingCashbackTransaction] = await Promise.all([
       tx.get(merchantPaymentRef), tx.get(cashbackRef), tx.get(cashbackTransactionRef)
     ]);
@@ -553,6 +568,14 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
           !paymentLedgerValid || !existingCashback.exists || !cashbackLedgerValid ||
           order.paymentStatus !== "PAGADA · DEMO") {
         throw new HttpsError("data-loss", "El pedido tiene un registro de pago incompleto o inconsistente. No se volverá a debitar.");
+      }
+      if (order.inventoryDeducted === true) {
+        const movementRefs = orderItemsForLedger.map((line) => db.collection("merchantProfiles").doc(storeId)
+          .collection("inventoryMovements").doc(inventoryMovementId("sale", orderId, String(line.productId || ""))));
+        const movementSnaps = await Promise.all(movementRefs.map((ref) => tx.get(ref)));
+        if (movementSnaps.length !== orderItemsForLedger.length || movementSnaps.some((movement) => !movement.exists || movement.get("type") !== "VENTA_OMNI_PAY_DEMO")) {
+          throw new HttpsError("data-loss", "El pago figura registrado pero falta su descuento de inventario.");
+        }
       }
       return {
         operationId, status: "PEDIDO YA PAGADO · DEMO",
@@ -929,7 +952,7 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
           const movementRefs = restoredItems.map((line) => db.collection("merchantProfiles").doc(String(order.storeId))
             .collection("inventoryMovements").doc(inventoryMovementId("refund", orderId, String(line.productId || ""))));
           const movementSnaps = await Promise.all(movementRefs.map((ref) => tx.get(ref)));
-          if (movementSnaps.some((snapshot) => !snapshot.exists || snapshot.get("type") !== "DEVOLUCION_PEDIDO")) {
+          if (movementSnaps.length !== restoredItems.length || movementSnaps.some((snapshot, index) => !snapshot.exists || snapshot.get("type") !== "DEVOLUCION_PEDIDO" || Number(snapshot.get("quantityDelta")) !== Number(restoredItems[index]?.quantity))) {
             throw new HttpsError("data-loss", "La devolución está cerrada pero falta la restitución de inventario.");
           }
         }
