@@ -924,6 +924,64 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
 });
 
 /**
+ * Registra el cobro presencial de un pedido DEMO pagado al retirar/recibir.
+ * No mueve billeteras: deja constancia del cobro externo y permite que el comprador
+ * confirme la recepción por el flujo normal.
+ */
+export const confirmDemoCashCollection = onCall({ region: REGION }, async (request) => {
+  const uid = requireUid(request);
+  const orderId = String(request.data?.orderId || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(orderId)) {
+    throw new HttpsError("invalid-argument", "El identificador del pedido no es válido.");
+  }
+  const orderRef = db.collection("storeOrders").doc(orderId);
+  return db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) throw new HttpsError("not-found", "El pedido ya no existe.");
+    const order = orderSnap.data()!;
+    if (order.environment !== "DEMO" || order.merchantUid !== uid || !order.storeId) {
+      throw new HttpsError("permission-denied", "Solo el titular del comercio DEMO puede registrar este cobro.");
+    }
+    if (order.paymentStatus === "PAGADA · EFECTIVO_DEMO" &&
+        order.paymentMethod === "EFECTIVO_DEMO" &&
+        order.cashCollectionConfirmedBy === uid) {
+      return { orderId, confirmed: true, duplicate: true, walletMovement: false };
+    }
+    if (order.paymentStatus !== "PENDIENTE" || order.paymentMethod !== "PAGO_AL_RETIRAR" ||
+        order.status !== "ENTREGADO_POR_COMERCIO") {
+      throw new HttpsError("failed-precondition", "El cobro presencial solo se registra cuando el comercio informó la entrega y el pedido sigue pendiente de pago al retirar/recibir.");
+    }
+    const profileRef = db.collection("merchantProfiles").doc(String(order.storeId));
+    const profileSnap = await tx.get(profileRef);
+    if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
+        profileSnap.get("seedVersion") !== 1 || profileSnap.get("storeId") !== order.storeId ||
+        profileSnap.get("ownerUid") !== uid) {
+      throw new HttpsError("failed-precondition", "La titularidad DEMO del comercio ya no está habilitada.");
+    }
+    const now = FieldValue.serverTimestamp();
+    const historyRef = orderRef.collection("statusHistory").doc();
+    tx.update(orderRef, {
+      paymentStatus: "PAGADA · EFECTIVO_DEMO",
+      paymentMethod: "EFECTIVO_DEMO",
+      cashCollectionConfirmedAt: now,
+      cashCollectionConfirmedBy: uid,
+      cashCollectionAmount: Number(order.total || 0),
+      updatedAt: now
+    });
+    tx.create(historyRef, {
+      orderId, storeId: order.storeId, environment: "DEMO",
+      actorUid: uid, actorRole: "COMERCIO",
+      fromStatus: "PENDIENTE", toStatus: "PAGADA · EFECTIVO_DEMO",
+      eventType: "PAYMENT_CASH",
+      paymentMethod: "EFECTIVO_DEMO",
+      note: "El comercio registró el cobro presencial. No se movieron fondos de billeteras OMNI.",
+      createdAt: now
+    });
+    return { orderId, confirmed: true, duplicate: false, paymentMethod: "EFECTIVO_DEMO", walletMovement: false };
+  });
+});
+
+/**
  * Reembolsa un pedido DEMO pagado. Solo el titular puede iniciar la devolución.
  * OMNI Pay revierte ambos saldos y el cashback en una sola transacción;
  * tarjeta DEMO solo revierte el registro simulado (nunca hubo movimiento de fondos).
