@@ -1408,6 +1408,15 @@ private fun OrderStatusCard(
     var history by remember(order.id) { mutableStateOf<List<OrderStatusEvent>>(emptyList()) }
     var historyExpanded by remember(order.id) { mutableStateOf(false) }
     var historyError by remember(order.id) { mutableStateOf<String?>(null) }
+    var receipt by remember(order.id) { mutableStateOf<Map<String, Any>?>(null) }
+    var receiptExpanded by remember(order.id) { mutableStateOf(false) }
+    DisposableEffect(order.id) {
+        val listener = FirebaseFirestore.getInstance().collection("storeReceipts").document(order.id)
+            .addSnapshotListener { snapshot, error ->
+                receipt = if (error == null && snapshot?.exists() == true) snapshot.data else null
+            }
+        onDispose { listener.remove() }
+    }
     DisposableEffect(order.id) {
         val listener = FirebaseFirestore.getInstance()
             .collection("storeOrders").document(order.id)
@@ -1482,6 +1491,27 @@ private fun OrderStatusCard(
                 }
             }
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+            if (receipt != null) {
+                val receiptData = receipt!!
+                TextButton(onClick = { receiptExpanded = !receiptExpanded }) {
+                    Text(if (receiptExpanded) "Ocultar comprobante" else "Ver comprobante digital · ${receiptData["receiptNumber"] ?: "OMNI DEMO"}", color = Color(0xFF57DDF5), fontSize = 10.sp)
+                }
+                if (receiptExpanded) {
+                    Column(Modifier.fillMaxWidth().padding(8.dp).background(Color(0xFF0B1424), RoundedCornerShape(9.dp)).padding(9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("COMPROBANTE INFORMATIVO · DEMO · SIN VALIDEZ FISCAL", color = Color(0xFFFFC978), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text("${receiptData["storeName"] ?: order.storeName}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Comprador: ${receiptData["customerName"] ?: order.customerName}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+                        (receiptData["items"] as? List<*>)?.forEach { raw ->
+                            val line = raw as? Map<*, *> ?: emptyMap<Any, Any>()
+                            Text("${line["quantity"] ?: 0} × ${line["name"] ?: "Producto"} · OM$ ${String.format("%,.2f", (line["lineTotal"] as? Number)?.toDouble() ?: 0.0)}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+                        }
+                        Text("Subtotal: OM$ ${String.format("%,.2f", (receiptData["subtotal"] as? Number)?.toDouble() ?: order.subtotal)}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+                        Text("Envío: OM$ ${String.format("%,.2f", (receiptData["deliveryFee"] as? Number)?.toDouble() ?: order.deliveryFee)}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+                        Text("TOTAL: OM$ ${String.format("%,.2f", (receiptData["total"] as? Number)?.toDouble() ?: order.total)}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Pago: ${receiptData["paymentMethod"] ?: order.paymentMethod} · Número: ${receiptData["receiptNumber"] ?: order.id}", color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                    }
+                }
+            }
             if (order.status == "RECHAZADO" && order.rejectionReason.isNotBlank()) {
                 Text("Motivo del comercio: ${order.rejectionReason}", color = Color(0xFFFFC978), fontSize = 10.sp)
             }
