@@ -445,21 +445,25 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
       amount, cardBrand, approved, provider: "OMNI_DEMO_GATEWAY", status, environment: "DEMO",
       createdAt: FieldValue.serverTimestamp()
     });
+    const attemptAt = FieldValue.serverTimestamp();
     if (approved) {
-      const paidAt = FieldValue.serverTimestamp();
       tx.update(orderRef, {
         paymentStatus: "PAGADA · DEMO", paymentMethod: "TARJETA_DEMO",
-        cardPaymentId: paymentRef.id, updatedAt: paidAt
-      });
-      tx.create(orderRef.collection("statusHistory").doc(), {
-        orderId, storeId: order.storeId, environment: "DEMO",
-        actorUid: customerUid, actorRole: "COMPRADOR",
-        fromStatus: "PENDIENTE", toStatus: "PAGADA · DEMO",
-        eventType: "PAYMENT", paymentMethod: "TARJETA_DEMO",
-        note: "Autorización de tarjeta DEMO confirmada · sin movimiento de billetera",
-        createdAt: paidAt
+        cardPaymentId: paymentRef.id, updatedAt: attemptAt
       });
     }
+    tx.create(orderRef.collection("statusHistory").doc(), {
+      orderId, storeId: order.storeId, environment: "DEMO",
+      actorUid: customerUid, actorRole: "COMPRADOR",
+      fromStatus: "PENDIENTE",
+      toStatus: approved ? "PAGADA · DEMO" : "RECHAZADA · DEMO",
+      eventType: approved ? "PAYMENT" : "PAYMENT_ATTEMPT",
+      paymentMethod: "TARJETA_DEMO",
+      note: approved
+        ? "Autorización de tarjeta DEMO confirmada · sin movimiento de billetera"
+        : "Intento rechazado por el simulador · el pedido continúa pendiente y no se movió dinero",
+      createdAt: attemptAt
+    });
     return { message: approved ? "PAGO DE TARJETA SIMULADO · APROBADO · DEMO" : "PAGO DE TARJETA SIMULADO · RECHAZADO · DEMO", approved, duplicate: false, paymentId: paymentRef.id };
   });
 });
