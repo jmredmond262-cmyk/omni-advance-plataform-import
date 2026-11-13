@@ -1116,8 +1116,18 @@ fun MerchantHubScreen(
                             val delta = (movement["quantityDelta"] as? Number)?.toInt() ?: 0
                             val productName = movement["productName"] as? String ?: "Producto"
                             val stockAfter = (movement["stockAfter"] as? Number)?.toInt()
-                            val type = movement["type"] as? String ?: "MOVIMIENTO"
-                            Text("$productName · ${if (delta > 0) "+" else ""}$delta unidades · stock ${stockAfter ?: "—"} · $type", fontSize = 10.sp, color = Color(0xFF475569))
+                            val type = when (movement["type"] as? String) {
+                                "VENTA_OMNI_PAY_DEMO" -> "Venta OMNI Pay"
+                                "VENTA_TARJETA_DEMO" -> "Venta tarjeta DEMO"
+                                "DEVOLUCION_PEDIDO" -> "Devolución de pedido"
+                                "AJUSTE_TITULAR" -> "Ajuste del titular"
+                                "ALTA_INVENTARIO" -> "Alta de producto"
+                                else -> "Movimiento de inventario"
+                            }
+                            val date = (movement["createdAt"] as? com.google.firebase.Timestamp)?.toDate()?.let {
+                                java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(it)
+                            }.orEmpty()
+                            Text("$date · $productName · ${if (delta > 0) "+" else ""}$delta unidades · stock ${stockAfter ?: "—"} · $type", fontSize = 10.sp, color = Color(0xFF475569))
                         }
                     }
                 }
