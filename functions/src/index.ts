@@ -445,10 +445,21 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
       amount, cardBrand, approved, provider: "OMNI_DEMO_GATEWAY", status, environment: "DEMO",
       createdAt: FieldValue.serverTimestamp()
     });
-    if (approved) tx.update(orderRef, {
-      paymentStatus: "PAGADA · DEMO", paymentMethod: "TARJETA_DEMO",
-      cardPaymentId: paymentRef.id, updatedAt: FieldValue.serverTimestamp()
-    });
+    if (approved) {
+      const paidAt = FieldValue.serverTimestamp();
+      tx.update(orderRef, {
+        paymentStatus: "PAGADA · DEMO", paymentMethod: "TARJETA_DEMO",
+        cardPaymentId: paymentRef.id, updatedAt: paidAt
+      });
+      tx.create(orderRef.collection("statusHistory").doc(), {
+        orderId, storeId: order.storeId, environment: "DEMO",
+        actorUid: customerUid, actorRole: "COMPRADOR",
+        fromStatus: "PENDIENTE", toStatus: "PAGADA · DEMO",
+        eventType: "PAYMENT", paymentMethod: "TARJETA_DEMO",
+        note: "Autorización de tarjeta DEMO confirmada · sin movimiento de billetera",
+        createdAt: paidAt
+      });
+    }
     return { message: approved ? "PAGO DE TARJETA SIMULADO · APROBADO · DEMO" : "PAGO DE TARJETA SIMULADO · RECHAZADO · DEMO", approved, duplicate: false, paymentId: paymentRef.id };
   });
 });
@@ -717,6 +728,16 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     tx.update(orderRef, {
       paymentStatus: "PAGADA · DEMO", paymentMethod: "OMNI_PAY_DEMO",
       cashbackAmount, updatedAt: now
+    });
+    tx.create(orderRef.collection("statusHistory").doc(), {
+      orderId, storeId, environment: "DEMO",
+      actorUid: customerUid, actorRole: "COMPRADOR",
+      fromStatus: "PENDIENTE", toStatus: "PAGADA · DEMO",
+      eventType: "PAYMENT", paymentMethod: "OMNI_PAY_DEMO",
+      note: cashbackAmount > 0
+        ? `Pago OMNI Pay DEMO confirmado · cashback OM$ ${cashbackAmount.toFixed(2)} acreditado`
+        : "Pago OMNI Pay DEMO confirmado",
+      createdAt: now
     });
 
     return {
