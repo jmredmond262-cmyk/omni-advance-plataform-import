@@ -801,8 +801,13 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
           throw new HttpsError("data-loss", "La devolución figura cerrada, pero falta su operación contable.");
         }
         if (order.paymentMethod === "TARJETA_DEMO") {
+          const cardPaymentId = String(order.cardPaymentId || "");
+          const cardRef = cardPaymentId ? db.collection("demoCardPayments").doc(cardPaymentId) : null;
+          const cardSnap = cardRef ? await tx.get(cardRef) : null;
           if (existingRefundOperation.get("kind") !== "CARD_DEMO_REVERSAL" ||
-              Number(existingRefundOperation.get("amount")) !== 0) {
+              Number(existingRefundOperation.get("amount")) !== 0 ||
+              !cardSnap?.exists || cardSnap.get("status") !== "REVERSADA · DEMO" ||
+              cardSnap.get("orderId") !== orderId) {
             throw new HttpsError("data-loss", "La reversión de tarjeta DEMO no coincide con su registro contable.");
           }
           return { orderId, refunded: true, duplicate: true, paymentMethod: "TARJETA_DEMO", walletMovement: false };
