@@ -443,16 +443,29 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     if (operationSnap.exists || customerPaymentSnap.exists) {
       const existingMerchantPayment = await tx.get(merchantPaymentRef);
       const existingCashback = await tx.get(cashbackRef);
+      const cashbackTransactionRef = customerRef.collection("transactions").doc(`cashback_${orderId}`);
+      const existingCashbackTransaction = await tx.get(cashbackTransactionRef);
       const previous = operationSnap.data()!;
+      const existingCashbackAmount = existingCashback.exists
+        ? Number(existingCashback.get("amount") ?? 0) : Number.NaN;
+      const cashbackLedgerValid = Number.isFinite(existingCashbackAmount) &&
+        existingCashbackAmount >= 0 &&
+        (existingCashbackAmount > 0
+          ? existingCashbackTransaction.exists &&
+            Number(existingCashbackTransaction.get("amount")) === existingCashbackAmount
+          : !existingCashbackTransaction.exists);
+      const paymentLedgerValid = customerPaymentSnap.exists && existingMerchantPayment.exists &&
+        Number(customerPaymentSnap.get("amount")) === Number(previous.amount) &&
+        Number(existingMerchantPayment.get("amount")) === Number(previous.amount);
       if (previous.orderId !== orderId || previous.senderUid !== customerUid ||
           previous.recipientUid !== merchantUid || previous.kind !== "QR_PAYMENT" ||
-          !customerPaymentSnap.exists || !existingMerchantPayment.exists ||
-          !existingCashback.exists || order.paymentStatus !== "PAGADA · DEMO") {
-        throw new HttpsError("data-loss", "El pedido tiene un registro de pago incompleto. No se volverá a debitar.");
+          !paymentLedgerValid || !existingCashback.exists || !cashbackLedgerValid ||
+          order.paymentStatus !== "PAGADA · DEMO") {
+        throw new HttpsError("data-loss", "El pedido tiene un registro de pago incompleto o inconsistente. No se volverá a debitar.");
       }
       return {
         operationId, status: "PEDIDO YA PAGADO · DEMO",
-        duplicate: true, cashbackAmount: Number(existingCashback.get("amount") || 0)
+        duplicate: true, cashbackAmount: existingCashbackAmount
       };
     }
 
