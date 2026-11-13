@@ -123,6 +123,15 @@ class DemoWalletRepository(
                     val dateText = document.getTimestamp("createdAt")?.toDate()?.let {
                         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(it)
                     } ?: "Procesando…"
+                    val orderId = document.getString("orderId").orEmpty()
+                    val deliveryFee = (document.get("deliveryFee") as? Number)?.toDouble()
+                    val referenceText = buildList {
+                        if (orderId.isNotBlank()) add("Pedido ${orderId.take(9)}")
+                        if (deliveryFee != null && deliveryFee > 0.0) add("Envío OM$ ${String.format("%,.2f", deliveryFee)}")
+                        document.getString("paymentMethod")?.takeIf { it.isNotBlank() }?.let {
+                            add(if (it == "OMNI_PAY_DEMO") "OMNI Pay DEMO" else if (it == "TARJETA_DEMO") "Tarjeta DEMO" else it)
+                        }
+                    }.joinToString(" · ")
                     WalletTransaction(
                         id = document.getString("operationId") ?: document.id,
                         title = document.getString("title").takeUnless { it.isNullOrBlank() }
@@ -130,7 +139,8 @@ class DemoWalletRepository(
                         storeOrEntityName = document.getString("peerName").orEmpty(),
                         amount = displayAmount,
                         type = type, dateText = dateText,
-                        status = document.getString("status") ?: "APROBADA · DEMO"
+                        status = document.getString("status") ?: "APROBADA · DEMO",
+                        referenceText = referenceText
                     )
                 }
                 publish()
