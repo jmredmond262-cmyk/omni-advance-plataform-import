@@ -1501,7 +1501,8 @@ class MainViewModel : ViewModel() {
         originalPrice: Double?,
         photoUri: String? = null,
         barcode: String? = null,
-        description: String = ""
+        description: String = "",
+        stockQuantity: Int = 0
     ) {
         trackUsageAction("PRODUCT_CREATE", "merchant")
         val current = _managedStore.value
@@ -1511,7 +1512,8 @@ class MainViewModel : ViewModel() {
             category = category,
             price = price,
             originalPrice = originalPrice,
-            inStock = true,
+            inStock = stockQuantity > 0,
+            stockQuantity = stockQuantity,
             photoUri = photoUri,
             barcode = barcode,
             description = description
@@ -1524,6 +1526,20 @@ class MainViewModel : ViewModel() {
         _merchantBenefits.value = _merchantBenefits.value.copy(
             merchantPoints = _merchantBenefits.value.merchantPoints + 25
         )
+    }
+
+    fun updateManagedProductStock(productId: String, stockQuantity: Int) {
+        require(stockQuantity in 0..100000) { "El stock debe estar entre 0 y 100.000 unidades." }
+        val current = _managedStore.value
+        val updatedInventory = current.inventory.map { product ->
+            if (product.id == productId) product.copy(stockQuantity = stockQuantity, inStock = stockQuantity > 0) else product
+        }
+        if (updatedInventory.none { it.id == productId }) return
+        val updated = current.copy(inventory = updatedInventory)
+        _managedStore.value = updated
+        updateManagedStoreInCollections(updated)
+        persistManagedStore()
+        trackUsageAction("INVENTORY_STOCK_ADJUSTED", "merchant")
     }
 
     fun addComboToManagedStore(title: String, description: String, discountBadge: String, audience: String = "TODOS") {
