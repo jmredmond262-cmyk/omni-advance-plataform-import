@@ -594,6 +594,11 @@ fun StoreDetailScreen(
                                     )
                                 }
                             }
+                            Text(
+                                text = if (product.stockQuantity > 0) "Disponibles: ${product.stockQuantity} ${product.unitLabel}" else "Sin stock",
+                                fontSize = 10.sp,
+                                color = if (product.stockQuantity > 0) EmeraldPrimary else Color(0xFFDC2626)
+                            )
                         }
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
