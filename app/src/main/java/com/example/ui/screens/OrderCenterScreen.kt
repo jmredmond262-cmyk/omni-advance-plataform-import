@@ -1642,10 +1642,12 @@ private fun OrderStatusCard(
                     Text(if (statusUpdating) "Registrando cobro…" else "Confirmar cobro presencial", fontSize = 10.sp)
                 }
             }
-            if (!merchantMode && order.status == "ENTREGADO_POR_COMERCIO" && onConfirmReceipt != null) {
+            if (!merchantMode && order.status == "ENTREGADO_POR_COMERCIO" && order.paymentStatus.startsWith("PAGADA") && onConfirmReceipt != null) {
                 OutlinedButton(onClick = onConfirmReceipt, enabled = !statusUpdating, modifier = Modifier.fillMaxWidth()) {
                     Text(if (statusUpdating) "Confirmando recepción…" else "Confirmar que recibí el pedido", fontSize = 10.sp)
                 }
+            } else if (!merchantMode && order.status == "ENTREGADO_POR_COMERCIO" && order.paymentStatus == "PENDIENTE") {
+                Text("El comercio informó la entrega. Confirmá el pago o esperá que el comercio registre el cobro presencial para finalizar el pedido.", color = Color(0xFFFFC978), fontSize = 9.sp)
             }
             if (merchantMode && next.isNotBlank()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
