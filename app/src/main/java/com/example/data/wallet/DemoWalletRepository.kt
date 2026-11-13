@@ -145,11 +145,7 @@ class DemoWalletRepository(
                         storeOrEntityName = document.getString("peerName").orEmpty(),
                         amount = displayAmount,
                         type = type, dateText = dateText,
-                        cashbackEarned = when {
-                            type == TransactionType.COMPRA_LOCAL -> cashbackAmount
-                            type == TransactionType.REINTEGRO_CASHBACK -> kotlin.math.abs(storedAmount)
-                            else -> 0.0
-                        },
+                        cashbackEarned = if (type == TransactionType.COMPRA_LOCAL) cashbackAmount else 0.0,
                         status = document.getString("status") ?: "APROBADA · DEMO",
                         referenceText = referenceText
                     )
