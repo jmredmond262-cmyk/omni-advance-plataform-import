@@ -1228,6 +1228,12 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
         note: "Se anuló el registro de pago simulado; no hubo movimiento de billeteras.",
         createdAt: now
       });
+      tx.create(db.collection("storeReceiptAdjustments").doc(orderId), {
+        adjustmentId: orderId, receiptId: orderId, orderId, storeId: String(order.storeId),
+        merchantUid: uid, customerUid: String(order.customerUid), type: "ANULACION_TARJETA_DEMO",
+        originalReceiptNumber: demoReceiptNumber(orderId), amount: 0, reason,
+        paymentMethod: "TARJETA_DEMO", environment: "DEMO", createdAt: now
+      });
       tx.create(refundOperationRef, {
         operationId: refundOperationId, kind: "CARD_DEMO_REVERSAL",
         orderId, senderUid: uid, recipientUid: order.customerUid,
@@ -1295,6 +1301,12 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       balance: Math.round((customerBalance + amount - cashbackAmount) * 100) / 100,
       cashbackTotal: Math.round((customerCashbackTotal - cashbackAmount) * 100) / 100,
       lastOperationId: refundOperationId, updatedAt: now
+    });
+    tx.create(db.collection("storeReceiptAdjustments").doc(orderId), {
+      adjustmentId: orderId, receiptId: orderId, orderId, storeId: String(order.storeId),
+      merchantUid: uid, customerUid: String(order.customerUid), type: "DEVOLUCION_OMNI_PAY_DEMO",
+      originalReceiptNumber: demoReceiptNumber(orderId), amount, cashbackReversed: cashbackAmount,
+      reason, paymentMethod: "OMNI_PAY_DEMO", environment: "DEMO", createdAt: now
     });
     tx.create(refundOperationRef, {
       operationId: refundOperationId, kind: "ORDER_REFUND",
