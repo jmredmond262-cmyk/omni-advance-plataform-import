@@ -1025,7 +1025,9 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
 
     selectedScannedOrder?.let { scanned ->
         AlertDialog(
-            onDismissRequest = { selectedScannedOrder = null },
+            onDismissRequest = {
+                if (scanned.id !in statusUpdatingOrderIds) selectedScannedOrder = null
+            },
             containerColor = Color(0xFF101B30),
             title = { Text("Pedido OMNI verificado", color = Color.White) },
             text = {
@@ -1052,24 +1054,36 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     "EN_CAMINO" -> "ENTREGADO"
                     else -> ""
                 }
-                if (next.isNotBlank()) Button(onClick = {
-                    advanceOrder(scanned, next)
-                }) { Text(when(next) {
-                    "ACEPTADO" -> "Aceptar pedido"
-                    "EN_PREPARACION" -> "Preparar pedido"
-                    "LISTO" -> "Marcar listo"
-                    "EN_CAMINO" -> "Enviar delivery"
-                    else -> "Marcar entregado"
-                }) }
-                else TextButton(onClick = { selectedScannedOrder = null }) { Text("Cerrar") }
+                val updating = scanned.id in statusUpdatingOrderIds
+                if (next.isNotBlank()) Button(
+                    enabled = !updating,
+                    onClick = { advanceOrder(scanned, next) }
+                ) {
+                    Text(if (updating) "Actualizando pedido…" else when(next) {
+                        "ACEPTADO" -> "Aceptar pedido"
+                        "EN_PREPARACION" -> "Preparar pedido"
+                        "LISTO" -> "Marcar listo"
+                        "EN_CAMINO" -> "Enviar delivery"
+                        else -> "Marcar entregado"
+                    })
+                } else TextButton(
+                    enabled = !updating,
+                    onClick = { selectedScannedOrder = null }
+                ) { Text("Cerrar") }
             },
             dismissButton = {
                 Row {
-                    if (scanned.status == "RECIBIDO") TextButton(onClick = {
-                        rejectReasonInput = ""
-                        showRejectReasonDialog = true
-                    }) { Text("Rechazar") }
-                    TextButton(onClick = { selectedScannedOrder = null }) { Text("Cerrar") }
+                    if (scanned.status == "RECIBIDO") TextButton(
+                        enabled = scanned.id !in statusUpdatingOrderIds,
+                        onClick = {
+                            rejectReasonInput = ""
+                            showRejectReasonDialog = true
+                        }
+                    ) { Text("Rechazar") }
+                    TextButton(
+                        enabled = scanned.id !in statusUpdatingOrderIds,
+                        onClick = { selectedScannedOrder = null }
+                    ) { Text("Cerrar") }
                 }
             }
         )
