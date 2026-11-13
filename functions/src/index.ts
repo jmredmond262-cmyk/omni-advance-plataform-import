@@ -617,15 +617,22 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       recipientUid: merchantUid, amount, orderId,
       cashbackAmount, createdAt: now, environment: "DEMO"
     });
+    const storeName = String(order.storeName || "Comercio DEMO");
+    const customerName = String(order.customerName || "Cliente OMNI");
+    const ledgerContext = {
+      orderId, storeId, subtotal, deliveryFee, cashbackAmount,
+      paymentMethod: "OMNI_PAY_DEMO", fulfillmentType,
+      environment: "DEMO", createdAt: now
+    };
     tx.create(customerPaymentRef, {
-      operationId, type: "COMPRA_LOCAL", title: "Compra en comercio OMNI",
-      peerUid: merchantUid, peerName: String(order.storeName || "Comercio DEMO"),
-      amount, status: "APROBADA · DEMO", environment: "DEMO", createdAt: now
+      operationId, type: "COMPRA_LOCAL", title: `Compra en ${storeName}`,
+      peerUid: merchantUid, peerName: storeName,
+      amount, status: "APROBADA · DEMO", ...ledgerContext
     });
     tx.create(merchantPaymentRef, {
-      operationId, type: "QR_COBRO", title: "Cobro de pedido OMNI",
-      peerUid: customerUid, peerName: String(order.customerName || "Cliente OMNI"),
-      amount, status: "APROBADA · DEMO", environment: "DEMO", createdAt: now
+      operationId, type: "QR_COBRO", title: `Pedido de ${customerName}`,
+      peerUid: customerUid, peerName: customerName,
+      amount, status: "APROBADA · DEMO", ...ledgerContext
     });
     if (cashbackAmount > 0) {
       tx.create(customerRef.collection("transactions").doc(`cashback_${orderId}`), {
@@ -873,18 +880,23 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       amount, cashbackReversed: cashbackAmount, orderId, reason,
       environment: "DEMO", createdAt: now
     });
+    const refundContext = {
+      orderId, storeId: String(order.storeId), originalAmount: amount,
+      cashbackReversed: cashbackAmount, paymentMethod: "OMNI_PAY_DEMO",
+      fulfillmentType: String(order.fulfillmentType || "RETIRO"),
+      reason, environment: "DEMO", createdAt: now
+    };
     tx.create(merchantTxRef, {
       operationId: refundOperationId, type: "DEVOLUCION_PEDIDO",
-      title: "Devolución de pedido DEMO", peerUid: order.customerUid,
-      peerName: String(order.customerName || "Cliente OMNI"),
-      amount: -amount, status: "REEMBOLSADA · DEMO", environment: "DEMO", createdAt: now
+      title: `Devolución a ${String(order.customerName || "Cliente OMNI")}`,
+      peerUid: order.customerUid, peerName: String(order.customerName || "Cliente OMNI"),
+      amount: -amount, status: "REEMBOLSADA · DEMO", ...refundContext
     });
     tx.create(customerTxRef, {
       operationId: refundOperationId, type: "DEVOLUCION_COMPRA",
       title: `Devolución de ${String(order.storeName || "comercio DEMO")}`,
       peerUid: uid, peerName: String(order.storeName || "Comercio DEMO"),
-      amount: amount - cashbackAmount, status: "REEMBOLSADA · DEMO",
-      environment: "DEMO", createdAt: now
+      amount: amount - cashbackAmount, status: "REEMBOLSADA · DEMO", ...refundContext
     });
     if (cashbackAmount > 0) {
       tx.create(cashbackReversalRef, {
