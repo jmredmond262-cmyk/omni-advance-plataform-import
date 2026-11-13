@@ -64,6 +64,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -102,6 +103,7 @@ import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.RosePromo
 import com.example.ui.theme.SlateNavy
 import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.firestore.FirebaseFirestore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,6 +116,18 @@ fun MerchantHubScreen(
     val newsList by viewModel.storeNews.collectAsState()
     val merchantProfileMessage by viewModel.merchantProfileMessage.collectAsState()
     val merchantProfileLoading by viewModel.merchantProfileLoadingState.collectAsState()
+    val inventoryMovements = remember(store.id) { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    DisposableEffect(store.id) {
+        val registration = FirebaseFirestore.getInstance()
+            .collection("merchantProfiles").document(store.id)
+            .collection("inventoryMovements")
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(12)
+            .addSnapshotListener { snapshot, _ ->
+                inventoryMovements.value = snapshot?.documents?.map { it.data ?: emptyMap() } ?: emptyList()
+            }
+        onDispose { registration.remove() }
+    }
 
     LaunchedEffect(viewModel) { viewModel.activateMerchantProfile() }
 
@@ -179,6 +193,9 @@ fun MerchantHubScreen(
     var pendingCameraPhoto by remember { mutableStateOf<Uri?>(null) }
     var pendingCameraPhotoFile by remember { mutableStateOf<File?>(null) }
     var prodBarcode by remember { mutableStateOf("") }
+    var prodStockQuantity by remember { mutableStateOf("0") }
+    var stockEditorProductId by remember { mutableStateOf<String?>(null) }
+    var stockEditorQuantity by remember { mutableStateOf("") }
     var categoryExpanded by remember { mutableStateOf(false) }
 
     fun copyImageToPrivateStorage(source: Uri): String? = runCatching {
@@ -1008,7 +1025,7 @@ fun MerchantHubScreen(
                             Text(text = prod.description, fontSize = 10.sp, color = Color(0xFF64748B), maxLines = 2)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = "${prod.category.displayName} • En stock", fontSize = 11.sp, color = Color.Gray)
+                            Text(text = "${prod.category.displayName} • ${if (prod.stockQuantity > 0) "En stock" else "Agotado"}", fontSize = 11.sp, color = Color.Gray)
                             if (prod.barcode != null) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Surface(
@@ -1025,6 +1042,11 @@ fun MerchantHubScreen(
                                 }
                             }
                         }
+                        Text("Stock disponible: ${prod.stockQuantity} ${prod.unitLabel}", fontSize = 11.sp, color = if (prod.stockQuantity > 0) EmeraldPrimary else Color(0xFFDC2626))
+                        TextButton(onClick = {
+                            stockEditorProductId = prod.id
+                            stockEditorQuantity = prod.stockQuantity.toString()
+                        }) { Text("Ajustar stock", fontSize = 11.sp) }
                     }
 
                     Text(
@@ -1074,6 +1096,29 @@ fun MerchantHubScreen(
                         }
                     ) {
                         Icon(Icons.Default.Share, contentDescription = "Compartir producto", tint = EmeraldPrimary, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Movimientos de inventario", fontWeight = FontWeight.Bold, color = SlateNavy, fontSize = 14.sp)
+                    if (inventoryMovements.value.isEmpty()) {
+                        Text("Todavía no hay movimientos registrados.", color = Color.Gray, fontSize = 11.sp)
+                    } else {
+                        inventoryMovements.value.forEach { movement ->
+                            val delta = (movement["quantityDelta"] as? Number)?.toInt() ?: 0
+                            val productName = movement["productName"] as? String ?: "Producto"
+                            val stockAfter = (movement["stockAfter"] as? Number)?.toInt()
+                            val type = movement["type"] as? String ?: "MOVIMIENTO"
+                            Text("$productName · ${if (delta > 0) "+" else ""}$delta unidades · stock ${stockAfter ?: "—"} · $type", fontSize = 10.sp, color = Color(0xFF475569))
+                        }
                     }
                 }
             }
@@ -1311,6 +1356,16 @@ fun MerchantHubScreen(
                     }
 
                     OutlinedTextField(
+                        value = prodStockQuantity,
+                        onValueChange = { value -> prodStockQuantity = value.filter(Char::isDigit).take(6) },
+                        label = { Text("Stock inicial (unidades)") },
+                        placeholder = { Text("Ej: 25") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
                         value = prodBarcode,
                         onValueChange = { prodBarcode = it },
                         label = { Text("Código de barras / SKU (opcional)") },
@@ -1347,7 +1402,8 @@ fun MerchantHubScreen(
                                 originalPrice = orig,
                                 photoUri = prodPhotoUri,
                                 barcode = prodBarcode.ifBlank { null },
-                                description = prodDescription.trim()
+                                description = prodDescription.trim(),
+                                stockQuantity = prodStockQuantity.toIntOrNull() ?: 0
                             )
                             prodName = ""
                             prodDescription = ""
@@ -1356,6 +1412,7 @@ fun MerchantHubScreen(
                             prodOriginalPrice = ""
                             prodPhotoUri = null
                             prodBarcode = ""
+                            prodStockQuantity = "0"
                             showAddProductDialog = false
                         }
                     },
@@ -1370,6 +1427,38 @@ fun MerchantHubScreen(
                     prodPhotoUri = null
                 }) { Text("Cancelar") }
             }
+        )
+    }
+
+    if (stockEditorProductId != null) {
+        AlertDialog(
+            onDismissRequest = { stockEditorProductId = null },
+            title = { Text("Ajustar inventario") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(store.inventory.firstOrNull { it.id == stockEditorProductId }?.name.orEmpty(), fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = stockEditorQuantity,
+                        onValueChange = { value -> stockEditorQuantity = value.filter(Char::isDigit).take(6) },
+                        label = { Text("Unidades disponibles") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("La modificación quedará registrada en el historial del comercio.", fontSize = 11.sp, color = Color.Gray)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val quantity = stockEditorQuantity.toIntOrNull()
+                    val productId = stockEditorProductId
+                    if (quantity != null && quantity in 0..100000 && productId != null) {
+                        viewModel.updateManagedProductStock(productId, quantity)
+                        stockEditorProductId = null
+                    }
+                }) { Text("Guardar") }
+            },
+            dismissButton = { TextButton(onClick = { stockEditorProductId = null }) { Text("Cancelar") } }
         )
     }
 
