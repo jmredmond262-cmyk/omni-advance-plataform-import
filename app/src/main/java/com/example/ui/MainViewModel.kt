@@ -345,7 +345,9 @@ class MainViewModel : ViewModel() {
 
         var firstShoppingSnapshot = true
         personalDataListeners += personalDataRepository.observeShoppingItems(uid) { result ->
-            result.onSuccess { remote ->
+            result.onSuccess { sync ->
+                val remote = sync.value
+                if (personalDataUid != uid || personalAuth.currentUser?.uid != uid) return@onSuccess
                 if (firstShoppingSnapshot) {
                     if (sync.isFromCache && remote.isEmpty() && !sync.hasPendingWrites) return@onSuccess
                     firstShoppingSnapshot = false
@@ -362,7 +364,9 @@ class MainViewModel : ViewModel() {
 
         var firstCustomContactsSnapshot = true
         personalDataListeners += personalDataRepository.observeCustomContacts(uid) { result ->
-            result.onSuccess { remote ->
+            result.onSuccess { sync ->
+                val remote = sync.value
+                if (personalDataUid != uid || personalAuth.currentUser?.uid != uid) return@onSuccess
                 if (firstCustomContactsSnapshot) {
                     if (sync.isFromCache && remote.isEmpty() && !sync.hasPendingWrites) return@onSuccess
                     firstCustomContactsSnapshot = false
@@ -379,7 +383,9 @@ class MainViewModel : ViewModel() {
         }
 
         personalDataListeners += personalDataRepository.observeContactFavorites(uid) { result ->
-            result.onSuccess { remote ->
+            result.onSuccess { sync ->
+                val remote = sync.value
+                if (personalDataUid != uid || personalAuth.currentUser?.uid != uid) return@onSuccess
                 if (sync.isFromCache && remote == null && !sync.hasPendingWrites) return@onSuccess
                 val defaultFavorites = SampleData.sampleContacts.filter { it.isFavorite }.map { it.id }.toSet()
                 val favorites = remote ?: if (contactFavoritesTouched) _favoriteContactIds.value else defaultFavorites
