@@ -16,7 +16,7 @@ El módulo existente `MerchantHubScreen` ya ofrece edición de datos operativos 
 - Firestore valida los rangos y tipos de esa configuración. La creación de pedidos respeta la modalidad habilitada y la compra mínima. El envío se calcula según la tarifa y el umbral de gratuidad configurados; Firestore y la callable de pago vuelven a validar los importes. El cashback se calcula sobre los productos, no sobre el costo de envío.
 - Se limitan las colecciones de catálogo según tamaño DEMO: MICRO 20, PEQUEÑO 50, MEDIANO 100, GRANDE 250, ESPECIALIZADO 50 productos; hasta 30 combos y 50 novedades.
 - El catálogo se guarda mediante la callable `saveDemoMerchantCatalog`: el servidor valida titularidad, tamaño del comercio, límites, campos, precios, disponibilidad e identificadores duplicados de productos y novedades. La app conserva una validación previa para dar mensajes rápidos.
-- La gestión de pedidos exige que el perfil siga siendo DEMO seedVersion 1 y que el UID titular y el storeId coincidan. Las transiciones operativas se verifican también en Firestore.
+- La gestión de pedidos exige que el perfil siga siendo DEMO seedVersion 1 y que el UID titular y el storeId coincidan. Las transiciones operativas se validan en las callables de servidor; Firestore bloquea las escrituras directas del cliente.
 - El rechazo de un pedido recibido exige un motivo de 10 a 240 caracteres, que queda visible en el seguimiento del comprador.
 
 ## Inventario por unidades y trazabilidad
