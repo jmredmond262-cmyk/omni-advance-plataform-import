@@ -326,8 +326,11 @@ class MainViewModel : ViewModel() {
 
         var firstTaskSnapshot = true
         personalDataListeners += personalDataRepository.observeTasks(uid) { result ->
-            result.onSuccess { remote ->
+            result.onSuccess { sync ->
+                val remote = sync.value
+                if (personalDataUid != uid || personalAuth.currentUser?.uid != uid) return@onSuccess
                 if (firstTaskSnapshot) {
+                    if (sync.isFromCache && remote.isEmpty() && !sync.hasPendingWrites) return@onSuccess
                     firstTaskSnapshot = false
                     if (remote.isEmpty() && _tasks.value.isNotEmpty()) {
                         _tasks.value.forEach { personalDataRepository.saveTask(uid, it) }
@@ -344,6 +347,7 @@ class MainViewModel : ViewModel() {
         personalDataListeners += personalDataRepository.observeShoppingItems(uid) { result ->
             result.onSuccess { remote ->
                 if (firstShoppingSnapshot) {
+                    if (sync.isFromCache && remote.isEmpty() && !sync.hasPendingWrites) return@onSuccess
                     firstShoppingSnapshot = false
                     if (remote.isEmpty() && _needs.value.isNotEmpty()) {
                         personalDataRepository.replaceShoppingItems(uid, _needs.value)
@@ -360,6 +364,7 @@ class MainViewModel : ViewModel() {
         personalDataListeners += personalDataRepository.observeCustomContacts(uid) { result ->
             result.onSuccess { remote ->
                 if (firstCustomContactsSnapshot) {
+                    if (sync.isFromCache && remote.isEmpty() && !sync.hasPendingWrites) return@onSuccess
                     firstCustomContactsSnapshot = false
                     if (remote.isEmpty() && _customContacts.value.isNotEmpty()) {
                         _customContacts.value.forEach { personalDataRepository.saveCustomContact(uid, it) }
@@ -375,6 +380,7 @@ class MainViewModel : ViewModel() {
 
         personalDataListeners += personalDataRepository.observeContactFavorites(uid) { result ->
             result.onSuccess { remote ->
+                if (sync.isFromCache && remote == null && !sync.hasPendingWrites) return@onSuccess
                 val defaultFavorites = SampleData.sampleContacts.filter { it.isFavorite }.map { it.id }.toSet()
                 val favorites = remote ?: if (contactFavoritesTouched) _favoriteContactIds.value else defaultFavorites
                 _favoriteContactIds.value = favorites
