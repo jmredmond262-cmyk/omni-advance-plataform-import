@@ -1084,7 +1084,11 @@ fun PaymentCardItem(card: PaymentCard, modifier: Modifier = Modifier) {
 @Composable
 fun WalletTransactionCard(transaction: WalletTransaction, modifier: Modifier = Modifier) {
     val isUnknown = transaction.type == TransactionType.OPERACION_NO_RECONOCIDA
-    val isIncome = transaction.type == TransactionType.CARGA_SALDO || transaction.type == TransactionType.REINTEGRO_CASHBACK || transaction.type == TransactionType.TRANSFERENCIA_RECIBIDA || transaction.type == TransactionType.QR_COBRO
+    val isIncome = transaction.type == TransactionType.CARGA_SALDO ||
+        transaction.type == TransactionType.REINTEGRO_CASHBACK ||
+        transaction.type == TransactionType.TRANSFERENCIA_RECIBIDA ||
+        transaction.type == TransactionType.QR_COBRO ||
+        transaction.type == TransactionType.DEVOLUCION_COMPRA
 
     Card(
         shape = RoundedCornerShape(14.dp),
