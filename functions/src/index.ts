@@ -445,7 +445,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       const existingCashback = await tx.get(cashbackRef);
       const cashbackTransactionRef = customerRef.collection("transactions").doc(`cashback_${orderId}`);
       const existingCashbackTransaction = await tx.get(cashbackTransactionRef);
-      const previous = operationSnap.data()!;
+      const previous = operationSnap.exists ? operationSnap.data()! : null;
       const existingCashbackAmount = existingCashback.exists
         ? Number(existingCashback.get("amount") ?? 0) : Number.NaN;
       const cashbackLedgerValid = Number.isFinite(existingCashbackAmount) &&
@@ -454,10 +454,10 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
           ? existingCashbackTransaction.exists &&
             Number(existingCashbackTransaction.get("amount")) === existingCashbackAmount
           : !existingCashbackTransaction.exists);
-      const paymentLedgerValid = customerPaymentSnap.exists && existingMerchantPayment.exists &&
+      const paymentLedgerValid = previous !== null && customerPaymentSnap.exists && existingMerchantPayment.exists &&
         Number(customerPaymentSnap.get("amount")) === Number(previous.amount) &&
         Number(existingMerchantPayment.get("amount")) === Number(previous.amount);
-      if (previous.orderId !== orderId || previous.senderUid !== customerUid ||
+      if (!previous || previous.orderId !== orderId || previous.senderUid !== customerUid ||
           previous.recipientUid !== merchantUid || previous.kind !== "QR_PAYMENT" ||
           !paymentLedgerValid || !existingCashback.exists || !cashbackLedgerValid ||
           order.paymentStatus !== "PAGADA · DEMO") {
