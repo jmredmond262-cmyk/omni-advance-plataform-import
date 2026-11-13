@@ -333,7 +333,14 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             .limit(1)
                         operationQuery.get().addOnSuccessListener { payment ->
                             val operation = payment.documents.firstOrNull()
-                            if (operation != null && operation.getString("kind") == "QR_PAYMENT") {
+                            val expectedCounterparty = if (merchantMode) pendingOrder.customerUid else pendingOrder.merchantUid
+                            val actualCounterparty = if (merchantMode) operation?.getString("senderUid") else operation?.getString("recipientUid")
+                            val operationAmount = operation?.getDouble("amount")
+                            if (operation != null &&
+                                operation.getString("kind") == "QR_PAYMENT" &&
+                                actualCounterparty == expectedCounterparty &&
+                                operationAmount != null &&
+                                kotlin.math.abs(operationAmount - pendingOrder.total) < 0.005) {
                                 orders = orders.map { current ->
                                     if (current.id == pendingOrder.id && current.paymentStatus == "PENDIENTE") {
                                         current.copy(
@@ -351,7 +358,12 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             .limit(1).get()
                             .addOnSuccessListener { payments ->
                                 val cardPayment = payments.documents.firstOrNull()
-                                if (cardPayment != null && cardPayment.getString("status") == "APROBADA · DEMO") {
+                                val cardAmount = cardPayment?.getDouble("amount")
+                                if (cardPayment != null &&
+                                    cardPayment.getString("status") == "APROBADA · DEMO" &&
+                                    cardPayment.getString("environment") == "DEMO" &&
+                                    cardAmount != null &&
+                                    kotlin.math.abs(cardAmount - pendingOrder.total) < 0.005) {
                                     orders = orders.map { current ->
                                         if (current.id == pendingOrder.id && current.paymentStatus == "PENDIENTE") {
                                             current.copy(
