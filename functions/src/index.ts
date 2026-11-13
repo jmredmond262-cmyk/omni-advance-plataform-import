@@ -839,7 +839,7 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
   const nextStatus = String(request.data?.nextStatus || "").trim();
   const rejectionReason = String(request.data?.rejectionReason || "").trim();
   if (!/^[A-Za-z0-9_-]{8,120}$/.test(orderId) ||
-      !["ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO", "RECHAZADO", "CANCELADO"].includes(nextStatus)) {
+      !["ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO", "ENTREGADO", "RECHAZADO", "CANCELADO"].includes(nextStatus)) {
     throw new HttpsError("invalid-argument", "El pedido o el estado solicitado no son válidos.");
   }
   if (nextStatus === "RECHAZADO" && (rejectionReason.length < 10 || rejectionReason.length > 240)) {
@@ -883,14 +883,15 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
         (current === "EN_PREPARACION" && ["LISTO", "CANCELADO"].includes(nextStatus)) ||
         (current === "LISTO" && (
           (nextStatus === "EN_CAMINO" && order.fulfillmentType === "DELIVERY") ||
-          (nextStatus === "ENTREGADO" && order.fulfillmentType === "RETIRO")
+          (nextStatus === "ENTREGADO_POR_COMERCIO" && order.fulfillmentType === "RETIRO")
         )) ||
-        (current === "EN_CAMINO" && nextStatus === "ENTREGADO" && order.fulfillmentType === "DELIVERY");
+        (current === "EN_CAMINO" && nextStatus === "ENTREGADO_POR_COMERCIO" && order.fulfillmentType === "DELIVERY");
       if (["RECHAZADO", "CANCELADO"].includes(nextStatus) && order.paymentStatus !== "PENDIENTE") {
         throw new HttpsError("failed-precondition", "No se puede rechazar ni cancelar un pedido pagado sin un circuito DEMO de devolución.");
       }
     } else if (isCustomer) {
-      allowed = current === "RECIBIDO" && nextStatus === "CANCELADO" && order.paymentStatus === "PENDIENTE";
+      allowed = (current === "RECIBIDO" && nextStatus === "CANCELADO" && order.paymentStatus === "PENDIENTE") ||
+        (current === "ENTREGADO_POR_COMERCIO" && nextStatus === "ENTREGADO" && order.paymentStatus.startsWith("PAGADA"));
     } else {
       throw new HttpsError("permission-denied", "Solo el comprador o el titular del comercio pueden actualizar este pedido.");
     }
@@ -905,13 +906,16 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
       lastStatusActorRole: isMerchant ? "COMERCIO" : "COMPRADOR",
       lastStatusFrom: current,
       lastStatusTo: nextStatus,
-      ...(nextStatus === "RECHAZADO" ? { rejectionReason } : {})
+      ...(nextStatus === "RECHAZADO" ? { rejectionReason } : {}),
+      ...(nextStatus === "ENTREGADO_POR_COMERCIO" ? { merchantHandoffAt: now } : {}),
+      ...(nextStatus === "ENTREGADO" ? { customerReceivedAt: now } : {})
     };
     tx.update(orderRef, update);
     tx.create(historyRef, {
       orderId, storeId: order.storeId, environment: "DEMO",
       actorUid: uid, actorRole: isMerchant ? "COMERCIO" : "COMPRADOR",
       fromStatus: current, toStatus: nextStatus,
+      eventType: nextStatus === "ENTREGADO_POR_COMERCIO" ? "DELIVERY_HANDOFF" : nextStatus === "ENTREGADO" ? "DELIVERY_CONFIRMED" : "ESTADO_PEDIDO",
       ...(nextStatus === "RECHAZADO" ? { reason: rejectionReason } : {}),
       createdAt: now
     });
@@ -995,7 +999,7 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       throw new HttpsError("failed-precondition", "El pedido ya está cerrado.");
     }
     if (order.paymentStatus !== "PAGADA · DEMO" ||
-        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || ""))) {
+        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO"].includes(String(order.status || ""))) {
       throw new HttpsError("failed-precondition", "Solo se pueden devolver pedidos pagados que todavía no fueron entregados.");
     }
     const profileRef = db.collection("merchantProfiles").doc(String(order.storeId));
