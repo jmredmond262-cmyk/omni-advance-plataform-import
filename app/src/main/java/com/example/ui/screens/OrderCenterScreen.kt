@@ -1034,6 +1034,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             statusUpdating = order.id in statusUpdatingOrderIds,
                             onPay = { payOrderDemo(order) },
                             onPayWithDemoCard = if (order.environment == "DEMO") ({ selectedCardOrder = order }) else null,
+                            onConfirmReceipt = { confirmCustomerReceipt(order) },
                             paying = payingOrderId == order.id
                         )
                     }
@@ -1328,7 +1329,8 @@ private fun OrderStatusCard(
     paying: Boolean = false,
     statusUpdating: Boolean = false,
     onReject: (() -> Unit)? = null,
-    onRefund: (() -> Unit)? = null
+    onRefund: (() -> Unit)? = null,
+    onConfirmReceipt: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var history by remember(order.id) { mutableStateOf<List<OrderStatusEvent>>(emptyList()) }
@@ -1338,7 +1340,7 @@ private fun OrderStatusCard(
         val listener = FirebaseFirestore.getInstance()
             .collection("storeOrders").document(order.id)
             .collection("statusHistory").orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(8)
+            .limit(30)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     historyError = error.localizedMessage ?: "No se pudo cargar la trazabilidad."
@@ -1366,8 +1368,8 @@ private fun OrderStatusCard(
         "RECIBIDO" -> "ACEPTADO"
         "ACEPTADO" -> "EN_PREPARACION"
         "EN_PREPARACION" -> "LISTO"
-        "LISTO" -> if (order.fulfillmentType == "DELIVERY") "EN_CAMINO" else "ENTREGADO"
-        "EN_CAMINO" -> "ENTREGADO"
+        "LISTO" -> if (order.fulfillmentType == "DELIVERY") "EN_CAMINO" else "ENTREGADO_POR_COMERCIO"
+        "EN_CAMINO" -> "ENTREGADO_POR_COMERCIO"
         else -> ""
     }
     val label = when (order.status) {
@@ -1376,7 +1378,8 @@ private fun OrderStatusCard(
         "EN_PREPARACION" -> "En preparación"
         "LISTO" -> "Listo para retirar"
         "EN_CAMINO" -> "En camino"
-        "ENTREGADO" -> "Entregado"
+        "ENTREGADO_POR_COMERCIO" -> "Entrega informada por el comercio · falta tu confirmación"
+        "ENTREGADO" -> "Recibido y confirmado"
         "RECHAZADO" -> "Rechazado"
         "CANCELADO" -> "Cancelado"
         else -> order.status
@@ -1442,6 +1445,12 @@ private fun OrderStatusCard(
                             "$transition · $actorLabel · $time",
                             color = Color(0xFFB8C8D9), fontSize = 9.sp
                         )
+                        if (event.eventType == "DELIVERY_HANDOFF") {
+                            Text("El comercio informó que entregó el pedido. Falta la confirmación del comprador.", color = Color(0xFFFFC978), fontSize = 9.sp)
+                        }
+                        if (event.eventType == "DELIVERY_CONFIRMED") {
+                            Text("Recepción confirmada por el comprador.", color = Color(0xFF65E6A5), fontSize = 9.sp)
+                        }
                         if (event.eventType == "REFUND") {
                             if (event.refundedAmount > 0.0) {
                                 Text(
@@ -1548,6 +1557,11 @@ private fun OrderStatusCard(
                     Text(if (statusUpdating) "Cancelando pedido…" else "Cancelar pedido", fontSize = 10.sp)
                 }
             }
+            if (!merchantMode && order.status == "ENTREGADO_POR_COMERCIO" && onConfirmReceipt != null) {
+                OutlinedButton(onClick = onConfirmReceipt, enabled = !statusUpdating, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (statusUpdating) "Confirmando recepción…" else "Confirmar que recibí el pedido", fontSize = 10.sp)
+                }
+            }
             if (merchantMode && next.isNotBlank()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Button(onClick = { onAdvance(next) }, enabled = !statusUpdating, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
@@ -1555,8 +1569,8 @@ private fun OrderStatusCard(
                             "ACEPTADO" -> "Aceptar pedido"
                             "EN_PREPARACION" -> "Comenzar preparación"
                             "LISTO" -> "Marcar listo"
-                            "EN_CAMINO" -> "Enviar delivery"
-                            else -> "Marcar entregado"
+                            "EN_CAMINO" -> "Informar entrega al cliente"
+                            else -> "Informar entrega al cliente"
                         }, fontSize = 10.sp)
                     }
                     if (order.status == "RECIBIDO" && onReject != null) {
