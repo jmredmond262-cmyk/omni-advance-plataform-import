@@ -28,7 +28,8 @@ data class StoreProduct(
     val unitLabel: String = "unid.",
     val photoUri: String? = null,
     val barcode: String? = null,
-    val description: String = ""
+    val description: String = "",
+    val stockQuantity: Int = 0
 )
 
 data class Store(
