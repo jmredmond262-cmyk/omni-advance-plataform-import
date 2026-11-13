@@ -27,6 +27,27 @@ function safeName(value: unknown): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 80) : "Usuario OMNI";
 }
 
+
+function demoReceiptNumber(orderId: string): string {
+  return `OMNI-DEMO-${orderId.replace(/[^A-Za-z0-9]/g, "").slice(-10).toUpperCase()}`;
+}
+function demoReceiptSnapshot(order: Record<string, any>, orderId: string, paymentMethod: string, issuedAt: any) {
+  const items = Array.isArray(order.items) ? order.items.map((line: Record<string, unknown>) => {
+    const quantity = Number(line.quantity || 0);
+    const unitPrice = Number(line.price || 0);
+    return { productId: String(line.productId || ""), name: String(line.name || "Producto"), quantity,
+      unitPrice, lineTotal: Math.round(quantity * unitPrice * 100) / 100 };
+  }) : [];
+  return { receiptId: orderId, orderId, receiptNumber: demoReceiptNumber(orderId),
+    environment: "DEMO", fiscalValidity: false, validationStatus: "SIMULATED",
+    storeId: String(order.storeId || ""), storeName: String(order.storeName || "Comercio DEMO"),
+    merchantUid: String(order.merchantUid || ""), customerUid: String(order.customerUid || ""),
+    customerName: String(order.customerName || "Cliente OMNI"), items,
+    subtotal: Number(order.subtotal || 0), deliveryFee: Number(order.deliveryFee || 0),
+    total: Number(order.total || 0), fulfillmentType: String(order.fulfillmentType || "RETIRO"),
+    paymentMethod, paymentStatus: "PAGADA · DEMO", issuedAt };
+}
+
 function inventoryMovementId(kind: string, orderId: string, productId: string): string {
   const digest = createHash("sha256").update(`${kind}|${orderId}|${productId}`).digest("hex").slice(0, 32);
   return `${kind}_${digest}`;
@@ -492,6 +513,8 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
         paymentStatus: "PAGADA · DEMO", paymentMethod: "TARJETA_DEMO",
         cardPaymentId: paymentRef.id, inventoryDeducted: true, updatedAt: attemptAt
       });
+      const receiptRef = db.collection("storeReceipts").doc(orderId);
+      tx.create(receiptRef, demoReceiptSnapshot(order, orderId, "TARJETA_DEMO", attemptAt));
     }
     tx.create(orderRef.collection("statusHistory").doc(), {
       orderId, storeId: order.storeId, environment: "DEMO",
@@ -804,6 +827,8 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       paymentStatus: "PAGADA · DEMO", paymentMethod: "OMNI_PAY_DEMO",
       cashbackAmount, inventoryDeducted: true, updatedAt: now
     });
+    const receiptRef = db.collection("storeReceipts").doc(orderId);
+    tx.create(receiptRef, demoReceiptSnapshot(order, orderId, "OMNI_PAY_DEMO", now));
     tx.create(orderRef.collection("statusHistory").doc(), {
       orderId, storeId, environment: "DEMO",
       actorUid: customerUid, actorRole: "COMPRADOR",
@@ -1030,6 +1055,8 @@ export const confirmDemoCashCollection = onCall({ region: REGION }, async (reque
       inventoryDeducted: true,
       updatedAt: now
     });
+    const receiptRef = db.collection("storeReceipts").doc(orderId);
+    tx.create(receiptRef, demoReceiptSnapshot(order, orderId, "EFECTIVO_DEMO", now));
     tx.create(historyRef, {
       orderId, storeId: order.storeId, environment: "DEMO",
       actorUid: uid, actorRole: "COMERCIO",
