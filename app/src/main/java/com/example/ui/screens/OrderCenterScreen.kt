@@ -135,7 +135,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     } else (selectedStore ?: managedStore)
     val db = remember { FirebaseFirestore.getInstance() }
     val walletRepository = remember { DemoWalletRepository() }
-    val demoCardGateway = remember { DemoCardGatewayRepository() }
+    val demoCardGateway = remember(context.applicationContext) { DemoCardGatewayRepository(context.applicationContext) }
 
     var merchantReady by remember { mutableStateOf(false) }
     var merchantError by remember { mutableStateOf<String?>(null) }
