@@ -439,9 +439,9 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const merchantRef = accountRef(merchantUid);
     const merchantPaymentRef = merchantRef.collection("transactions").doc(operationId);
     const cashbackRef = db.collection("cashbackAccruals").doc(orderId);
+    const existingMerchantPayment = await tx.get(merchantPaymentRef);
 
-    if (operationSnap.exists || customerPaymentSnap.exists) {
-      const existingMerchantPayment = await tx.get(merchantPaymentRef);
+    if (operationSnap.exists || customerPaymentSnap.exists || existingMerchantPayment.exists) {
       const existingCashback = await tx.get(cashbackRef);
       const cashbackTransactionRef = customerRef.collection("transactions").doc(`cashback_${orderId}`);
       const existingCashbackTransaction = await tx.get(cashbackTransactionRef);
