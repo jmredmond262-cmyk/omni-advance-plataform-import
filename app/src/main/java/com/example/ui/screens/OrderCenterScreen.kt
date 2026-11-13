@@ -1563,7 +1563,8 @@ private fun OrderStatusCard(
                         order.paymentStatus == "REEMBOLSADA · DEMO" -> "Cashback de este pedido revertido."
                         order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "OMNI_PAY_DEMO" -> "Cashback acreditado: OM$ ${String.format("%,.2f", order.cashbackAmount)}."
                         order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "TARJETA_DEMO" -> "Tarjeta DEMO simulada: no genera cashback ni mueve saldo."
-                        else -> "El cashback se acredita al pagar con OMNI Pay DEMO; la tarjeta DEMO solo simula una autorización."
+                        order.paymentStatus == "PAGADA · EFECTIVO_DEMO" -> "Cobro presencial registrado: no genera cashback ni modifica billeteras OMNI."
+                        else -> "El cashback se acredita al pagar con OMNI Pay DEMO; tarjeta y cobro presencial DEMO no mueven saldo."
                     },
                     color = if (order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "OMNI_PAY_DEMO") Color(0xFF65E6A5) else Color(0xFFFFC978),
                     fontSize = 9.sp
