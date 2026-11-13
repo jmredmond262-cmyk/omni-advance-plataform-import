@@ -455,16 +455,37 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             val confirmedSubtotal = (response["subtotal"] as? Number)?.toDouble()
                             val confirmedFee = (response["deliveryFee"] as? Number)?.toDouble()
                             val confirmedTotal = (response["total"] as? Number)?.toDouble()
-                            if (orderId.isNullOrBlank() || nonce.isNullOrBlank() || confirmedSubtotal == null || confirmedFee == null || confirmedTotal == null) {
+                            val rawConfirmedItems = response["items"] as? List<*>
+                            val confirmedItems = rawConfirmedItems?.mapNotNull { raw ->
+                                val item = raw as? Map<*, *> ?: return@mapNotNull null
+                                val productId = item["productId"] as? String ?: return@mapNotNull null
+                                val name = item["name"] as? String ?: return@mapNotNull null
+                                val price = (item["price"] as? Number)?.toDouble() ?: return@mapNotNull null
+                                val quantity = (item["quantity"] as? Number)?.toInt() ?: return@mapNotNull null
+                                if (productId.isBlank() || name.isBlank() || !price.isFinite() || price <= 0.0 || quantity !in 1..999) {
+                                    return@mapNotNull null
+                                }
+                                OrderLine(productId, name, price, quantity)
+                            }
+                            val confirmedItemsValid = confirmedItems != null &&
+                                confirmedItems.size == cartLines.size &&
+                                confirmedItems == cartLines &&
+                                confirmedItems.sumOf { it.price * it.quantity }.let {
+                                    confirmedSubtotal != null && kotlin.math.abs(it - confirmedSubtotal) < 0.005
+                                }
+                            val totalsValid = confirmedSubtotal != null && confirmedFee != null && confirmedTotal != null &&
+                                confirmedSubtotal > 0.0 && confirmedFee >= 0.0 &&
+                                kotlin.math.abs((confirmedSubtotal + confirmedFee) - confirmedTotal) < 0.005
+                            if (orderId.isNullOrBlank() || nonce.isNullOrBlank() || !totalsValid || !confirmedItemsValid) {
                                 sending = false
-                                feedback = "El servidor no devolvió una confirmación válida del pedido."
+                                feedback = "El servidor registró una respuesta incompleta o distinta al carrito. Conservamos los productos para que puedas revisar el pedido."
                                 return@addOnSuccessListener
                             }
                             UsageAnalyticsRepository.trackEvent(uid, "orders", "STORE_ORDER_CREATED", mapOf("operationId" to orderId, "stage" to "SERVER_VALIDATION_CONFIRMED", "success" to true))
                             sending = false
                             createdOrder = OmniStoreOrder(
                                 orderId, store.id, response["storeName"] as? String ?: store.name, merchantUid, uid,
-                                profile.fullName, profile.phone, cartLines, confirmedTotal,
+                                profile.fullName, profile.phone, confirmedItems, confirmedTotal,
                                 "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
                                 cashbackPolicy, subtotal = confirmedSubtotal, deliveryFee = confirmedFee
                             )
