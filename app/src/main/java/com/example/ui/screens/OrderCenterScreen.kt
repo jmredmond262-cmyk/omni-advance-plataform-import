@@ -1136,18 +1136,18 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             confirmButton = {
                 TextButton(
                     enabled = rejectReasonInput.trim().length in 10..240 &&
-                        (selectedScannedOrder?.id !in statusUpdatingOrderIds),
+                        (selectedScannedOrder?.id?.let { it !in statusUpdatingOrderIds } == true),
                     onClick = {
                         val order = selectedScannedOrder ?: return@TextButton
                         advanceOrder(order, "RECHAZADO", rejectReasonInput)
                     }
                 ) {
-                    Text(if (selectedScannedOrder?.id in statusUpdatingOrderIds) "Registrando rechazo…" else "Confirmar rechazo")
+                    Text(if ((selectedScannedOrder?.id?.let { it in statusUpdatingOrderIds } == true)) "Registrando rechazo…" else "Confirmar rechazo")
                 }
             },
             dismissButton = {
                 TextButton(
-                    enabled = selectedScannedOrder?.id !in statusUpdatingOrderIds,
+                    enabled = selectedScannedOrder?.id?.let { it !in statusUpdatingOrderIds } == true,
                     onClick = { showRejectReasonDialog = false }
                 ) { Text("Volver") }
             }
