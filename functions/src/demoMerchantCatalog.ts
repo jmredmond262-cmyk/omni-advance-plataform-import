@@ -48,7 +48,7 @@ function validateProducts(raw: unknown, limit: number): DataMap[] {
   const ids = new Set<string>();
   return products.map((product, index) => {
     const label = `Producto ${index + 1}`;
-    onlyKeys(product, ["id", "name", "category", "price", "originalPrice", "inStock", "unitLabel", "photoUri", "barcode", "description"], label);
+    onlyKeys(product, ["id", "name", "category", "price", "originalPrice", "inStock", "stockQuantity", "unitLabel", "photoUri", "barcode", "description"], label);
     const id = boundedString(product.id, 1, 100, `${label} · ID`).trim();
     if (ids.has(id)) throw new HttpsError("invalid-argument", "Los identificadores de producto deben ser únicos.");
     ids.add(id);
@@ -61,6 +61,10 @@ function validateProducts(raw: unknown, limit: number): DataMap[] {
     const category = boundedString(product.category, 1, 40, `${label} · categoría`);
     if (!/^[A-Z_]+$/.test(category)) throw new HttpsError("invalid-argument", `${label}: categoría no válida.`);
     if (typeof product.inStock !== "boolean") throw new HttpsError("invalid-argument", `${label}: disponibilidad no válida.`);
+    const stockQuantity = Number(product.stockQuantity);
+    if (!Number.isInteger(stockQuantity) || stockQuantity < 0 || stockQuantity > 100000 || product.inStock !== (stockQuantity > 0)) {
+      throw new HttpsError("invalid-argument", `${label}: el stock debe ser un entero entre 0 y 100.000 y coincidir con su disponibilidad.`);
+    }
     boundedString(product.unitLabel, 1, 24, `${label} · unidad`);
     boundedString(product.photoUri, 0, 1000, `${label} · foto`, true);
     boundedString(product.barcode, 0, 64, `${label} · código de barras`, true);
@@ -127,9 +131,26 @@ export const saveDemoMerchantCatalog = onCall({ region: REGION }, async (request
     if (!limit) throw new HttpsError("failed-precondition", "El comercio no tiene un tamaño DEMO válido.");
     const storeName = String(profile.get("storeName") || "");
     const inventory = validateProducts(request.data?.inventory, limit);
+    const previousInventory = Array.isArray(profile.get("inventory")) ? profile.get("inventory") as DataMap[] : [];
+    const previousById = new Map(previousInventory.map((item) => [String(item.id || ""), item]));
+    const inventoryMovements = inventory.flatMap((product) => {
+      const productId = String(product.id);
+      const previous = previousById.get(productId);
+      const before = Number.isInteger(Number(previous?.stockQuantity)) ? Number(previous?.stockQuantity) : 0;
+      const after = Number(product.stockQuantity);
+      if (before === after) return [];
+      const movementRef = profileRef.collection("inventoryMovements").doc(`adjust_${Date.now()}_${productId}_${Math.random().toString(36).slice(2, 8)}`);
+      return [{ movementRef, data: {
+        movementId: movementRef.id, storeId, productId, productName: String(product.name),
+        type: previous ? "AJUSTE_TITULAR" : "ALTA_INVENTARIO",
+        quantityDelta: after - before, stockBefore: before, stockAfter: after,
+        actorUid: uid, environment: "DEMO", createdAt: FieldValue.serverTimestamp()
+      }}];
+    });
     const comboDeals = validateCombos(request.data?.comboDeals);
     const news = validateNews(request.data?.news, storeId, storeName);
 
+    for (const movement of inventoryMovements) tx.create(movement.movementRef, movement.data);
     tx.update(profileRef, {
       inventory, comboDeals, news,
       catalogUpdatedByUid: uid,
