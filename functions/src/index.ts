@@ -756,6 +756,17 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
     const current = String(order.status || "");
     const isMerchant = uid === order.merchantUid;
     const isCustomer = uid === order.customerUid;
+    const actorRole = isMerchant ? "COMERCIO" : isCustomer ? "COMPRADOR" : "";
+    if (!actorRole) {
+      throw new HttpsError("permission-denied", "Solo el comprador o el titular del comercio pueden actualizar este pedido.");
+    }
+    // Recuperación idempotente: si el servidor aplicó la transición pero la
+    // respuesta se perdió, el reintento devuelve éxito sin duplicar el historial.
+    if (current === nextStatus &&
+        order.lastStatusActorUid === uid &&
+        order.lastStatusTo === nextStatus) {
+      return { orderId, status: nextStatus, previousStatus: order.lastStatusFrom || current, actorRole, duplicate: true };
+    }
     let allowed = false;
     if (isMerchant) {
       allowed =
@@ -782,6 +793,10 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
     const update = {
       status: nextStatus,
       updatedAt: now,
+      lastStatusActorUid: uid,
+      lastStatusActorRole: isMerchant ? "COMERCIO" : "COMPRADOR",
+      lastStatusFrom: current,
+      lastStatusTo: nextStatus,
       ...(nextStatus === "RECHAZADO" ? { rejectionReason } : {})
     };
     tx.update(orderRef, update);
