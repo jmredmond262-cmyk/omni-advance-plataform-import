@@ -541,8 +541,9 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       const currentProduct = catalog.find((item) => String(item.id || "") === productId);
       const currentPrice = Number(currentProduct?.price);
       if (!currentProduct || currentProduct.inStock !== true || !Number.isFinite(currentPrice) ||
-          Math.abs(currentPrice - price) >= 0.005) {
-        throw new HttpsError("failed-precondition", "Cambió el precio o la disponibilidad de un producto. Actualizá el pedido.");
+          Math.abs(currentPrice - price) >= 0.005 ||
+          String(line.name || "") !== String(currentProduct.name || "")) {
+        throw new HttpsError("failed-precondition", "Cambió el nombre, precio o disponibilidad de un producto. Actualizá el pedido.");
       }
       verifiedTotal += price * quantity;
     }
