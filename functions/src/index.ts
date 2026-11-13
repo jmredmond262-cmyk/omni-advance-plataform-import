@@ -918,8 +918,9 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
         operationId: `cashback_reversal_${orderId}`, type: "REVERSO_CASHBACK",
         title: `Reversión de cashback · ${String(order.storeName || "comercio DEMO")}`,
         peerUid: uid, peerName: String(order.storeName || "Comercio DEMO"),
-        amount: -cashbackAmount, status: "REVERSADO · DEMO",
-        environment: "DEMO", createdAt: now
+        amount: -cashbackAmount, orderId, storeId: String(order.storeId),
+        originalAmount: amount, paymentMethod: "OMNI_PAY_DEMO",
+        status: "REVERSADO · DEMO", environment: "DEMO", createdAt: now
       });
       tx.update(monthlyRef!, {
         earnedTotal: Math.round((monthlyEarned - cashbackAmount) * 100) / 100,
