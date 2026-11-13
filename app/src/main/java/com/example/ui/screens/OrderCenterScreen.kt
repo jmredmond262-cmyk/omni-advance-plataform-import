@@ -62,6 +62,10 @@ private data class OrderStatusEvent(
     val toStatus: String,
     val actorRole: String,
     val reason: String,
+    val eventType: String,
+    val paymentMethod: String,
+    val refundedAmount: Double,
+    val cashbackReversed: Double,
     val createdAt: com.google.firebase.Timestamp?
 )
 private data class CashbackTerms(
@@ -1245,6 +1249,10 @@ private fun OrderStatusCard(
                         toStatus = doc.getString("toStatus").orEmpty(),
                         actorRole = doc.getString("actorRole").orEmpty(),
                         reason = doc.getString("reason").orEmpty(),
+                        eventType = doc.getString("eventType").orEmpty(),
+                        paymentMethod = doc.getString("paymentMethod").orEmpty(),
+                        refundedAmount = (doc.get("refundedAmount") as? Number)?.toDouble() ?: 0.0,
+                        cashbackReversed = (doc.get("cashbackReversed") as? Number)?.toDouble() ?: 0.0,
                         createdAt = doc.getTimestamp("createdAt")
                     )
                 }
@@ -1310,15 +1318,34 @@ private fun OrderStatusCard(
                         val time = event.createdAt?.toDate()?.let {
                             SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(it)
                         } ?: "Hora pendiente"
-                        val transition = if (event.fromStatus.isBlank()) {
-                            event.toStatus.replace("_", " ")
-                        } else {
-                            "${event.fromStatus.replace("_", " ")} → ${event.toStatus.replace("_", " ")}"
+                        val transition = when (event.eventType) {
+                            "REFUND" -> "Devolución confirmada"
+                            else -> if (event.fromStatus.isBlank()) {
+                                event.toStatus.replace("_", " ")
+                            } else {
+                                "${event.fromStatus.replace("_", " ")} → ${event.toStatus.replace("_", " ")}"
+                            }
+                        }
+                        val actorLabel = when (event.actorRole) {
+                            "COMERCIO" -> "Comercio"
+                            "COMPRADOR" -> "Comprador"
+                            else -> "OMNI"
                         }
                         Text(
-                            "$transition · ${if (event.actorRole == "COMERCIO") "Comercio" else "Comprador"} · $time",
+                            "$transition · $actorLabel · $time",
                             color = Color(0xFFB8C8D9), fontSize = 9.sp
                         )
+                        if (event.eventType == "REFUND" && event.refundedAmount > 0.0) {
+                            Text(
+                                "Importe devuelto: OM$ ${String.format("%,.2f", event.refundedAmount)}" +
+                                    if (event.cashbackReversed > 0.0) " · Cashback revertido: OM$ ${String.format("%,.2f", event.cashbackReversed)}" else "",
+                                color = Color(0xFF65E6A5), fontSize = 9.sp
+                            )
+                            Text(
+                                if (event.paymentMethod == "TARJETA_DEMO") "Reversión de tarjeta DEMO" else "Reintegro OMNI Pay DEMO",
+                                color = Color(0xFF9AAAC2), fontSize = 9.sp
+                            )
+                        }
                         if (event.reason.isNotBlank()) Text("Motivo: ${event.reason}", color = Color(0xFFFFC978), fontSize = 9.sp)
                     }
                 }
@@ -1341,9 +1368,10 @@ private fun OrderStatusCard(
                     fontSize = 9.sp
                 )
             }
-            val paymentMethodLabel = when (order.paymentMethod) {
-                "OMNI_PAY_DEMO" -> "OMNI Pay DEMO"
-                "TARJETA_DEMO" -> "Tarjeta DEMO"
+            val paymentMethodLabel = when {
+                order.paymentStatus == "PENDIENTE" -> "Aún sin método confirmado"
+                order.paymentMethod == "OMNI_PAY_DEMO" -> "OMNI Pay DEMO"
+                order.paymentMethod == "TARJETA_DEMO" -> "Tarjeta DEMO"
                 else -> "Pago al retirar/recibir"
             }
             Text(
