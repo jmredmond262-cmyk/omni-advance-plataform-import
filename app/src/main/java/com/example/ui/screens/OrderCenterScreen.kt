@@ -218,6 +218,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var selectedRefundOrder by remember { mutableStateOf<OmniStoreOrder?>(null) }
     var refundReasonInput by remember { mutableStateOf("") }
     var refundInProgress by remember { mutableStateOf(false) }
+    var statusUpdatingOrderIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     fun decodeOrder(doc: com.google.firebase.firestore.DocumentSnapshot): OmniStoreOrder? = runCatching {
         val lines = (doc.get("items") as? List<*>)?.mapNotNull { raw ->
@@ -620,6 +621,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     fun advanceOrder(order: OmniStoreOrder, next: String, rejectionReason: String = "") {
+        if (order.id in statusUpdatingOrderIds) return
         if (!merchantMode || !merchantReady || uid.isBlank() ||
             order.storeId != store.id || order.merchantUid != uid ||
             order.environment != "DEMO") {
@@ -638,6 +640,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             feedback = "No se puede rechazar ni cancelar un pedido ya pagado sin un circuito de devolución DEMO."
             return
         }
+        statusUpdatingOrderIds = statusUpdatingOrderIds + order.id
         FirebaseFunctions.getInstance("us-central1")
             .getHttpsCallable("updateDemoStoreOrderStatus")
             .call(mapOf(
@@ -646,12 +649,16 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 "rejectionReason" to rejectionReason.trim()
             ))
             .addOnSuccessListener {
+                statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
                 UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next", mapOf("operationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
                 orders = orders.map { current -> if (current.id == order.id) current.copy(status = next, rejectionReason = rejectionReason.trim()) else current }
                 if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next, rejectionReason = rejectionReason.trim())
                 feedback = "Pedido actualizado: $next."
             }
-            .addOnFailureListener { feedback = it.localizedMessage ?: "No se pudo actualizar el estado." }
+            .addOnFailureListener {
+                statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
+                feedback = it.localizedMessage ?: "No se pudo actualizar el estado. Podés reintentar; el servidor evita duplicar una transición ya aplicada."
+            }
     }
 
     fun refundPaidOrder(order: OmniStoreOrder, reason: String) {
@@ -938,6 +945,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         OrderStatusCard(
                             order, merchantMode = true,
                             onAdvance = { next -> advanceOrder(order, next) },
+                            statusUpdating = order.id in statusUpdatingOrderIds,
                             onReject = {
                                 selectedScannedOrder = order
                                 rejectReasonInput = ""
@@ -1232,6 +1240,7 @@ private fun OrderStatusCard(
     onPay: (() -> Unit)? = null,
     onPayWithDemoCard: (() -> Unit)? = null,
     paying: Boolean = false,
+    statusUpdating: Boolean = false,
     onReject: (() -> Unit)? = null,
     onRefund: (() -> Unit)? = null
 ) {
@@ -1441,7 +1450,7 @@ private fun OrderStatusCard(
             }
             if (merchantMode && next.isNotBlank()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Button(onClick = { onAdvance(next) }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
+                    Button(onClick = { onAdvance(next) }, enabled = !statusUpdating, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF087EAB))) {
                         Text(when (next) {
                             "ACEPTADO" -> "Aceptar pedido"
                             "EN_PREPARACION" -> "Comenzar preparación"
@@ -1451,7 +1460,7 @@ private fun OrderStatusCard(
                         }, fontSize = 10.sp)
                     }
                     if (order.status == "RECIBIDO" && onReject != null) {
-                        OutlinedButton(onClick = onReject) {
+                        OutlinedButton(onClick = onReject, enabled = !statusUpdating) {
                             Text("Rechazar", fontSize = 10.sp)
                         }
                     }
