@@ -347,6 +347,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         db.collection("demoCardPayments")
                             .whereEqualTo("orderId", pendingOrder.id)
                             .whereEqualTo(if (merchantMode) "merchantUid" else "customerUid", uid)
+                            .whereEqualTo("approved", true)
                             .limit(1).get()
                             .addOnSuccessListener { payments ->
                                 val cardPayment = payments.documents.firstOrNull()
