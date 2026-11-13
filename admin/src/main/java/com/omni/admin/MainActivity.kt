@@ -642,6 +642,8 @@ private fun FinanceContent(payload: JSONObject) {
   val accounts = jsonArrayToList(payload.optJSONArray("accounts"))
   val transactions = jsonArrayToList(payload.optJSONArray("transactions"))
   val operations = jsonArrayToList(payload.optJSONArray("operations"))
+  val commerce = payload.optJSONObject("commerce") ?: JSONObject()
+  val commerceSampleComplete = commerce.optBoolean("sampleComplete", true)
   val accountCount = summary.optInt("accountCount", accounts.size)
   val transactionCount = summary.optInt("transactionCount", transactions.size)
   val operationCount = summary.optInt("operationCount", operations.size)
@@ -696,6 +698,32 @@ private fun FinanceContent(payload: JSONObject) {
           Text("Las transferencias internas y los pagos QR representan circulación del saldo, no capital nuevo. No se suman a las recargas.", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
           Text("Datos de prueba. No representan dinero real ni fondos bancarios.", color = Color(0xFFFFC66D), fontSize = 10.sp)
         }
+      }
+    }
+    item {
+      Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+          .background(Brush.linearGradient(listOf(Color(0xFF172D4A), Color(0xFF101A31), Color(0xFF0A1426))))
+          .border(1.dp, Color(0xFF8057B8), RoundedCornerShape(18.dp)).padding(15.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+      ) {
+        Text("COMERCIO DEMO · ACTIVIDAD COMERCIAL", color = Color(0xFFC3A5FF), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+        Text("${commerce.optInt("orderCount")} pedidos registrados · ${commerce.optInt("paidOrderCount")} pagos confirmados", color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text("Importe de pedidos actualmente pagados: OM$ ${String.format("%.2f", commerce.optDouble("paidGross"))}", color = White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FinanceMetric("OMNI Pay DEMO", "OM$ ${String.format("%.2f", commerce.optDouble("omniPayDemoGross"))}", Icons.Default.AccountBalanceWallet, Modifier.weight(1f))
+          FinanceMetric("Tarjeta DEMO", "OM$ ${String.format("%.2f", commerce.optDouble("cardDemoGross"))}", Icons.Default.CreditCard, Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FinanceMetric("Efectivo DEMO", "OM$ ${String.format("%.2f", commerce.optDouble("cashDemoGross"))}", Icons.Default.Payments, Modifier.weight(1f))
+          FinanceMetric("Devoluciones", "OM$ ${String.format("%.2f", commerce.optDouble("refundedGross"))}", Icons.Default.Replay, Modifier.weight(1f))
+        }
+        Text("${commerce.optInt("refundedOrderCount")} pedidos reembolsados · ${commerce.optInt("cancelledUnpaidCount")} cancelados sin cobro", color = Muted, fontSize = 10.sp)
+        Text(
+          if (commerceSampleComplete) "Muestra comercial completa." else "Muestra parcial: ${commerce.optInt("sampledOrders")} de ${commerce.optInt("orderCount")} pedidos. Los importes no representan el total histórico.",
+          color = if (commerceSampleComplete) Color(0xFF65E9B7) else Color(0xFFFFC66D), fontSize = 10.sp
+        )
+        Text("El efectivo y la tarjeta DEMO se informan como ventas comerciales; no se suman al saldo de las billeteras OMNI Pay.", color = Muted, fontSize = 10.sp, lineHeight = 14.sp)
       }
     }
     item { Text("Cuentas y saldos · ${accounts.size} visibles de $accountCount", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
