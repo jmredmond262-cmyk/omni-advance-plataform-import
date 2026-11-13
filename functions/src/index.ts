@@ -346,6 +346,7 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
     const orderItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
     const catalog = Array.isArray(profileSnap.get("inventory")) ? profileSnap.get("inventory") as Array<Record<string, unknown>> : [];
     let verifiedSubtotal = 0;
+    const seenProducts = new Set<string>();
     if (orderItems.length === 0 || orderItems.length > 30) {
       throw new HttpsError("failed-precondition", "El detalle del pedido ya no es válido.");
     }
@@ -354,28 +355,39 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
       const quantity = Number(line.quantity);
       const price = Number(line.price);
       const product = catalog.find((item) => String(item.id || "") === productId);
-      if (!product || product.inStock !== true || !Number.isInteger(quantity) || quantity < 1 ||
-          !Number.isFinite(price) || Math.abs(Number(product.price) - price) >= 0.005) {
-        throw new HttpsError("failed-precondition", "El catálogo cambió. No se registró el pago.");
+      const currentPrice = Number(product?.price);
+      if (!productId || seenProducts.has(productId) || !product || product.inStock !== true ||
+          !Number.isInteger(quantity) || quantity < 1 || quantity > 999 ||
+          !Number.isFinite(price) || price <= 0 || !Number.isFinite(currentPrice) ||
+          Math.abs(currentPrice - price) >= 0.005 || String(line.name || "") !== String(product.name || "")) {
+        throw new HttpsError("failed-precondition", "El catálogo o el detalle del pedido cambió. No se registró el pago.");
       }
+      seenProducts.add(productId);
       verifiedSubtotal += price * quantity;
     }
     const subtotal = Math.round(verifiedSubtotal * 100) / 100;
     const savedSubtotal = Number(order.subtotal ?? subtotal);
     const savedFee = Number(order.deliveryFee ?? 0);
-    const minimum = Number(profileSnap.get("minimumOrderAmount") || 0);
-    if (Math.abs(subtotal - savedSubtotal) >= 0.005 || subtotal < minimum ||
-        Math.abs(subtotal + savedFee - amount) >= 0.005) {
-      throw new HttpsError("failed-precondition", "El total o la compra mínima ya no coinciden. No se registró el pago.");
+    const minimum = Number(profileSnap.get("minimumOrderAmount") ?? 0);
+    const freeFromRaw = profileSnap.get("freeDeliveryFrom");
+    const freeFrom = freeFromRaw == null ? null : Number(freeFromRaw);
+    const configuredDeliveryFee = Number(profileSnap.get("deliveryFee") ?? 0);
+    if (!Number.isFinite(minimum) || minimum < 0 || minimum > 50000 ||
+        (freeFrom !== null && (!Number.isFinite(freeFrom) || freeFrom < 0 || freeFrom > 50000)) ||
+        !Number.isFinite(configuredDeliveryFee) || configuredDeliveryFee < 0 || configuredDeliveryFee > 50000 ||
+        !Number.isFinite(savedFee) || savedFee < 0 || savedFee > 50000 ||
+        !Number.isFinite(savedSubtotal) || Math.abs(subtotal - savedSubtotal) >= 0.005 ||
+        subtotal < minimum || Math.abs(subtotal + savedFee - amount) >= 0.005) {
+      throw new HttpsError("failed-precondition", "El total, la compra mínima o el envío ya no coinciden. No se registró el pago.");
     }
     const fulfillment = String(order.fulfillmentType || "RETIRO");
-    if ((fulfillment === "RETIRO" && profileSnap.get("pickupEnabled") === false) ||
+    if (!["RETIRO", "DELIVERY"].includes(fulfillment) ||
+        (fulfillment === "RETIRO" && profileSnap.get("pickupEnabled") === false) ||
         (fulfillment === "DELIVERY" && (profileSnap.get("deliveryEnabled") !== true || !String(order.deliveryAddress || "").trim()))) {
       throw new HttpsError("failed-precondition", "El comercio ya no ofrece esta modalidad de entrega. No se registró el pago.");
     }
-    const freeFrom = profileSnap.get("freeDeliveryFrom");
-    const expectedFee = fulfillment === "DELIVERY" && !(freeFrom != null && subtotal >= Number(freeFrom))
-      ? Number(profileSnap.get("deliveryFee") || 0) : 0;
+    const expectedFee = fulfillment === "DELIVERY" && !(freeFrom !== null && subtotal >= freeFrom)
+      ? configuredDeliveryFee : 0;
     if (Math.abs(expectedFee - savedFee) >= 0.005) {
       throw new HttpsError("failed-precondition", "La tarifa de envío cambió. No se registró el pago.");
     }
