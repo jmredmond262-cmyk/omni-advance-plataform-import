@@ -1102,7 +1102,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                                 (reviewCashbackTerms.monthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
                             color = Color(0xFF65E6A5), fontSize = 10.sp
                         )
-                        Text("El crédito automático todavía no está habilitado; esta compra no recibirá un reintegro en saldo.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                        Text("El cashback se calcula y acredita automáticamente al pagar con OMNI Pay DEMO, sujeto a los topes vigentes. La tarjeta DEMO no genera cashback.", color = Color(0xFFFFC978), fontSize = 10.sp)
                     } else {
                         Text("Este comercio no tiene cashback activo para este pedido.", color = Color(0xFFB8C8D9), fontSize = 10.sp)
                     }
