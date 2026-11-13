@@ -1135,8 +1135,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     "RECIBIDO" -> "ACEPTADO"
                     "ACEPTADO" -> "EN_PREPARACION"
                     "EN_PREPARACION" -> "LISTO"
-                    "LISTO" -> if (scanned.fulfillmentType == "DELIVERY") "EN_CAMINO" else "ENTREGADO"
-                    "EN_CAMINO" -> "ENTREGADO"
+                    "LISTO" -> if (scanned.fulfillmentType == "DELIVERY") "EN_CAMINO" else "ENTREGADO_POR_COMERCIO"
+                    "EN_CAMINO" -> "ENTREGADO_POR_COMERCIO"
                     else -> ""
                 }
                 val updating = scanned.id in statusUpdatingOrderIds
@@ -1149,7 +1149,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         "EN_PREPARACION" -> "Preparar pedido"
                         "LISTO" -> "Marcar listo"
                         "EN_CAMINO" -> "Enviar delivery"
-                        else -> "Marcar entregado"
+                        else -> "Informar entrega al cliente"
                     })
                 } else TextButton(
                     enabled = !updating,
@@ -1501,6 +1501,9 @@ private fun OrderStatusCard(
                             Text("$method · ${event.note}", color = if (event.eventType == "PAYMENT_ATTEMPT") Color(0xFFFFC978) else Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
                         if (event.reason.isNotBlank()) Text("Motivo: ${event.reason}", color = Color(0xFFFFC978), fontSize = 9.sp)
+                        if (event.note.isNotBlank() && event.eventType !in listOf("PAYMENT", "PAYMENT_ATTEMPT", "REFUND")) {
+                            Text(event.note, color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                        }
                     }
                 }
             }
@@ -1558,7 +1561,7 @@ private fun OrderStatusCard(
                     Text("Motivo informado por el comercio: ${order.refundReason}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
                 }
             }
-            if (merchantMode && order.paymentStatus == "PAGADA · DEMO" && order.status in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO") && onRefund != null) {
+            if (merchantMode && order.paymentStatus == "PAGADA · DEMO" && order.status in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO") && onRefund != null) {
                 OutlinedButton(onClick = onRefund, modifier = Modifier.fillMaxWidth()) { Text("Resolver devolución DEMO", fontSize = 10.sp) }
             }
             if (!merchantMode && onPay != null && order.paymentStatus == "PENDIENTE" &&
