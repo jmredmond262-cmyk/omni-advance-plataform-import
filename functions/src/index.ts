@@ -314,13 +314,28 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
   const amount = Number(request.data?.amount);
   const cardBrand = String(request.data?.cardBrand || "");
   const approved = request.data?.approved === true;
-  if (!/^[A-Za-z0-9_-]{8,120}$/.test(orderId) || !Number.isFinite(amount) ||
-      amount <= 0 || amount > 50000 || !["VISA", "MASTERCARD"].includes(cardBrand)) {
+  const attemptId = String(request.data?.attemptId || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(orderId) || !/^[A-Za-z0-9_-]{16,100}$/.test(attemptId) ||
+      !Number.isFinite(amount) || amount <= 0 || amount > 50000 ||
+      !["VISA", "MASTERCARD"].includes(cardBrand)) {
     throw new HttpsError("invalid-argument", "El intento de tarjeta DEMO no es válido.");
   }
   const orderRef = db.collection("storeOrders").doc(orderId);
-  const paymentRef = db.collection("demoCardPayments").doc(`carddemo_${randomUUID().replace(/-/g, "")}`);
+  const paymentRef = db.collection("demoCardPayments").doc(`carddemo_${attemptId}`);
   return db.runTransaction(async (tx) => {
+    const paymentSnap = await tx.get(paymentRef);
+    if (paymentSnap.exists) {
+      const previous = paymentSnap.data()!;
+      if (previous.orderId !== orderId || previous.customerUid !== customerUid ||
+          Number(previous.amount) !== amount || previous.cardBrand !== cardBrand ||
+          previous.approved !== approved) {
+        throw new HttpsError("already-exists", "El identificador de intento ya fue utilizado con otros datos.");
+      }
+      return {
+        message: approved ? "PAGO DE TARJETA SIMULADO · APROBADO · DEMO" : "PAGO DE TARJETA SIMULADO · RECHAZADO · DEMO",
+        approved: previous.status === "APROBADA · DEMO", duplicate: true, paymentId: paymentRef.id
+      };
+    }
     const orderSnap = await tx.get(orderRef);
     if (!orderSnap.exists) throw new HttpsError("not-found", "El pedido ya no está disponible.");
     const order = orderSnap.data()!;
@@ -330,6 +345,15 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
     if (order.paymentStatus !== "PENDIENTE" ||
         !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || "")) ||
         Math.abs(Number(order.total || 0) - amount) >= 0.005) {
+      if (approved && order.paymentStatus === "PAGADA · DEMO" &&
+          order.paymentMethod === "TARJETA_DEMO" && order.cardPaymentId) {
+        const savedPaymentRef = db.collection("demoCardPayments").doc(String(order.cardPaymentId));
+        const savedPaymentSnap = await tx.get(savedPaymentRef);
+        if (savedPaymentSnap.exists && savedPaymentSnap.get("attemptId") === attemptId &&
+            savedPaymentSnap.get("customerUid") === customerUid) {
+          return { message: "PAGO DE TARJETA SIMULADO · APROBADO · DEMO", approved: true, duplicate: true, paymentId: savedPaymentRef.id };
+        }
+      }
       throw new HttpsError("failed-precondition", "El pedido ya no admite este pago o cambió su importe.");
     }
     const createdAt = order.createdAt?.toDate?.();
@@ -405,15 +429,15 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
     }
     const status = approved ? "APROBADA · DEMO" : "RECHAZADA · DEMO";
     tx.create(paymentRef, {
-      paymentId: paymentRef.id, orderId, customerUid, merchantUid: String(order.merchantUid),
-      amount, cardBrand, provider: "OMNI_DEMO_GATEWAY", status, environment: "DEMO",
+      paymentId: paymentRef.id, attemptId, orderId, customerUid, merchantUid: String(order.merchantUid),
+      amount, cardBrand, approved, provider: "OMNI_DEMO_GATEWAY", status, environment: "DEMO",
       createdAt: FieldValue.serverTimestamp()
     });
     if (approved) tx.update(orderRef, {
       paymentStatus: "PAGADA · DEMO", paymentMethod: "TARJETA_DEMO",
       cardPaymentId: paymentRef.id, updatedAt: FieldValue.serverTimestamp()
     });
-    return { message: approved ? "PAGO DE TARJETA SIMULADO · APROBADO · DEMO" : "PAGO DE TARJETA SIMULADO · RECHAZADO · DEMO", approved };
+    return { message: approved ? "PAGO DE TARJETA SIMULADO · APROBADO · DEMO" : "PAGO DE TARJETA SIMULADO · RECHAZADO · DEMO", approved, duplicate: false, paymentId: paymentRef.id };
   });
 });
 
