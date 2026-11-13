@@ -1086,7 +1086,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             onRefund = {
                                 selectedRefundOrder = order
                                 refundReasonInput = ""
-                            }
+                            },
+                            onConfirmCashCollection = { confirmCashCollection(order) }
                         )
                     }
                 }
