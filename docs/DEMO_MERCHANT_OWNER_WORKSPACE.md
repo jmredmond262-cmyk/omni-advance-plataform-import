@@ -61,7 +61,9 @@ Las transiciones de pedidos DEMO se ejecutan mediante la callable `updateDemoSto
 - Comercio: `RECIBIDO → ACEPTADO → EN_PREPARACION → LISTO`.
 - Retiro: desde `LISTO` el comercio informa la entrega y pasa a `ENTREGADO_POR_COMERCIO`; el comprador confirma la recepción y recién entonces pasa a `ENTREGADO`.
 - Delivery: desde `LISTO` pasa a `EN_CAMINO`; al entregar, el comercio informa la entrega (`ENTREGADO_POR_COMERCIO`) y el comprador confirma la recepción (`ENTREGADO`).
-- La confirmación final solo la puede realizar el comprador autenticado del pedido y exige que el pago DEMO esté confirmado. El servidor registra `merchantHandoffAt` y `customerReceivedAt`.
+- La confirmación final solo la puede realizar el comprador autenticado del pedido y exige que el pago esté confirmado. El servidor registra `merchantHandoffAt` y `customerReceivedAt`.
+- Si el pedido se creó con pago al retirar/recibir, el titular puede registrar el cobro presencial DEMO después de informar la entrega. Se guarda `PAGADA · EFECTIVO_DEMO` y el evento `PAYMENT_CASH`, sin modificar billeteras, ledger OMNI ni cashback; después el comprador confirma la recepción.
+- El cobro presencial no habilita devoluciones automáticas de billetera: estas continúan limitadas a pagos `OMNI_PAY_DEMO` y `TARJETA_DEMO`, que tienen sus propios registros de reversión.
 - Rechazo: solo desde `RECIBIDO`, con motivo de 10 a 240 caracteres.
 - Cancelación del comercio: solo antes del pago y en `ACEPTADO` o `EN_PREPARACION`.
 - Los pedidos pagados pueden entrar al circuito de devolución mientras no exista confirmación final del comprador; una vez en `ENTREGADO`, la devolución automática queda bloqueada.
