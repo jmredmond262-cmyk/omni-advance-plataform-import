@@ -678,7 +678,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             feedback = "No tenés autorización para gestionar este pedido desde este comercio."
             return
         }
-        if (next !in listOf("ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO", "RECHAZADO")) {
+        if (next !in listOf("ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO", "RECHAZADO")) {
             feedback = "La transición solicitada no está permitida."
             return
         }
@@ -779,6 +779,37 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             .addOnFailureListener {
                 statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
                 feedback = it.localizedMessage ?: "No se pudo cancelar el pedido. Podés reintentar sin duplicar el cambio."
+            }
+    }
+
+    fun confirmCustomerReceipt(order: OmniStoreOrder) {
+        if (order.id in statusUpdatingOrderIds) return
+        if (order.customerUid != uid || order.environment != "DEMO" ||
+            order.status != "ENTREGADO_POR_COMERCIO" || !order.paymentStatus.startsWith("PAGADA")) {
+            feedback = "La recepción solo puede confirmarse desde tu cuenta cuando el comercio informó la entrega y el pago está confirmado."
+            return
+        }
+        statusUpdatingOrderIds = statusUpdatingOrderIds + order.id
+        FirebaseFunctions.getInstance("us-central1")
+            .getHttpsCallable("updateDemoStoreOrderStatus")
+            .call(mapOf("orderId" to order.id, "nextStatus" to "ENTREGADO"))
+            .addOnSuccessListener {
+                statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
+                orders = orders.map { current ->
+                    if (current.id == order.id) current.copy(status = "ENTREGADO") else current
+                }
+                if (selectedScannedOrder?.id == order.id) {
+                    selectedScannedOrder = selectedScannedOrder?.copy(status = "ENTREGADO")
+                }
+                UsageAnalyticsRepository.trackEvent(
+                    uid, "orders", "ORDER_RECEIPT_CONFIRMED",
+                    mapOf("operationId" to order.id, "stage" to "CUSTOMER_RECEIPT_CONFIRMED", "success" to true)
+                )
+                feedback = "Recepción confirmada. El pedido quedó finalizado."
+            }
+            .addOnFailureListener { error ->
+                statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
+                feedback = error.localizedMessage ?: "No se pudo confirmar la recepción. Podés reintentar; el servidor evita duplicar la confirmación."
             }
     }
 
