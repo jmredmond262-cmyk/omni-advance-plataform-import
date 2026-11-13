@@ -45,7 +45,7 @@ function demoReceiptSnapshot(order: Record<string, any>, orderId: string, paymen
     customerName: String(order.customerName || "Cliente OMNI"), items,
     subtotal: Number(order.subtotal || 0), deliveryFee: Number(order.deliveryFee || 0),
     total: Number(order.total || 0), fulfillmentType: String(order.fulfillmentType || "RETIRO"),
-    paymentMethod, paymentStatus: "PAGADA · DEMO", issuedAt };
+    paymentMethod, paymentStatus: paymentMethod === "EFECTIVO_DEMO" ? "PAGADA · EFECTIVO_DEMO" : "PAGADA · DEMO", issuedAt };
 }
 
 function inventoryMovementId(kind: string, orderId: string, productId: string): string {
