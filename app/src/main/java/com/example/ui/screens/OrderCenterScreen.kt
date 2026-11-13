@@ -350,6 +350,11 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     val itemsSubtotal = cartLines.sumOf { it.price * it.quantity }
     val deliveryFee = if (fulfillmentType == "DELIVERY" && (store.freeDeliveryFrom == null || itemsSubtotal < store.freeDeliveryFrom)) store.deliveryFee else 0.0
     val total = itemsSubtotal + deliveryFee
+    val estimatedCashback = if (reviewCashbackTerms.enabled) {
+        val raw = itemsSubtotal * reviewCashbackTerms.percentage / 100.0
+        minOf(raw, reviewCashbackTerms.capPerPurchase ?: Double.POSITIVE_INFINITY)
+            .coerceAtLeast(0.0)
+    } else 0.0
 
     fun submitOrder() {
         if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 ||
@@ -1097,12 +1102,15 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     Text("Total: OM$ ${String.format("%,.2f", total)}", color = Color.White, fontWeight = FontWeight.Bold)
                     if (reviewCashbackTerms.enabled) {
                         Text(
-                            "Política vigente del comercio: ${reviewCashbackTerms.percentage}% de cashback configurado" +
-                                (reviewCashbackTerms.capPerPurchase?.let { " · Tope por compra OM$ ${String.format("%,.2f", it)}" } ?: "") +
-                                (reviewCashbackTerms.monthlyCap?.let { " · Tope mensual OM$ ${String.format("%,.2f", it)}" } ?: ""),
-                            color = Color(0xFF65E6A5), fontSize = 10.sp
+                            "Cashback estimado: OM$ ${String.format("%,.2f", estimatedCashback)} · ${reviewCashbackTerms.percentage}%",
+                            color = Color(0xFF65E6A5), fontSize = 11.sp, fontWeight = FontWeight.Bold
                         )
-                        Text("El cashback se calcula y acredita automáticamente al pagar con OMNI Pay DEMO, sujeto a los topes vigentes. La tarjeta DEMO no genera cashback.", color = Color(0xFFFFC978), fontSize = 10.sp)
+                        Text(
+                            (reviewCashbackTerms.capPerPurchase?.let { "Tope por compra: OM$ ${String.format("%,.2f", it)}. " } ?: "") +
+                                (reviewCashbackTerms.monthlyCap?.let { "Tope mensual: OM$ ${String.format("%,.2f", it)}. El crédito final puede ser menor según lo ya acumulado este mes." } ?: "El importe definitivo se confirma al pagar."),
+                            color = Color(0xFFB8C8D9), fontSize = 10.sp
+                        )
+                        Text("El cashback se acredita al pagar con OMNI Pay DEMO. La tarjeta DEMO no genera cashback.", color = Color(0xFFFFC978), fontSize = 10.sp)
                     } else {
                         Text("Este comercio no tiene cashback activo para este pedido.", color = Color(0xFFB8C8D9), fontSize = 10.sp)
                     }
