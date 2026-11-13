@@ -9,7 +9,14 @@ import com.example.model.TaskCategory
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.SetOptions
+
+data class PersonalSyncResult<T>(
+    val value: T,
+    val isFromCache: Boolean,
+    val hasPendingWrites: Boolean
+)
 
 /**
  * User-owned tasks, shopping items, custom contacts and contact favorites.
@@ -20,8 +27,8 @@ class PersonalDataRepository(
 ) {
     private fun user(uid: String) = db.collection("users").document(uid)
 
-    fun observeTasks(uid: String, callback: (Result<List<DailyTask>>) -> Unit): ListenerRegistration =
-        user(uid).collection("dailyTasks").addSnapshotListener { snapshot, error ->
+    fun observeTasks(uid: String, callback: (Result<PersonalSyncResult<List<DailyTask>>>) -> Unit): ListenerRegistration =
+        user(uid).collection("dailyTasks").addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
             if (error != null) {
                 callback(Result.failure(error))
                 return@addSnapshotListener
@@ -38,10 +45,10 @@ class PersonalDataRepository(
                     timeTag = doc.getString("timeTag") ?: "09:00"
                 )
             }.sortedWith(compareBy<DailyTask> { it.timeTag }.thenBy { it.title })
-            callback(Result.success(items))
+            callback(Result.success(PersonalSyncResult(items, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
         }
 
-    fun observeShoppingItems(uid: String, callback: (Result<List<NeedItem>>) -> Unit): ListenerRegistration =
+    fun observeShoppingItems(uid: String, callback: (Result<PersonalSyncResult<List<NeedItem>>>) -> Unit): ListenerRegistration =
         user(uid).collection("shoppingListItems").addSnapshotListener { snapshot, error ->
             if (error != null) {
                 callback(Result.failure(error))
@@ -63,7 +70,7 @@ class PersonalDataRepository(
             callback(Result.success(items))
         }
 
-    fun observeCustomContacts(uid: String, callback: (Result<List<NeighborhoodContact>>) -> Unit): ListenerRegistration =
+    fun observeCustomContacts(uid: String, callback: (Result<PersonalSyncResult<List<NeighborhoodContact>>>) -> Unit): ListenerRegistration =
         user(uid).collection("customContacts").addSnapshotListener { snapshot, error ->
             if (error != null) {
                 callback(Result.failure(error))
@@ -86,10 +93,10 @@ class PersonalDataRepository(
                     isCustom = true
                 )
             }
-            callback(Result.success(contacts))
+            callback(Result.success(PersonalSyncResult(contacts, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
         }
 
-    fun observeContactFavorites(uid: String, callback: (Result<Set<String>?>) -> Unit): ListenerRegistration =
+    fun observeContactFavorites(uid: String, callback: (Result<PersonalSyncResult<Set<String>?>>) -> Unit): ListenerRegistration =
         user(uid).collection("preferences").document("contactFavorites")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -97,10 +104,10 @@ class PersonalDataRepository(
                     return@addSnapshotListener
                 }
                 if (snapshot?.exists() != true) {
-                    callback(Result.success(null))
+                    callback(Result.success(PersonalSyncResult(null, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
                 } else {
                     val ids = snapshot.get("favoriteIds") as? List<*>
-                    callback(Result.success(ids.orEmpty().filterIsInstance<String>().toSet()))
+                    callback(Result.success(PersonalSyncResult(ids.orEmpty().filterIsInstance<String>().toSet(), snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
                 }
             }
 
