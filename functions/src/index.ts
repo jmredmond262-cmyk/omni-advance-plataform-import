@@ -782,7 +782,40 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       throw new HttpsError("permission-denied", "Solo el titular del comercio DEMO puede resolver esta devolución.");
     }
     if (order.paymentStatus === "REEMBOLSADA · DEMO" || order.status === "CANCELADO") {
-      if (order.refundOperationId === refundOperationId) return { orderId, refunded: true, duplicate: true };
+      if (order.refundOperationId === refundOperationId) {
+        const existingRefundOperation = await tx.get(refundOperationRef);
+        if (!existingRefundOperation.exists || existingRefundOperation.get("orderId") !== orderId) {
+          throw new HttpsError("data-loss", "La devolución figura cerrada, pero falta su operación contable.");
+        }
+        if (order.paymentMethod === "TARJETA_DEMO") {
+          if (existingRefundOperation.get("kind") !== "CARD_DEMO_REVERSAL" ||
+              Number(existingRefundOperation.get("amount")) !== 0) {
+            throw new HttpsError("data-loss", "La reversión de tarjeta DEMO no coincide con su registro contable.");
+          }
+          return { orderId, refunded: true, duplicate: true, paymentMethod: "TARJETA_DEMO", walletMovement: false };
+        }
+        if (order.paymentMethod === "OMNI_PAY_DEMO") {
+          const merchantRefundRef = accountRef(uid).collection("transactions").doc(refundOperationId);
+          const customerRefundRef = accountRef(String(order.customerUid)).collection("transactions").doc(refundOperationId);
+          const cashbackReversalRef = accountRef(String(order.customerUid)).collection("transactions").doc(`cashback_reversal_${orderId}`);
+          const [merchantRefundSnap, customerRefundSnap, cashbackReversalSnap] = await Promise.all([
+            tx.get(merchantRefundRef), tx.get(customerRefundRef), tx.get(cashbackReversalRef)
+          ]);
+          const originalAmount = Number(order.refundAmount);
+          const cashbackReversed = Number(order.cashbackReversed ?? 0);
+          if (!merchantRefundSnap.exists || !customerRefundSnap.exists ||
+              Number(merchantRefundSnap.get("amount")) !== -originalAmount ||
+              Number(customerRefundSnap.get("amount")) !== originalAmount - cashbackReversed ||
+              (cashbackReversed > 0
+                ? !cashbackReversalSnap.exists || Number(cashbackReversalSnap.get("amount")) !== -cashbackReversed
+                : cashbackReversalSnap.exists)) {
+            throw new HttpsError("data-loss", "La devolución tiene movimientos incompletos o inconsistentes; requiere revisión.");
+          }
+          return { orderId, refunded: true, duplicate: true, paymentMethod: "OMNI_PAY_DEMO",
+            refundedAmount: originalAmount, cashbackReversed, walletMovement: true };
+        }
+        throw new HttpsError("data-loss", "El método de pago de la devolución no es válido.");
+      }
       throw new HttpsError("failed-precondition", "El pedido ya está cerrado.");
     }
     if (order.paymentStatus !== "PAGADA · DEMO" ||
