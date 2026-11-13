@@ -66,6 +66,7 @@ private data class OrderStatusEvent(
     val paymentMethod: String,
     val refundedAmount: Double,
     val cashbackReversed: Double,
+    val note: String,
     val createdAt: com.google.firebase.Timestamp?
 )
 private data class CashbackTerms(
@@ -1253,6 +1254,7 @@ private fun OrderStatusCard(
                         paymentMethod = doc.getString("paymentMethod").orEmpty(),
                         refundedAmount = (doc.get("refundedAmount") as? Number)?.toDouble() ?: 0.0,
                         cashbackReversed = (doc.get("cashbackReversed") as? Number)?.toDouble() ?: 0.0,
+                        note = doc.getString("note").orEmpty(),
                         createdAt = doc.getTimestamp("createdAt")
                     )
                 }
@@ -1335,16 +1337,19 @@ private fun OrderStatusCard(
                             "$transition · $actorLabel · $time",
                             color = Color(0xFFB8C8D9), fontSize = 9.sp
                         )
-                        if (event.eventType == "REFUND" && event.refundedAmount > 0.0) {
+                        if (event.eventType == "REFUND") {
+                            if (event.refundedAmount > 0.0) {
+                                Text(
+                                    "Importe devuelto: OM$ ${String.format("%,.2f", event.refundedAmount)}" +
+                                        if (event.cashbackReversed > 0.0) " · Cashback revertido: OM$ ${String.format("%,.2f", event.cashbackReversed)}" else "",
+                                    color = Color(0xFF65E6A5), fontSize = 9.sp
+                                )
+                            }
                             Text(
-                                "Importe devuelto: OM$ ${String.format("%,.2f", event.refundedAmount)}" +
-                                    if (event.cashbackReversed > 0.0) " · Cashback revertido: OM$ ${String.format("%,.2f", event.cashbackReversed)}" else "",
-                                color = Color(0xFF65E6A5), fontSize = 9.sp
-                            )
-                            Text(
-                                if (event.paymentMethod == "TARJETA_DEMO") "Reversión de tarjeta DEMO" else "Reintegro OMNI Pay DEMO",
+                                if (event.paymentMethod == "TARJETA_DEMO") "Reversión de tarjeta DEMO · sin movimiento de billetera" else "Reintegro OMNI Pay DEMO",
                                 color = Color(0xFF9AAAC2), fontSize = 9.sp
                             )
+                            if (event.note.isNotBlank()) Text(event.note, color = Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
                         if (event.reason.isNotBlank()) Text("Motivo: ${event.reason}", color = Color(0xFFFFC978), fontSize = 9.sp)
                     }
