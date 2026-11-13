@@ -1119,6 +1119,7 @@ fun MerchantHubScreen(
                             val type = when (movement["type"] as? String) {
                                 "VENTA_OMNI_PAY_DEMO" -> "Venta OMNI Pay"
                                 "VENTA_TARJETA_DEMO" -> "Venta tarjeta DEMO"
+                                "VENTA_EFECTIVO_DEMO" -> "Venta cobro presencial DEMO"
                                 "DEVOLUCION_PEDIDO" -> "Devolución de pedido"
                                 "AJUSTE_TITULAR" -> "Ajuste del titular"
                                 "ALTA_INVENTARIO" -> "Alta de producto"
