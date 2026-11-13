@@ -347,7 +347,7 @@ function summarizeUsage(events) {
   };
 }
 async function dashboard(env) {
-  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "geoPresence", "moduleRegistry", "adminAuditLogs"];
+  const collections = ["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "storeReceipts", "storeReceiptAdjustments", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "geoPresence", "moduleRegistry", "adminAuditLogs"];
   const counts = await Promise.all(collections.map(name => countDocuments(env, name)));
   const [walletPage, operations, userProfiles, usageEvents, geoPresencePage] = await Promise.all([
     listDocumentsPage(env, "walletAccounts", 200),
@@ -627,7 +627,7 @@ async function handleAction(env, action, data, identity) {
     case "issueDemoMerchantClaimCode": return issueDemoMerchantCode(env, identity.uid, String(data.storeId || "").trim());
     case "list": {
       const collection = String(data.collection || "");
-      const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
+      const allowed = new Set(["users", "walletAccounts", "walletOperations", "merchantProfiles", "storeOrders", "storeReceipts", "storeReceiptAdjustments", "omniEvents", "omniMoments", "jobPosts", "omniProfessionalProfiles", "appFeedback", "usageEvents", "moduleRegistry", "adminAuditLogs", "betaInvitations"]);
       if (!allowed.has(collection)) throw new ApiError(400, "invalid-argument", "Colección no disponible.");
       if (collection === "usageEvents") {
         const offset = Math.max(0, Math.min(Number(data.offset) || 0, 50000));
