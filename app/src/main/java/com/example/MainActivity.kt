@@ -173,21 +173,25 @@ class MainActivity : ComponentActivity() {
             val themeMode by viewModel.themeMode.collectAsState()
             var showSplash by rememberSaveable { mutableStateOf(true) }
 
-            LaunchedEffect(Unit) {
-                delay(2600)
-                showSplash = false
-                val briefingPrefs = getSharedPreferences("omni_session", android.content.Context.MODE_PRIVATE)
-                if (
-                    !briefingPrefs.getBoolean("morning_briefing_seen", false) &&
-                    viewModel.currentScreen.value !is Screen.StoreDetail
-                ) {
-                    viewModel.navigateTo(Screen.MorningBriefing)
+            LaunchedEffect(showSplash) {
+                if (!showSplash) {
+                    val briefingPrefs = getSharedPreferences("omni_session", android.content.Context.MODE_PRIVATE)
+                    if (
+                        !briefingPrefs.getBoolean("morning_briefing_seen", false) &&
+                        viewModel.currentScreen.value !is Screen.StoreDetail
+                    ) {
+                        viewModel.navigateTo(Screen.MorningBriefing)
+                    }
                 }
             }
 
             MyApplicationTheme(themeMode = themeMode) {
                 Crossfade(targetState = showSplash, label = "omni-launch-transition") { splash ->
-                    if (splash) OmniSplashScreen() else AuthGate(activity = this@MainActivity, viewModel = viewModel)
+                    if (splash) {
+                        OmniSplashScreen(onFinished = { showSplash = false })
+                    } else {
+                        AuthGate(activity = this@MainActivity, viewModel = viewModel)
+                    }
                 }
             }
         }
