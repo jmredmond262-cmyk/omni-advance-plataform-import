@@ -2,6 +2,7 @@ package com.example.data.wallet
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.functions.FirebaseFunctions
+import java.util.UUID
 
 /**
  * Pasarela sandbox. No recopila números, CVV, vencimientos ni tokens de tarjetas reales.
@@ -10,6 +11,8 @@ import com.google.firebase.functions.FirebaseFunctions
 class DemoCardGatewayRepository(
     private val functions: FirebaseFunctions = FirebaseFunctions.getInstance("us-central1")
 ) {
+    // Se conserva ante fallos de red para que el reintento use la misma clave idempotente.
+    private val pendingAttemptIds = mutableMapOf<String, String>()
     fun simulateOrderPayment(
         orderId: String,
         merchantUid: String,
@@ -26,9 +29,14 @@ class DemoCardGatewayRepository(
             done(Result.failure(IllegalArgumentException("No se pudo validar el intento de tarjeta DEMO.")))
             return
         }
+        val attemptKey = "$orderId|$cardBrand|$approved"
+        val attemptId = synchronized(pendingAttemptIds) {
+            pendingAttemptIds.getOrPut(attemptKey) { UUID.randomUUID().toString().replace("-", "") }
+        }
         functions.getHttpsCallable("simulateDemoCardPayment")
             .call(mapOf(
                 "orderId" to orderId,
+                "attemptId" to attemptId,
                 "amount" to amount,
                 "cardBrand" to cardBrand,
                 "approved" to approved
@@ -38,8 +46,13 @@ class DemoCardGatewayRepository(
                 val response = result.data as? Map<String, Any?> ?: emptyMap()
                 val message = response["message"] as? String
                 if (message.isNullOrBlank()) done(Result.failure(IllegalStateException("La pasarela no devolvió un resultado válido.")))
-                else done(Result.success(message))
+                else {
+                    synchronized(pendingAttemptIds) { pendingAttemptIds.remove(attemptKey) }
+                    done(Result.success(message))
+                }
             }
+            // Si la respuesta se pierde, se conserva attemptId: el próximo toque recupera
+            // el resultado original sin crear un segundo registro de pago.
             .addOnFailureListener { done(Result.failure(it)) }
     }
 }
