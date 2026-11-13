@@ -1279,7 +1279,22 @@ private fun OrderStatusCard(
                 }
                 Text("OM$ ${String.format("%,.2f", order.total)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
-            order.items.forEach { Text("${it.quantity} × ${it.name}", color = Color(0xFFB8C8D9), fontSize = 10.sp) }
+            order.items.forEach {
+                Text(
+                    "${it.quantity} × ${it.name} · OM$ ${String.format("%,.2f", it.price * it.quantity)}",
+                    color = Color(0xFFB8C8D9), fontSize = 10.sp
+                )
+            }
+            if (order.subtotal > 0.0 || order.deliveryFee > 0.0) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Subtotal de productos", color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                    Text("OM$ ${String.format("%,.2f", order.subtotal)}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Envío", color = Color(0xFF9AAAC2), fontSize = 9.sp)
+                    Text(if (order.deliveryFee == 0.0 && order.fulfillmentType == "DELIVERY") "Gratis" else "OM$ ${String.format("%,.2f", order.deliveryFee)}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
+                }
+            }
             Text(if (order.fulfillmentType == "DELIVERY") "Delivery · ${order.deliveryAddress}" else "Retiro en el comercio", color = Color(0xFFB8C8D9), fontSize = 9.sp)
             if (order.status == "RECHAZADO" && order.rejectionReason.isNotBlank()) {
                 Text("Motivo del comercio: ${order.rejectionReason}", color = Color(0xFFFFC978), fontSize = 10.sp)
@@ -1295,8 +1310,13 @@ private fun OrderStatusCard(
                         val time = event.createdAt?.toDate()?.let {
                             SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(it)
                         } ?: "Hora pendiente"
+                        val transition = if (event.fromStatus.isBlank()) {
+                            event.toStatus.replace("_", " ")
+                        } else {
+                            "${event.fromStatus.replace("_", " ")} → ${event.toStatus.replace("_", " ")}"
+                        }
                         Text(
-                            "${event.toStatus.replace("_", " ")} · ${if (event.actorRole == "COMERCIO") "Comercio" else "Comprador"} · $time",
+                            "$transition · ${if (event.actorRole == "COMERCIO") "Comercio" else "Comprador"} · $time",
                             color = Color(0xFFB8C8D9), fontSize = 9.sp
                         )
                         if (event.reason.isNotBlank()) Text("Motivo: ${event.reason}", color = Color(0xFFFFC978), fontSize = 9.sp)
@@ -1321,18 +1341,29 @@ private fun OrderStatusCard(
                     fontSize = 9.sp
                 )
             }
+            val paymentMethodLabel = when (order.paymentMethod) {
+                "OMNI_PAY_DEMO" -> "OMNI Pay DEMO"
+                "TARJETA_DEMO" -> "Tarjeta DEMO"
+                else -> "Pago al retirar/recibir"
+            }
             Text(
                 when {
-                    order.paymentStatus == "REEMBOLSADA · DEMO" -> "Pago: devuelto · ${if (order.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"}"
-                    order.paymentStatus.startsWith("PAGADA") -> "Pago: acreditado · ${if (order.paymentMethod == "TARJETA_DEMO") "Tarjeta DEMO" else "OMNI Pay DEMO"}"
-                    else -> "Pago: pendiente · OMNI Pay DEMO, tarjeta DEMO o al retirar/recibir"
+                    order.paymentStatus == "REEMBOLSADA · DEMO" -> "Pago devuelto · $paymentMethodLabel"
+                    order.paymentStatus.startsWith("PAGADA") -> "Pago confirmado · $paymentMethodLabel"
+                    else -> "Pago pendiente · $paymentMethodLabel"
                 },
                 color = if (order.paymentStatus == "REEMBOLSADA · DEMO") Color(0xFF57DDF5) else if (order.paymentStatus.startsWith("PAGADA")) Color(0xFF65E6A5) else Color(0xFFFFC978),
                 fontSize = 9.sp
             )
-            if (!merchantMode && order.paymentStatus == "REEMBOLSADA · DEMO") {
+            if (order.paymentStatus.startsWith("PAGADA") && order.paymentMethod == "OMNI_PAY_DEMO") {
                 Text(
-                    "Devolución confirmada · Importe reintegrado: OM$ ${String.format("%,.2f", order.refundAmount.takeIf { it > 0.0 } ?: order.total)}",
+                    "Movimiento de billetera vinculado al pedido · OM$ ${String.format("%,.2f", order.total)}",
+                    color = Color(0xFF9AAAC2), fontSize = 9.sp
+                )
+            }
+            if (order.paymentStatus == "REEMBOLSADA · DEMO") {
+                Text(
+                    "Devolución confirmada · ${if (order.paymentMethod == "TARJETA_DEMO") "Reversión de tarjeta simulada" else "Importe devuelto: OM$ ${String.format("%,.2f", order.refundAmount.takeIf { it > 0.0 } ?: order.total)}"}",
                     color = Color(0xFF65E6A5), fontSize = 10.sp, fontWeight = FontWeight.Bold
                 )
                 if (order.cashbackReversed > 0.0) {
