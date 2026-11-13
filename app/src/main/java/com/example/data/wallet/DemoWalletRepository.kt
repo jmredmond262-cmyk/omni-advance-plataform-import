@@ -125,9 +125,15 @@ class DemoWalletRepository(
                     } ?: "Procesando…"
                     val orderId = document.getString("orderId").orEmpty()
                     val deliveryFee = (document.get("deliveryFee") as? Number)?.toDouble()
+                    val cashbackAmount = (document.get("cashbackAmount") as? Number)?.toDouble()
+                        ?: (document.get("cashbackReversed") as? Number)?.toDouble()
+                        ?: 0.0
                     val referenceText = buildList {
                         if (orderId.isNotBlank()) add("Pedido ${orderId.take(9)}")
                         if (deliveryFee != null && deliveryFee > 0.0) add("Envío OM$ ${String.format("%,.2f", deliveryFee)}")
+                        if (cashbackAmount > 0.0 && type == TransactionType.REVERSO_CASHBACK) {
+                            add("Cashback revertido OM$ ${String.format("%,.2f", cashbackAmount)}")
+                        }
                         document.getString("paymentMethod")?.takeIf { it.isNotBlank() }?.let {
                             add(if (it == "OMNI_PAY_DEMO") "OMNI Pay DEMO" else if (it == "TARJETA_DEMO") "Tarjeta DEMO" else it)
                         }
@@ -139,6 +145,11 @@ class DemoWalletRepository(
                         storeOrEntityName = document.getString("peerName").orEmpty(),
                         amount = displayAmount,
                         type = type, dateText = dateText,
+                        cashbackEarned = when {
+                            type == TransactionType.COMPRA_LOCAL -> cashbackAmount
+                            type == TransactionType.REINTEGRO_CASHBACK -> kotlin.math.abs(storedAmount)
+                            else -> 0.0
+                        },
                         status = document.getString("status") ?: "APROBADA · DEMO",
                         referenceText = referenceText
                     )
