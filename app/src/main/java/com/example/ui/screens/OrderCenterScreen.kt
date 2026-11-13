@@ -1537,7 +1537,7 @@ private fun OrderStatusCard(
                             )
                             if (event.note.isNotBlank()) Text(event.note, color = Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
-                        if (event.eventType in listOf("PAYMENT", "PAYMENT_ATTEMPT") && event.note.isNotBlank()) {
+                        if (event.eventType in listOf("PAYMENT", "PAYMENT_ATTEMPT", "PAYMENT_CASH") && event.note.isNotBlank()) {
                             val method = when (event.paymentMethod) {
                                 "TARJETA_DEMO" -> "Tarjeta DEMO"
                                 "EFECTIVO_DEMO" -> "Cobro presencial DEMO"
@@ -1546,7 +1546,7 @@ private fun OrderStatusCard(
                             Text("$method · ${event.note}", color = if (event.eventType == "PAYMENT_ATTEMPT") Color(0xFFFFC978) else Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
                         if (event.reason.isNotBlank()) Text("Motivo: ${event.reason}", color = Color(0xFFFFC978), fontSize = 9.sp)
-                        if (event.note.isNotBlank() && event.eventType !in listOf("PAYMENT", "PAYMENT_ATTEMPT", "REFUND")) {
+                        if (event.note.isNotBlank() && event.eventType !in listOf("PAYMENT", "PAYMENT_ATTEMPT", "PAYMENT_CASH", "REFUND")) {
                             Text(event.note, color = Color(0xFF9AAAC2), fontSize = 9.sp)
                         }
                     }
