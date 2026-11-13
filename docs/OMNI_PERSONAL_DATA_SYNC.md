@@ -30,8 +30,13 @@ Cada registro contiene `ownerUid` y una marca `updatedAt`. Las reglas limitan le
 - Si hay datos locales en memoria antes del primer inicio de sesión y la cuenta todavía no tiene registros, se intenta migrarlos.
 - Si cambia la cuenta autenticada, se limpia el estado personal en memoria antes de conectar la nueva cuenta; no se copian datos de un usuario a otro.
 - Las listas de ejemplo se guardan solo cuando el usuario decide cargarlas.
+- Los listeners incluyen metadatos de Firestore (origen caché/servidor y escrituras pendientes).
+- Una colección vacía proveniente únicamente de caché no se interpreta como una cuenta vacía: se espera la confirmación del servidor antes de migrar datos locales o reemplazar el estado.
+- Los callbacks verifican que el UID siga siendo el de la sesión activa; respuestas tardías de una cuenta anterior no pueden sobrescribir el estado de la cuenta nueva.
+- La sustitución completa de la lista de compras obtiene primero la colección desde el servidor. Si no hay conexión, falla sin borrar elementos remotos basándose en una caché incompleta.
+- La sustitución valida IDs vacíos/duplicados y conserva el límite de 450 escrituras por lote.
 - Los errores de sincronización se registran en Logcat. La interfaz todavía no muestra un indicador visible de sincronización ni una confirmación de guardado.
 
 ## Límites y pendientes
 
-Esta etapa modifica el código y las reglas del repositorio. Las reglas todavía no se publicaron en Firebase y no se ejecutó una prueba de integración/emulador. La sincronización debe probarse con dos cuentas distintas antes de habilitarla en una compilación de distribución.
+Esta etapa modifica el código y las reglas del repositorio. Las reglas todavía no se publicaron en Firebase y no se ejecutó una prueba de integración/emulador. La sincronización debe probarse con dos cuentas distintas y con el dispositivo offline/online antes de habilitarla en una compilación de distribución. La lista no se reemplaza offline para priorizar la integridad de datos sobre una escritura potencialmente destructiva.
