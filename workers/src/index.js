@@ -439,14 +439,16 @@ async function recentTransactionDocuments(env, limit = 100) {
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
 async function finance(env) {
-  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions, userPage] = await Promise.all([
+  const [accountCount, accountPage, operationCount, operationPage, transactionCount, transactions, userPage, storeOrderCount, storeOrdersPage] = await Promise.all([
     countDocuments(env, "walletAccounts"),
     listAllDocuments(env, "walletAccounts", 1000),
     countDocuments(env, "walletOperations"),
     recentDocuments(env, "walletOperations", 5000),
     countSubcollectionDocuments(env, "transactions"),
     recentTransactionDocuments(env, 100),
-    listAllDocuments(env, "users", 1000)
+    listAllDocuments(env, "users", 1000),
+    countDocuments(env, "storeOrders"),
+    recentDocuments(env, "storeOrders", 5000)
   ]);
   const profileByUid = new Map(userPage.items.map(profile => [
     String(profile.uid || profile.id || ""),
@@ -464,7 +466,34 @@ async function finance(env) {
   const qrVolume = operationPage.filter(item => item.kind === "QR_PAYMENT").reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const transferIn = operationPage.filter(item => item.kind === "TRANSFER" && item.recipientUid).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const qrCollections = operationPage.filter(item => item.kind === "QR_PAYMENT" && item.recipientUid).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const paidOrders = storeOrdersPage.filter(order =>
+    ["PAGADA · DEMO", "PAGADA · EFECTIVO_DEMO"].includes(String(order.paymentStatus || "")));
+  const refundedOrders = storeOrdersPage.filter(order =>
+    String(order.paymentStatus || "") === "REEMBOLSADA · DEMO");
+  const unpaidCancelledOrders = storeOrdersPage.filter(order =>
+    String(order.status || "") === "CANCELADO" && !refundedOrders.includes(order));
+  const sumOrderTotals = rows => rows.reduce((sum, order) => {
+    const amount = Number(order.total);
+    return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+  }, 0);
+  const paidByMethod = method => paidOrders
+    .filter(order => String(order.paymentMethod || "") === method)
+    .reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+  const commerce = {
+    orderCount: storeOrderCount,
+    sampledOrders: storeOrdersPage.length,
+    sampleComplete: storeOrderCount <= storeOrdersPage.length,
+    paidOrderCount: paidOrders.length,
+    refundedOrderCount: refundedOrders.length,
+    cancelledUnpaidCount: unpaidCancelledOrders.length,
+    paidGross: sumOrderTotals(paidOrders),
+    refundedGross: sumOrderTotals(refundedOrders),
+    omniPayDemoGross: paidByMethod("OMNI_PAY_DEMO"),
+    cardDemoGross: paidByMethod("TARJETA_DEMO"),
+    cashDemoGross: paidByMethod("EFECTIVO_DEMO")
+  };
   return {
+    commerce,
     summary: {
       currentBalance,
       initialCapital,
