@@ -47,6 +47,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
@@ -322,13 +323,14 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
 
     DisposableEffect(merchantMode, merchantReady, store.id, uid, demoMode) {
         var listener: ListenerRegistration? = null
-        if (!demoMode && uid.isNotBlank() && (!merchantMode || merchantReady)) {
+        orders = emptyList()
+        if (uid.isNotBlank() && (!merchantMode || merchantReady)) {
             val query = if (merchantMode) {
                 db.collection("storeOrders").whereEqualTo("merchantUid", uid)
             } else {
                 db.collection("storeOrders").whereEqualTo("customerUid", uid)
             }
-            listener = query.addSnapshotListener { snapshot, error ->
+            listener = query.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     feedback = error.localizedMessage ?: "No se pudieron sincronizar los pedidos."
                 } else {
