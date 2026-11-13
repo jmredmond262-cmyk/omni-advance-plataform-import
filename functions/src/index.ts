@@ -375,7 +375,7 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
       throw new HttpsError("permission-denied", "Solo el comprador puede simular el pago de este pedido DEMO.");
     }
     if (order.paymentStatus !== "PENDIENTE" ||
-        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || "")) ||
+        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO"].includes(String(order.status || "")) ||
         Math.abs(Number(order.total || 0) - amount) >= 0.005) {
       if (approved && order.paymentStatus === "PAGADA · DEMO" &&
           order.paymentMethod === "TARJETA_DEMO" && order.cardPaymentId) {
@@ -585,7 +585,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
 
     if (!customerSnap.exists) throw new HttpsError("failed-precondition", "Tu billetera DEMO no está inicializada.");
     if (order.paymentStatus !== "PENDIENTE" ||
-        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO"].includes(String(order.status || ""))) {
+        !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO"].includes(String(order.status || ""))) {
       throw new HttpsError("failed-precondition", "El pedido ya fue pagado o está cerrado.");
     }
     const createdAt = order.createdAt?.toDate?.();
