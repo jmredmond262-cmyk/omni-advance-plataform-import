@@ -924,6 +924,15 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
         if (!existingRefundOperation.exists || existingRefundOperation.get("orderId") !== orderId) {
           throw new HttpsError("data-loss", "La devolución figura cerrada, pero falta su operación contable.");
         }
+        if (order.inventoryDeducted === true) {
+          const restoredItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+          const movementRefs = restoredItems.map((line) => db.collection("merchantProfiles").doc(String(order.storeId))
+            .collection("inventoryMovements").doc(inventoryMovementId("refund", orderId, String(line.productId || ""))));
+          const movementSnaps = await Promise.all(movementRefs.map((ref) => tx.get(ref)));
+          if (movementSnaps.some((snapshot) => !snapshot.exists || snapshot.get("type") !== "DEVOLUCION_PEDIDO")) {
+            throw new HttpsError("data-loss", "La devolución está cerrada pero falta la restitución de inventario.");
+          }
+        }
         if (order.paymentMethod === "TARJETA_DEMO") {
           const cardPaymentId = String(order.cardPaymentId || "");
           const cardRef = cardPaymentId ? db.collection("demoCardPayments").doc(cardPaymentId) : null;
@@ -978,6 +987,34 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       throw new HttpsError("failed-precondition", "La titularidad DEMO del comercio no está vigente.");
     }
     if (operationSnap.exists) throw new HttpsError("data-loss", "Existe un registro de devolución previo; no se repetirán movimientos.");
+    const inventoryRestock: Array<{productId:string;productName:string;quantity:number;stockBefore:number;stockAfter:number;ref:any}> = [];
+    let restoredInventory = Array.isArray(profileSnap.get("inventory"))
+      ? [...profileSnap.get("inventory") as Array<Record<string, unknown>>] : [];
+    if (order.inventoryDeducted === true) {
+      const orderItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+      if (orderItems.length === 0 || orderItems.length > 30) {
+        throw new HttpsError("data-loss", "El detalle original del pedido no permite restituir el inventario.");
+      }
+      for (const line of orderItems) {
+        const productId = String(line.productId || "");
+        const quantity = Number(line.quantity);
+        const productIndex = restoredInventory.findIndex((item) => String(item.id || "") === productId);
+        const product = restoredInventory[productIndex];
+        const stockBefore = Number(product?.stockQuantity);
+        if (!productId || !product || !Number.isInteger(quantity) || quantity < 1 ||
+            !Number.isInteger(stockBefore) || stockBefore < 0 || stockBefore + quantity > 100000) {
+          throw new HttpsError("data-loss", "No se puede restituir el stock de uno de los productos; revisá el inventario antes de devolver.");
+        }
+        const stockAfter = stockBefore + quantity;
+        restoredInventory[productIndex] = { ...product, stockQuantity: stockAfter, inStock: stockAfter > 0 };
+        const movementRef = profileRef.collection("inventoryMovements").doc(inventoryMovementId("refund", orderId, productId));
+        inventoryRestock.push({ productId, productName: String(product.name || ""), quantity, stockBefore, stockAfter, ref: movementRef });
+      }
+      const movementSnaps = await Promise.all(inventoryRestock.map((item) => tx.get(item.ref)));
+      if (movementSnaps.some((snapshot) => snapshot.exists)) {
+        throw new HttpsError("data-loss", "Ya existe una restitución parcial de inventario para este pedido; se bloqueó la devolución duplicada.");
+      }
+    }
     if (!merchantSnap.exists || !customerSnap.exists) {
       throw new HttpsError("failed-precondition", "No se encontraron ambas billeteras DEMO.");
     }
@@ -997,6 +1034,15 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
         throw new HttpsError("data-loss", "El registro de tarjeta DEMO no coincide con el pedido.");
       }
       tx.update(cardRef, { status: "REVERSADA · DEMO", refundReason: reason, refundedAt: now });
+      if (inventoryRestock.length > 0) {
+        tx.update(profileRef, { inventory: restoredInventory, inventoryUpdatedAt: now });
+        for (const item of inventoryRestock) tx.create(item.ref, {
+          movementId: item.ref.id, storeId: String(order.storeId), orderId, productId: item.productId,
+          productName: item.productName, type: "DEVOLUCION_PEDIDO", quantityDelta: item.quantity,
+          stockBefore: item.stockBefore, stockAfter: item.stockAfter, actorUid: uid,
+          paymentMethod: "TARJETA_DEMO", environment: "DEMO", createdAt: now
+        });
+      }
       tx.update(orderRef, {
         status: "CANCELADO", paymentStatus: "REEMBOLSADA · DEMO",
         refundOperationId: refundOperationId, refundReason: reason, refundedAt: now, updatedAt: now
@@ -1060,6 +1106,15 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
     ]);
     if (merchantTxSnap.exists || customerTxSnap.exists || cashbackReversalSnap.exists) {
       throw new HttpsError("data-loss", "La devolución tiene movimientos parciales previos; se bloqueó para evitar duplicados.");
+    }
+    if (inventoryRestock.length > 0) {
+      tx.update(profileRef, { inventory: restoredInventory, inventoryUpdatedAt: now });
+      for (const item of inventoryRestock) tx.create(item.ref, {
+        movementId: item.ref.id, storeId: String(order.storeId), orderId, productId: item.productId,
+        productName: item.productName, type: "DEVOLUCION_PEDIDO", quantityDelta: item.quantity,
+        stockBefore: item.stockBefore, stockAfter: item.stockAfter, actorUid: uid,
+        paymentMethod: "OMNI_PAY_DEMO", environment: "DEMO", createdAt: now
+      });
     }
     tx.update(merchantRef, { balance: Math.round((merchantBalance - amount) * 100) / 100, lastOperationId: refundOperationId, updatedAt: now });
     tx.update(customerRef, {
