@@ -252,16 +252,20 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
     subtotal += price * quantity;
   }
   subtotal = Math.round(subtotal * 100) / 100;
-  const minimum = Number(profileSnap.get("minimumOrderAmount") || 0);
+  const minimum = Number(profileSnap.get("minimumOrderAmount") ?? 0);
+  const freeFromRaw = profileSnap.get("freeDeliveryFrom");
+  const freeFrom = freeFromRaw == null ? null : Number(freeFromRaw);
+  const configuredDeliveryFee = Number(profileSnap.get("deliveryFee") ?? 0);
+  if (!Number.isFinite(minimum) || minimum < 0 || minimum > 50000 ||
+      (freeFrom !== null && (!Number.isFinite(freeFrom) || freeFrom < 0 || freeFrom > 50000)) ||
+      !Number.isFinite(configuredDeliveryFee) || configuredDeliveryFee < 0 || configuredDeliveryFee > 50000) {
+    throw new HttpsError("failed-precondition", "La configuración de compra mínima o envío del comercio no es válida.");
+  }
   if (subtotal <= 0 || subtotal > 50000 || subtotal < minimum) {
     throw new HttpsError("failed-precondition", "El pedido no alcanza la compra mínima o supera el máximo DEMO.");
   }
-  const freeFrom = profileSnap.get("freeDeliveryFrom");
-  const deliveryFee = fulfillmentType === "DELIVERY" && !(freeFrom != null && subtotal >= Number(freeFrom))
-    ? Number(profileSnap.get("deliveryFee") || 0) : 0;
-  if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 50000) {
-    throw new HttpsError("failed-precondition", "La tarifa de envío del comercio no es válida.");
-  }
+  const deliveryFee = fulfillmentType === "DELIVERY" && !(freeFrom !== null && subtotal >= freeFrom)
+    ? configuredDeliveryFee : 0;
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
   const expectedTotal = Number(data.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.005) {
@@ -519,9 +523,15 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const subtotal = order.subtotal == null ? verifiedTotal : Number(order.subtotal);
     const deliveryFee = order.deliveryFee == null ? 0 : Number(order.deliveryFee);
     const fulfillmentType = String(order.fulfillmentType || "RETIRO");
-    const minimumOrderAmount = Number(profileSnap.get("minimumOrderAmount") || 0);
-    if (!Number.isFinite(subtotal) || Math.abs(Math.round(verifiedTotal * 100) / 100 - subtotal) >= 0.005 ||
-        !Number.isFinite(deliveryFee) || deliveryFee < 0 || subtotal < minimumOrderAmount) {
+    const minimumOrderAmount = Number(profileSnap.get("minimumOrderAmount") ?? 0);
+    const freeFromRaw = profileSnap.get("freeDeliveryFrom");
+    const freeFrom = freeFromRaw == null ? null : Number(freeFromRaw);
+    const configuredDeliveryFee = Number(profileSnap.get("deliveryFee") ?? 0);
+    if (!Number.isFinite(minimumOrderAmount) || minimumOrderAmount < 0 || minimumOrderAmount > 50000 ||
+        (freeFrom !== null && (!Number.isFinite(freeFrom) || freeFrom < 0 || freeFrom > 50000)) ||
+        !Number.isFinite(configuredDeliveryFee) || configuredDeliveryFee < 0 || configuredDeliveryFee > 50000 ||
+        !Number.isFinite(subtotal) || Math.abs(Math.round(verifiedTotal * 100) / 100 - subtotal) >= 0.005 ||
+        !Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 50000 || subtotal < minimumOrderAmount) {
       throw new HttpsError("failed-precondition", "El subtotal, el mínimo de compra o el envío no coinciden con la configuración del comercio.");
     }
     if (fulfillmentType === "RETIRO") {
@@ -532,9 +542,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       if (profileSnap.get("deliveryEnabled") !== true || !String(order.deliveryAddress || "").trim()) {
         throw new HttpsError("failed-precondition", "El comercio no habilitó delivery o falta la dirección.");
       }
-      const freeFrom = profileSnap.get("freeDeliveryFrom");
-      const expectedFee = freeFrom != null && subtotal >= Number(freeFrom)
-        ? 0 : Number(profileSnap.get("deliveryFee") || 0);
+      const expectedFee = freeFrom !== null && subtotal >= freeFrom ? 0 : configuredDeliveryFee;
       if (Math.abs(expectedFee - deliveryFee) >= 0.005) {
         throw new HttpsError("failed-precondition", "El costo de envío cambió. Actualizá el pedido.");
       }
@@ -544,8 +552,14 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     if (Math.abs(Math.round((subtotal + deliveryFee) * 100) / 100 - amount) >= 0.005) {
       throw new HttpsError("failed-precondition", "El total no coincide con subtotal y envío.");
     }
-    const customerBalance = Number(customerSnap.get("balance") || 0);
-    const merchantBalance = Number(merchantSnap.get("balance") || 0);
+    const customerBalance = Number(customerSnap.get("balance") ?? 0);
+    const merchantBalance = Number(merchantSnap.get("balance") ?? 0);
+    const customerCashbackTotal = Number(customerSnap.get("cashbackTotal") ?? 0);
+    if (!Number.isFinite(customerBalance) || customerBalance < 0 ||
+        !Number.isFinite(merchantBalance) || merchantBalance < 0 ||
+        !Number.isFinite(customerCashbackTotal) || customerCashbackTotal < 0) {
+      throw new HttpsError("failed-precondition", "Los saldos DEMO tienen datos inconsistentes. No se registró el pago.");
+    }
     if (customerBalance < amount) throw new HttpsError("failed-precondition", "Saldo virtual insuficiente.");
 
     const policy = order.cashbackPolicy && typeof order.cashbackPolicy === "object"
@@ -570,7 +584,10 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const period = `${year}-${month}`;
     const monthlyRef = db.collection("cashbackMonthly").doc(`${storeId}_${customerUid}_${period}`);
     const monthlySnap = await tx.get(monthlyRef);
-    const alreadyEarned = Number(monthlySnap.get("earnedTotal") || 0);
+    const alreadyEarned = Number(monthlySnap.get("earnedTotal") ?? 0);
+    if (!Number.isFinite(alreadyEarned) || alreadyEarned < 0) {
+      throw new HttpsError("data-loss", "El acumulado mensual de cashback no es válido. No se registró el pago.");
+    }
     let cashbackAmount = enabled ? Math.round(subtotal * percentage) / 100 : 0;
     if (capPerPurchase !== null) cashbackAmount = Math.min(cashbackAmount, capPerPurchase);
     if (monthlyCap !== null) cashbackAmount = Math.min(cashbackAmount, Math.max(0, monthlyCap - alreadyEarned));
@@ -588,7 +605,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
 
     tx.update(customerRef, {
       balance: Math.round((customerBalance - amount + cashbackAmount) * 100) / 100,
-      cashbackTotal: Math.round((Number(customerSnap.get("cashbackTotal") || 0) + cashbackAmount) * 100) / 100,
+      cashbackTotal: Math.round((customerCashbackTotal + cashbackAmount) * 100) / 100,
       lastOperationId: operationId, updatedAt: now
     });
     tx.update(merchantRef, {
@@ -816,16 +833,23 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       monthlyRef = db.collection("cashbackMonthly").doc(`${order.storeId}_${order.customerUid}_${period}`);
       monthlySnap = await tx.get(monthlyRef);
     }
-    const merchantBalance = Number(merchantSnap.get("balance") || 0);
-    const customerBalance = Number(customerSnap.get("balance") || 0);
-    const customerCashbackTotal = Number(customerSnap.get("cashbackTotal") || 0);
+    const merchantBalance = Number(merchantSnap.get("balance") ?? 0);
+    const customerBalance = Number(customerSnap.get("balance") ?? 0);
+    const customerCashbackTotal = Number(customerSnap.get("cashbackTotal") ?? 0);
+    if (!Number.isFinite(merchantBalance) || merchantBalance < 0 ||
+        !Number.isFinite(customerBalance) || customerBalance < 0 ||
+        !Number.isFinite(customerCashbackTotal) || customerCashbackTotal < 0) {
+      throw new HttpsError("data-loss", "Los saldos DEMO tienen datos inconsistentes; no se ejecutó la devolución.");
+    }
     if (merchantBalance < amount) {
       throw new HttpsError("failed-precondition", "El saldo del comercio no alcanza para devolver el importe completo. No se modificó ninguna cuenta.");
     }
     if (customerBalance < cashbackAmount || customerCashbackTotal < cashbackAmount) {
       throw new HttpsError("failed-precondition", "La billetera del comprador no tiene saldo suficiente para revertir el cashback acreditado. No se modificó ninguna cuenta.");
     }
-    if (cashbackAmount > 0 && (!monthlySnap?.exists || Number(monthlySnap.get("earnedTotal") || 0) < cashbackAmount)) {
+    const monthlyEarned = cashbackAmount > 0 ? Number(monthlySnap?.get("earnedTotal") ?? 0) : 0;
+    if (cashbackAmount > 0 && (!monthlySnap?.exists || !Number.isFinite(monthlyEarned) ||
+        monthlyEarned < cashbackAmount)) {
       throw new HttpsError("data-loss", "El acumulado mensual de cashback no coincide; no se modificó ninguna cuenta.");
     }
     const merchantTxRef = merchantRef.collection("transactions").doc(refundOperationId);
@@ -871,7 +895,7 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
         environment: "DEMO", createdAt: now
       });
       tx.update(monthlyRef!, {
-        earnedTotal: Math.round((Number(monthlySnap!.get("earnedTotal") || 0) - cashbackAmount) * 100) / 100,
+        earnedTotal: Math.round((monthlyEarned - cashbackAmount) * 100) / 100,
         updatedAt: now
       });
       tx.update(cashbackRef, { amount: 0, status: "REVERSADO · DEMO", reversedAmount: cashbackAmount, reversedAt: now });
