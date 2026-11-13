@@ -27,6 +27,11 @@ function safeName(value: unknown): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 80) : "Usuario OMNI";
 }
 
+function inventoryMovementId(kind: string, orderId: string, productId: string): string {
+  const digest = createHash("sha256").update(`${kind}|${orderId}|${productId}`).digest("hex").slice(0, 32);
+  return `${kind}_${digest}`;
+}
+
 export const ensureDemoWallet = onCall({ region: REGION }, async (request) => {
   const uid = requireUid(request);
   const ref = accountRef(uid);
@@ -241,7 +246,8 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
     }
     seen.add(productId);
     const current = catalog.find((item) => String(item.id || "") === productId);
-    if (!current || current.inStock !== true || Math.abs(Number(current.price) - price) >= 0.005) {
+    const stockQuantity = Number(current?.stockQuantity);
+    if (!current || !Number.isInteger(stockQuantity) || stockQuantity < quantity || current.inStock !== (stockQuantity > 0) || Math.abs(Number(current.price) - price) >= 0.005) {
       throw new HttpsError("failed-precondition", "Cambió el precio o la disponibilidad de un producto. Actualizá el carrito.");
     }
     const name = String(current.name || "");
@@ -381,6 +387,8 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
     }
     const orderItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
     const catalog = Array.isArray(profileSnap.get("inventory")) ? profileSnap.get("inventory") as Array<Record<string, unknown>> : [];
+    const updatedInventory = [...catalog];
+    const stockDeductions: Array<{productId:string;productName:string;quantity:number;stockBefore:number;stockAfter:number}> = [];
     let verifiedSubtotal = 0;
     const seenProducts = new Set<string>();
     if (orderItems.length === 0 || orderItems.length > 30) {
@@ -392,13 +400,18 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
       const price = Number(line.price);
       const product = catalog.find((item) => String(item.id || "") === productId);
       const currentPrice = Number(product?.price);
-      if (!productId || seenProducts.has(productId) || !product || product.inStock !== true ||
+      const stockBefore = Number(product?.stockQuantity);
+      if (!productId || seenProducts.has(productId) || !product || !Number.isInteger(stockBefore) || stockBefore < quantity || product.inStock !== (stockBefore > 0) ||
           !Number.isInteger(quantity) || quantity < 1 || quantity > 999 ||
           !Number.isFinite(price) || price <= 0 || !Number.isFinite(currentPrice) ||
           Math.abs(currentPrice - price) >= 0.005 || String(line.name || "") !== String(product.name || "")) {
-        throw new HttpsError("failed-precondition", "El catálogo o el detalle del pedido cambió. No se registró el pago.");
+        throw new HttpsError("failed-precondition", "El catálogo, el stock o el detalle del pedido cambió. No se registró el pago.");
       }
       seenProducts.add(productId);
+      const productIndex = updatedInventory.findIndex((item) => String(item.id || "") === productId);
+      const stockAfter = stockBefore - quantity;
+      updatedInventory[productIndex] = { ...product, stockQuantity: stockAfter, inStock: stockAfter > 0 };
+      stockDeductions.push({ productId, productName: String(product.name || ""), quantity, stockBefore, stockAfter });
       verifiedSubtotal += price * quantity;
     }
     const subtotal = Math.round(verifiedSubtotal * 100) / 100;
@@ -439,6 +452,13 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
         throw new HttpsError("failed-precondition", "La ubicación del pedido ya no supera la validación de cobertura. No se registró el pago.");
       }
     }
+    const stockMovementRefs = stockDeductions.map((item) => ({
+      item, ref: profileRef.collection("inventoryMovements").doc(inventoryMovementId("sale", orderId, item.productId))
+    }));
+    const stockMovementSnaps = await Promise.all(stockMovementRefs.map((entry) => tx.get(entry.ref)));
+    if (approved && stockMovementSnaps.some((snapshot) => snapshot.exists)) {
+      throw new HttpsError("data-loss", "El stock ya registra un descuento para este pedido sin un pago recuperable.");
+    }
     const status = approved ? "APROBADA · DEMO" : "RECHAZADA · DEMO";
     tx.create(paymentRef, {
       paymentId: paymentRef.id, attemptId, orderId, customerUid, merchantUid: String(order.merchantUid),
@@ -447,9 +467,16 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
     });
     const attemptAt = FieldValue.serverTimestamp();
     if (approved) {
+      tx.update(profileRef, { inventory: updatedInventory, inventoryUpdatedAt: attemptAt });
+      for (const entry of stockMovementRefs) tx.create(entry.ref, {
+        movementId: entry.ref.id, storeId: String(order.storeId), orderId, productId: entry.item.productId,
+        productName: entry.item.productName, type: "VENTA_TARJETA_DEMO", quantityDelta: -entry.item.quantity,
+        stockBefore: entry.item.stockBefore, stockAfter: entry.item.stockAfter,
+        actorUid: customerUid, paymentMethod: "TARJETA_DEMO", environment: "DEMO", createdAt: attemptAt
+      });
       tx.update(orderRef, {
         paymentStatus: "PAGADA · DEMO", paymentMethod: "TARJETA_DEMO",
-        cardPaymentId: paymentRef.id, updatedAt: attemptAt
+        cardPaymentId: paymentRef.id, inventoryDeducted: true, updatedAt: attemptAt
       });
     }
     tx.create(orderRef.collection("statusHistory").doc(), {
@@ -579,6 +606,8 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       throw new HttpsError("failed-precondition", "El catálogo o los artículos del pedido ya no están disponibles.");
     }
     const seenProducts = new Set<string>();
+    const updatedInventory = [...catalog];
+    const stockDeductions: Array<{productId:string;productName:string;quantity:number;stockBefore:number;stockAfter:number}> = [];
     let verifiedTotal = 0;
     for (const line of orderItems) {
       const productId = String(line.productId || "");
@@ -591,11 +620,16 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       seenProducts.add(productId);
       const currentProduct = catalog.find((item) => String(item.id || "") === productId);
       const currentPrice = Number(currentProduct?.price);
-      if (!currentProduct || currentProduct.inStock !== true || !Number.isFinite(currentPrice) ||
+      const stockBefore = Number(currentProduct?.stockQuantity);
+      if (!currentProduct || !Number.isInteger(stockBefore) || stockBefore < quantity || currentProduct.inStock !== (stockBefore > 0) || !Number.isFinite(currentPrice) ||
           Math.abs(currentPrice - price) >= 0.005 ||
           String(line.name || "") !== String(currentProduct.name || "")) {
-        throw new HttpsError("failed-precondition", "Cambió el nombre, precio o disponibilidad de un producto. Actualizá el pedido.");
+        throw new HttpsError("failed-precondition", "Cambió el nombre, precio o stock de un producto. Actualizá el pedido.");
       }
+      const productIndex = updatedInventory.findIndex((item) => String(item.id || "") === productId);
+      const stockAfter = stockBefore - quantity;
+      updatedInventory[productIndex] = { ...currentProduct, stockQuantity: stockAfter, inStock: stockAfter > 0 };
+      stockDeductions.push({ productId, productName: String(currentProduct.name || ""), quantity, stockBefore, stockAfter });
       verifiedTotal += price * quantity;
     }
     const subtotal = order.subtotal == null ? verifiedTotal : Number(order.subtotal);
@@ -660,6 +694,13 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const year = dateParts.find((part) => part.type === "year")?.value || "";
     const month = dateParts.find((part) => part.type === "month")?.value || "";
     const period = `${year}-${month}`;
+    const stockMovementRefs = stockDeductions.map((item) => ({
+      item, ref: profileRef.collection("inventoryMovements").doc(inventoryMovementId("sale", orderId, item.productId))
+    }));
+    const stockMovementSnaps = await Promise.all(stockMovementRefs.map((entry) => tx.get(entry.ref)));
+    if (stockMovementSnaps.some((snapshot) => snapshot.exists)) {
+      throw new HttpsError("data-loss", "El stock ya registra un descuento para este pedido sin un pago recuperable.");
+    }
     const monthlyRef = db.collection("cashbackMonthly").doc(`${storeId}_${customerUid}_${period}`);
     const monthlySnap = await tx.get(monthlyRef);
     const alreadyEarned = Number(monthlySnap.get("earnedTotal") ?? 0);
@@ -681,6 +722,13 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       environment: "DEMO", createdAt: now
     };
 
+    tx.update(profileRef, { inventory: updatedInventory, inventoryUpdatedAt: now });
+    for (const entry of stockMovementRefs) tx.create(entry.ref, {
+      movementId: entry.ref.id, storeId, orderId, productId: entry.item.productId,
+      productName: entry.item.productName, type: "VENTA_OMNI_PAY_DEMO", quantityDelta: -entry.item.quantity,
+      stockBefore: entry.item.stockBefore, stockAfter: entry.item.stockAfter,
+      actorUid: customerUid, paymentMethod: "OMNI_PAY_DEMO", environment: "DEMO", createdAt: now
+    });
     tx.update(customerRef, {
       balance: Math.round((customerBalance - amount + cashbackAmount) * 100) / 100,
       cashbackTotal: Math.round((customerCashbackTotal + cashbackAmount) * 100) / 100,
@@ -731,7 +779,7 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     tx.create(cashbackRef, cashbackData);
     tx.update(orderRef, {
       paymentStatus: "PAGADA · DEMO", paymentMethod: "OMNI_PAY_DEMO",
-      cashbackAmount, updatedAt: now
+      cashbackAmount, inventoryDeducted: true, updatedAt: now
     });
     tx.create(orderRef.collection("statusHistory").doc(), {
       orderId, storeId, environment: "DEMO",
