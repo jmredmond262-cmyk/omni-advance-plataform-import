@@ -50,7 +50,7 @@ class PersonalDataRepository(
         }
 
     fun observeShoppingItems(uid: String, callback: (Result<PersonalSyncResult<List<NeedItem>>>) -> Unit): ListenerRegistration =
-        user(uid).collection("shoppingListItems").addSnapshotListener { snapshot, error ->
+        user(uid).collection("shoppingListItems").addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
             if (error != null) {
                 callback(Result.failure(error))
                 return@addSnapshotListener
@@ -68,11 +68,11 @@ class PersonalDataRepository(
                     isChecked = doc.getBoolean("isChecked") ?: false
                 )
             }
-            callback(Result.success(items))
+            callback(Result.success(PersonalSyncResult(items, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
         }
 
     fun observeCustomContacts(uid: String, callback: (Result<PersonalSyncResult<List<NeighborhoodContact>>>) -> Unit): ListenerRegistration =
-        user(uid).collection("customContacts").addSnapshotListener { snapshot, error ->
+        user(uid).collection("customContacts").addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
             if (error != null) {
                 callback(Result.failure(error))
                 return@addSnapshotListener
@@ -99,7 +99,7 @@ class PersonalDataRepository(
 
     fun observeContactFavorites(uid: String, callback: (Result<PersonalSyncResult<Set<String>?>>) -> Unit): ListenerRegistration =
         user(uid).collection("preferences").document("contactFavorites")
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     callback(Result.failure(error))
                     return@addSnapshotListener
