@@ -139,7 +139,7 @@ export const saveDemoMerchantCatalog = onCall({ region: REGION }, async (request
       const before = Number.isInteger(Number(previous?.stockQuantity)) ? Number(previous?.stockQuantity) : 0;
       const after = Number(product.stockQuantity);
       if (before === after) return [];
-      const movementRef = profileRef.collection("inventoryMovements").doc(`adjust_${Date.now()}_${productId}_${Math.random().toString(36).slice(2, 8)}`);
+      const movementRef = profileRef.collection("inventoryMovements").doc();
       return [{ movementRef, data: {
         movementId: movementRef.id, storeId, productId, productName: String(product.name),
         type: previous ? "AJUSTE_TITULAR" : "ALTA_INVENTARIO",
