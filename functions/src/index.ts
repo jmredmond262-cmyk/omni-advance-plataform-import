@@ -439,12 +439,13 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     const merchantRef = accountRef(merchantUid);
     const merchantPaymentRef = merchantRef.collection("transactions").doc(operationId);
     const cashbackRef = db.collection("cashbackAccruals").doc(orderId);
-    const existingMerchantPayment = await tx.get(merchantPaymentRef);
+    const cashbackTransactionRef = customerRef.collection("transactions").doc(`cashback_${orderId}`);
+    const [existingMerchantPayment, existingCashback, existingCashbackTransaction] = await Promise.all([
+      tx.get(merchantPaymentRef), tx.get(cashbackRef), tx.get(cashbackTransactionRef)
+    ]);
 
-    if (operationSnap.exists || customerPaymentSnap.exists || existingMerchantPayment.exists) {
-      const existingCashback = await tx.get(cashbackRef);
-      const cashbackTransactionRef = customerRef.collection("transactions").doc(`cashback_${orderId}`);
-      const existingCashbackTransaction = await tx.get(cashbackTransactionRef);
+    if (operationSnap.exists || customerPaymentSnap.exists ||
+        existingMerchantPayment.exists || existingCashback.exists || existingCashbackTransaction.exists) {
       const previous = operationSnap.exists ? operationSnap.data()! : null;
       const existingCashbackAmount = existingCashback.exists
         ? Number(existingCashback.get("amount") ?? 0) : Number.NaN;
