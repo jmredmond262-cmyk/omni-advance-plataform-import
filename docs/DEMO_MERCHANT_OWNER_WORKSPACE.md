@@ -23,7 +23,7 @@ El módulo existente `MerchantHubScreen` ya ofrece edición de datos operativos 
 
 - Cada producto DEMO mantiene `stockQuantity` (entero entre 0 y 100.000); `inStock` se deriva de si quedan unidades. Los perfiles anteriores que todavía no tienen cantidad explícita se interpretan como stock 0 hasta que el titular lo configure; no se inventan existencias.
 - El titular puede definir el stock inicial al crear un producto y ajustar la cantidad disponible desde la tarjeta del catálogo. Cada alta o ajuste queda registrado en `merchantProfiles/{storeId}/inventoryMovements`.
-- La creación del pedido vuelve a comprobar la disponibilidad y la cantidad solicitada. El descuento definitivo se ejecuta únicamente al confirmar un pago DEMO, ya sea OMNI Pay o tarjeta DEMO.
+- La creación del pedido vuelve a comprobar la disponibilidad y la cantidad solicitada. El descuento definitivo se ejecuta únicamente al confirmar un pago DEMO, ya sea OMNI Pay, tarjeta DEMO o cobro presencial DEMO registrado por el titular.
 - El descuento, los movimientos de inventario y el cambio de estado de pago se guardan en la misma transacción Firestore. La actualización concurrente del documento del comercio impide vender más unidades que las disponibles cuando dos compradores intentan comprar el último stock.
 - Los movimientos de venta usan identificadores deterministas por pedido y producto; los reintentos no vuelven a descontar unidades.
 - Una devolución de pedido pagado restituye las unidades una sola vez y genera movimientos inversos. Los pedidos históricos anteriores a este control no reciben una reposición automática porque no existe evidencia de que se les hubiera descontado inventario.
