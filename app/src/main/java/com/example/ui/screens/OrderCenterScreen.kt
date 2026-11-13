@@ -158,6 +158,16 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         next.filterValues { it > 0 }.forEach { (id, quantity) -> json.put(id, quantity) }
         cartPreferences.edit().putString(store.id, json.toString()).apply()
     }
+
+    LaunchedEffect(store.id, store.inventory) {
+        val availableById = store.inventory.associate { it.id to it.stockQuantity }
+        val adjusted = cart.mapNotNull { (productId, quantity) ->
+            val available = availableById[productId] ?: 0
+            val allowed = minOf(quantity, available)
+            if (allowed > 0) productId to allowed else null
+        }.toMap()
+        if (adjusted != cart) updateCart(adjusted)
+    }
     var productSearch by remember { mutableStateOf("") }
     var selectedProductCategory by remember { mutableStateOf<ProductCategory?>(null) }
     var fulfillmentType by remember { mutableStateOf("RETIRO") }
