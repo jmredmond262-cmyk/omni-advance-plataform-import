@@ -38,7 +38,7 @@ El módulo existente `MerchantHubScreen` ya ofrece edición de datos operativos 
 
 ## Próximo paso
 
-Completar la revisión de transiciones, preparación, despacho y entrega. Mantener la billetera y el cashback en modo DEMO, sin acreditaciones de dinero real.
+Continuar con comprobantes digitales y módulos comerciales, reutilizando el pedido, su identificador, el historial y los movimientos DEMO ya existentes. La compilación y validación ejecutable quedan reservadas para la etapa 7.
 
 
 ## Cobertura geográfica del delivery DEMO
@@ -59,13 +59,15 @@ Las transiciones de pedidos DEMO se ejecutan mediante la callable `updateDemoSto
 
 - Comprador: puede cancelar únicamente un pedido propio que siga en `RECIBIDO` y con pago pendiente.
 - Comercio: `RECIBIDO → ACEPTADO → EN_PREPARACION → LISTO`.
-- Retiro: desde `LISTO` pasa a `ENTREGADO`.
-- Delivery: desde `LISTO` pasa a `EN_CAMINO` y luego a `ENTREGADO`.
+- Retiro: desde `LISTO` el comercio informa la entrega y pasa a `ENTREGADO_POR_COMERCIO`; el comprador confirma la recepción y recién entonces pasa a `ENTREGADO`.
+- Delivery: desde `LISTO` pasa a `EN_CAMINO`; al entregar, el comercio informa la entrega (`ENTREGADO_POR_COMERCIO`) y el comprador confirma la recepción (`ENTREGADO`).
+- La confirmación final solo la puede realizar el comprador autenticado del pedido y exige que el pago DEMO esté confirmado. El servidor registra `merchantHandoffAt` y `customerReceivedAt`.
 - Rechazo: solo desde `RECIBIDO`, con motivo de 10 a 240 caracteres.
 - Cancelación del comercio: solo antes del pago y en `ACEPTADO` o `EN_PREPARACION`.
-- Pedidos pagados no se rechazan ni cancelan hasta contar con un circuito DEMO de devolución.
+- Los pedidos pagados pueden entrar al circuito de devolución mientras no exista confirmación final del comprador; una vez en `ENTREGADO`, la devolución automática queda bloqueada.
+- Los reintentos de una transición ya aplicada devuelven el estado existente sin duplicar eventos.
 
-Cada transición confirmada genera un documento en `storeOrders/{orderId}/statusHistory` con estado anterior/nuevo, actor, rol, comercio, entorno y fecha del servidor. La subcolección es de solo escritura del servidor; los pedidos y su historial existente no se migran ni se sobrescriben.
+Cada transición confirmada genera un documento en `storeOrders/{orderId}/statusHistory` con estado anterior/nuevo, actor, rol, comercio, entorno y fecha del servidor. Los eventos distinguen aviso de entrega (`DELIVERY_HANDOFF`) y confirmación de recepción (`DELIVERY_CONFIRMED`). La subcolección es de solo escritura del servidor; los pedidos y su historial existente no se migran ni se sobrescriben.
 
 
 ## Ajustes de uso y consulta de pedidos
