@@ -614,7 +614,8 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     });
     tx.create(operationRef, {
       operationId, kind: "QR_PAYMENT", senderUid: customerUid,
-      recipientUid: merchantUid, amount, orderId,
+      recipientUid: merchantUid, amount, orderId, storeId,
+      subtotal, deliveryFee, fulfillmentType, paymentMethod: "OMNI_PAY_DEMO",
       cashbackAmount, createdAt: now, environment: "DEMO"
     });
     const storeName = String(order.storeName || "Comercio DEMO");
@@ -637,10 +638,11 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
     if (cashbackAmount > 0) {
       tx.create(customerRef.collection("transactions").doc(`cashback_${orderId}`), {
         operationId: `cashback_${orderId}`, type: "REINTEGRO_CASHBACK",
-        title: `Cashback de ${String(order.storeName || "comercio OMNI")}`,
-        peerUid: merchantUid, peerName: String(order.storeName || "Comercio DEMO"),
-        amount: cashbackAmount, status: "ACREDITADO · DEMO",
-        environment: "DEMO", createdAt: now
+        title: `Cashback de ${storeName}`,
+        peerUid: merchantUid, peerName: storeName,
+        amount: cashbackAmount, orderId, storeId, orderAmount: subtotal,
+        percentage, capPerPurchase, monthlyCap, period,
+        status: "ACREDITADO · DEMO", environment: "DEMO", createdAt: now
       });
       tx.set(monthlyRef, {
         storeId, customerUid, period,
