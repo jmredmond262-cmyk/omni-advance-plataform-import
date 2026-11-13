@@ -1133,6 +1133,13 @@ fun WalletTransactionCard(transaction: WalletTransaction, modifier: Modifier = M
                     fontSize = 11.sp,
                     color = Color.Gray
                 )
+                if (transaction.referenceText.isNotBlank()) {
+                    Text(
+                        text = transaction.referenceText,
+                        fontSize = 9.sp,
+                        color = Color(0xFF64748B)
+                    )
+                }
                 Text(
                     if (isUnknown) "Tipo de movimiento no reconocido" else transaction.status,
                     fontSize = 9.sp,
