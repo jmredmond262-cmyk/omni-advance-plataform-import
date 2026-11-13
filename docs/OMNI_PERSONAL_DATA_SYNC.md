@@ -35,6 +35,7 @@ Cada registro contiene `ownerUid` y una marca `updatedAt`. Las reglas limitan le
 - Los callbacks verifican que el UID siga siendo el de la sesión activa; respuestas tardías de una cuenta anterior no pueden sobrescribir el estado de la cuenta nueva.
 - La sustitución completa de la lista de compras obtiene primero la colección desde el servidor. Si no hay conexión, falla sin borrar elementos remotos basándose en una caché incompleta.
 - La sustitución valida IDs vacíos/duplicados y conserva el límite de 450 escrituras por lote.
+- El historial de pedidos ahora mantiene escucha Firestore también en el recorrido DEMO, para que comprador y titular recuperen pedidos existentes al volver a abrir la pantalla; el historial se consulta por UID autenticado y los cambios se reciben con metadatos de caché/servidor.
 - Los errores de sincronización se registran en Logcat. La interfaz todavía no muestra un indicador visible de sincronización ni una confirmación de guardado.
 
 ## Límites y pendientes
