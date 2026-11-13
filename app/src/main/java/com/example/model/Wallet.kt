@@ -22,7 +22,8 @@ data class WalletTransaction(
     val type: TransactionType,
     val dateText: String,
     val cashbackEarned: Double = 0.0,
-    val status: String = "APROBADA · DEMO"
+    val status: String = "APROBADA · DEMO",
+    val referenceText: String = ""
 )
 
 data class PaymentCard(
