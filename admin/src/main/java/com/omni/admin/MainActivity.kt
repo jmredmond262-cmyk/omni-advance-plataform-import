@@ -70,7 +70,7 @@ private data class AdminTab(val id: String, val label: String, val collection: S
 private val tabs = listOf(
   AdminTab("dashboard", "Panel ejecutivo"), AdminTab("liveMap", "Mapa en tiempo real"), AdminTab("users", "Cuentas de usuario", "users"),
   AdminTab("wallets", "Cuentas OMNI Pay", "walletAccounts"), AdminTab("operations", "Movimientos OMNI Pay", "walletOperations"), AdminTab("finance", "Control financiero DEMO"),
-  AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("demoClaims", "Titularidad DEMO"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
+  AdminTab("stores", "Comercios registrados", "merchantProfiles"), AdminTab("demoClaims", "Titularidad DEMO"), AdminTab("orders", "Pedidos comerciales", "storeOrders"), AdminTab("receipts", "Comprobantes DEMO", "storeReceipts"), AdminTab("receiptAdjustments", "Ajustes de comprobantes", "storeReceiptAdjustments"), AdminTab("events", "Eventos publicados", "omniEvents"), AdminTab("moments", "Fechas especiales", "omniMoments"), AdminTab("conexPosts", "Ofertas laborales", "jobPosts"), AdminTab("conexProfiles", "Perfiles profesionales", "omniProfessionalProfiles"),
   AdminTab("feedback", "Opiniones y reportes", "appFeedback"), AdminTab("activity", "Actividad de uso", "usageEvents"), AdminTab("modules", "Módulos y funciones", "moduleRegistry"),
   AdminTab("audit", "Auditoría y trazabilidad", "adminAuditLogs"), AdminTab("invitations", "Accesos de prueba", "betaInvitations"), AdminTab("settings", "Parámetros generales")
 )
@@ -78,7 +78,7 @@ private data class AdminNavGroup(val id: String, val label: String, val icon: an
 private val navGroups = listOf(
   AdminNavGroup("overview", "Panel", Icons.Default.Dashboard, listOf("dashboard")),
   AdminNavGroup("people", "Usuarios", Icons.Default.PeopleAlt, listOf("users", "feedback")),
-  AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "demoClaims", "orders", "wallets", "operations", "finance")),
+  AdminNavGroup("commerce", "Comercio y pagos", Icons.Default.Storefront, listOf("stores", "demoClaims", "orders", "receipts", "receiptAdjustments", "wallets", "operations", "finance")),
   AdminNavGroup("system", "Sistema", Icons.Default.Settings, listOf("activity", "events", "moments", "conexPosts", "conexProfiles", "modules", "audit", "invitations", "settings")),
   AdminNavGroup("geography", "Mapa", Icons.Default.Public, listOf("liveMap"))
 )
@@ -845,7 +845,7 @@ private val fieldLabels = mapOf(
   "email" to "Correo", "phoneNumber" to "Teléfono", "phone" to "Teléfono",
   "alias" to "Alias secundario", "holderName" to "Titular", "ownerName" to "Titular", "balance" to "Saldo", "cashbackTotal" to "Cashback acumulado",
   "amount" to "Importe", "peerName" to "Contraparte", "title" to "Concepto", "senderUid" to "Cuenta de origen", "recipientUid" to "Cuenta de destino", "kind" to "Tipo", "type" to "Tipo", "status" to "Estado",
-  "storeName" to "Comercio", "orderNumber" to "Número de pedido", "localHour" to "Hora local del dispositivo", "localDayOfWeek" to "Día local de la semana", "timezoneOffsetMinutes" to "Diferencia horaria UTC (minutos)", "localDate" to "Fecha local del dispositivo", "sessionId" to "Sesión", "total" to "Total",
+  "storeName" to "Comercio", "orderNumber" to "Número de pedido", "receiptNumber" to "Número de comprobante", "receiptId" to "Identificador de comprobante", "originalReceiptNumber" to "Comprobante original", "fiscalValidity" to "Validez fiscal", "validationStatus" to "Estado de validación", "customerName" to "Comprador", "subtotal" to "Subtotal", "deliveryFee" to "Envío", "issuedAt" to "Fecha de emisión", "environment" to "Entorno", "reason" to "Motivo de ajuste", "localHour" to "Hora local del dispositivo", "localDayOfWeek" to "Día local de la semana", "timezoneOffsetMinutes" to "Diferencia horaria UTC (minutos)", "localDate" to "Fecha local del dispositivo", "sessionId" to "Sesión", "total" to "Total",
   "paymentStatus" to "Estado del pago", "paymentMethod" to "Medio de pago",
   "fulfillmentType" to "Entrega", "action" to "Acción", "target" to "Destino",
   "message" to "Mensaje", "description" to "Descripción", "enabled" to "Habilitado",
@@ -902,6 +902,8 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "operations" -> "walletOperations"
     "stores" -> "merchantProfiles"
     "orders" -> "storeOrders"
+    "receipts" -> "storeReceipts"
+    "receiptAdjustments" -> "storeReceiptAdjustments"
     "activity" -> "usageEvents"
     "events" -> "omniEvents"
     "moments" -> "omniMoments"
@@ -917,6 +919,8 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "walletOperations" -> friendlyEnum(firstPresentValue(item, "operationType", "transactionType", "kind", "type", "action", "title", "description").ifBlank { "Tipo de movimiento no informado" })
     "merchantProfiles" -> firstPresentValue(item, "storeName", "name").ifBlank { "Perfil comercial · nombre no informado" }
     "storeOrders" -> "Pedido " + firstPresentValue(item, "orderNumber", "status").ifBlank { "de comercio · número no informado" }
+    "storeReceipts" -> "Comprobante " + firstPresentValue(item, "receiptNumber", "orderId").ifBlank { "DEMO · referencia no informada" }
+    "storeReceiptAdjustments" -> "Ajuste de comprobante · " + firstPresentValue(item, "originalReceiptNumber", "orderId").ifBlank { "referencia no informada" }
     "appFeedback" -> "Comentario de usuario"
     "usageEvents" -> friendlyEnum(firstPresentValue(item, "event", "eventName").ifBlank { "Evento de uso · tipo no informado" })
     "walletTransactions" -> friendlyEnum(firstPresentValue(item, "operationType", "transactionType", "type", "kind", "action", "title", "description").ifBlank { "Tipo de movimiento no informado" })
