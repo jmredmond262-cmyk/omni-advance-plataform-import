@@ -43,9 +43,13 @@ jobs:
           ADMIN_FIREBASE_JSON: ${{ secrets.OMNI_ADMIN_GOOGLE_SERVICES_JSON_BASE64 }}
           ADMIN_AUTH_PROJECT_ID: ${{ secrets.OMNI_ADMIN_AUTH_PROJECT_ID }}
         run: |
-          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" ] && [ -n "$ADMIN_FIREBASE_JSON" ] && [ -n "$ADMIN_AUTH_PROJECT_ID" ]; then
+          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" ] && [ -n "$ADMIN_FIREBASE_JSON" ]; then
             printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
             printf '%s' "$ADMIN_FIREBASE_JSON" | base64 --decode > admin/google-services.json
+            if [ -z "$ADMIN_AUTH_PROJECT_ID" ]; then
+              ADMIN_AUTH_PROJECT_ID="$(python3 -c 'import json; print(json.load(open("admin/google-services.json", encoding="utf-8"))["project_info"]["project_id"])')"
+              export ADMIN_AUTH_PROJECT_ID
+            fi
             python3 - <<'PY'
           import json
           import os
