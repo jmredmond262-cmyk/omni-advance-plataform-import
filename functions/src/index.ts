@@ -1,5 +1,5 @@
 import { getApps, initializeApp } from "firebase-admin/app";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, type DocumentReference } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 
@@ -978,7 +978,7 @@ export const confirmDemoCashCollection = onCall({ region: REGION }, async (reque
     const inventory = Array.isArray(profileSnap.get("inventory"))
       ? profileSnap.get("inventory") as Array<Record<string, unknown>> : [];
     const nextInventory = [...inventory];
-    const deductions: Array<{productId:string;productName:string;quantity:number;stockBefore:number;stockAfter:number;ref:any}> = [];
+    const deductions: Array<{productId:string;productName:string;quantity:number;stockBefore:number;stockAfter:number;ref:DocumentReference}> = [];
     const seen = new Set<string>();
     if (items.length === 0 || items.length > 30) {
       throw new HttpsError("failed-precondition", "El detalle del pedido ya no es válido para cerrar el cobro.");
@@ -1010,7 +1010,7 @@ export const confirmDemoCashCollection = onCall({ region: REGION }, async (reque
         stockBefore, stockAfter, ref: movementRef
       });
     }
-    const movementSnaps = await Promise.all(deductions.map((item) => tx.get(item.ref)));
+    const movementSnaps = await Promise.all(deductions.map((item) => tx.get(item.ref as DocumentReference)));
     if (order.paymentStatus === "PAGADA · EFECTIVO_DEMO" &&
         order.paymentMethod === "EFECTIVO_DEMO" &&
         order.cashCollectionConfirmedBy === uid) {
@@ -1161,7 +1161,7 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
       throw new HttpsError("failed-precondition", "La titularidad DEMO del comercio no está vigente.");
     }
     if (operationSnap.exists) throw new HttpsError("data-loss", "Existe un registro de devolución previo; no se repetirán movimientos.");
-    const inventoryRestock: Array<{productId:string;productName:string;quantity:number;stockBefore:number;stockAfter:number;ref:any}> = [];
+    const inventoryRestock: Array<{productId:string;productName:string;quantity:number;stockBefore:number;stockAfter:number;ref:DocumentReference}> = [];
     let restoredInventory = Array.isArray(profileSnap.get("inventory"))
       ? [...profileSnap.get("inventory") as Array<Record<string, unknown>>] : [];
     if (order.inventoryDeducted === true) {
@@ -1184,7 +1184,7 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
         const movementRef = profileRef.collection("inventoryMovements").doc(inventoryMovementId("refund", orderId, productId));
         inventoryRestock.push({ productId, productName: String(product.name || ""), quantity, stockBefore, stockAfter, ref: movementRef });
       }
-      const movementSnaps = await Promise.all(inventoryRestock.map((item) => tx.get(item.ref)));
+      const movementSnaps = await Promise.all(inventoryRestock.map((item) => tx.get(item.ref as DocumentReference)));
       if (movementSnaps.some((snapshot) => snapshot.exists)) {
         throw new HttpsError("data-loss", "Ya existe una restitución parcial de inventario para este pedido; se bloqueó la devolución duplicada.");
       }
