@@ -46,7 +46,7 @@ class PersonalDataRepository(
                     timeTag = doc.getString("timeTag") ?: "09:00"
                 )
             }.sortedWith(compareBy<DailyTask> { it.timeTag }.thenBy { it.title })
-            callback(Result.success(PersonalSyncResult(items, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
+            callback(Result.success(PersonalSyncResult(items, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites() == true)))
         }
 
     fun observeShoppingItems(uid: String, callback: (Result<PersonalSyncResult<List<NeedItem>>>) -> Unit): ListenerRegistration =
@@ -68,7 +68,7 @@ class PersonalDataRepository(
                     isChecked = doc.getBoolean("isChecked") ?: false
                 )
             }
-            callback(Result.success(PersonalSyncResult(items, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
+            callback(Result.success(PersonalSyncResult(items, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites() == true)))
         }
 
     fun observeCustomContacts(uid: String, callback: (Result<PersonalSyncResult<List<NeighborhoodContact>>>) -> Unit): ListenerRegistration =
@@ -94,7 +94,7 @@ class PersonalDataRepository(
                     isCustom = true
                 )
             }
-            callback(Result.success(PersonalSyncResult(contacts, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
+            callback(Result.success(PersonalSyncResult(contacts, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites() == true)))
         }
 
     fun observeContactFavorites(uid: String, callback: (Result<PersonalSyncResult<Set<String>?>>) -> Unit): ListenerRegistration =
@@ -105,10 +105,10 @@ class PersonalDataRepository(
                     return@addSnapshotListener
                 }
                 if (snapshot?.exists() != true) {
-                    callback(Result.success(PersonalSyncResult(null, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
+                    callback(Result.success(PersonalSyncResult(null, snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites() == true)))
                 } else {
                     val ids = snapshot.get("favoriteIds") as? List<*>
-                    callback(Result.success(PersonalSyncResult(ids.orEmpty().filterIsInstance<String>().toSet(), snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites == true)))
+                    callback(Result.success(PersonalSyncResult(ids.orEmpty().filterIsInstance<String>().toSet(), snapshot?.metadata?.isFromCache == true, snapshot?.metadata?.hasPendingWrites() == true)))
                 }
             }
 
