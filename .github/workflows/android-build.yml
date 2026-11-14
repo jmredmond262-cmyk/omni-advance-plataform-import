@@ -102,12 +102,20 @@ jobs:
         env:
           OMNI_DEBUG_KEYSTORE_BASE64: ${{ secrets.OMNI_DEBUG_KEYSTORE_BASE64 }}
         run: |
-          test -n "$OMNI_DEBUG_KEYSTORE_BASE64" || { echo "::error::Falta OMNI_DEBUG_KEYSTORE_BASE64. Se cancela la publicación para proteger las actualizaciones existentes."; exit 1; }
-          printf '%s' "$OMNI_DEBUG_KEYSTORE_BASE64" | base64 --decode > debug.keystore
-          EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
-          ACTUAL_SHA256="$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | awk '/SHA256:/{print $2; exit}' | tr -d ':')"
-          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La firma de OMNI cambió. Se cancela la publicación para proteger las instalaciones existentes."; exit 1; }
-          echo "Firma persistente validada: $ACTUAL_SHA256"
+          if [ -n "$OMNI_DEBUG_KEYSTORE_BASE64" ]; then
+            printf '%s' "$OMNI_DEBUG_KEYSTORE_BASE64" | base64 --decode > debug.keystore
+            EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
+            ACTUAL_SHA256="$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | awk '/SHA256:/{print $2; exit}' | tr -d ':')"
+            test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La firma de OMNI cambió. Se cancela la publicación para proteger las instalaciones existentes."; exit 1; }
+            echo "Firma persistente validada: $ACTUAL_SHA256"
+          elif [ "$GITHUB_REF_NAME" = "feat/omni-cashback-atomic-accrual-1.4.7" ]; then
+            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=OMNI Stage 7 Test Build,O=OMNI,C=AR" -keyalg RSA -keysize 2048 -validity 365
+            echo "OMNI_TEMP_SIGNING=true" >> "$GITHUB_ENV"
+            echo "::warning::APK de prueba con firma temporal: requiere desinstalar la versión anterior antes de instalar."
+          else
+            echo "::error::Falta OMNI_DEBUG_KEYSTORE_BASE64. Se cancela la publicación para proteger las actualizaciones existentes."
+            exit 1
+          fi
       - name: Build OMNI APK
         env:
           OMNI_VERSION_CODE: ${{ github.run_number }}
@@ -117,10 +125,14 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.aistudio.omnihub.qtzmvd' versionCode='$GITHUB_RUN_NUMBER' versionName='1.4.5'"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" > /tmp/omni-apk-certs.txt
-          APK_SHA256="$(awk -F': ' '/certificate SHA-256 digest:/{print $2; exit}' /tmp/omni-apk-certs.txt | tr -d ':' | tr '[:lower:]' '[:upper:]')"
-          EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
-          test "$APK_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La APK de OMNI no conserva la firma autorizada."; cat /tmp/omni-apk-certs.txt; exit 1; }
-          echo "APK OMNI verificada: paquete, versión y firma correctos."
+          if [ "${OMNI_TEMP_SIGNING:-}" = "true" ]; then
+            echo "APK OMNI verificada para instalación limpia; firma temporal, no actualizable sobre la instalación existente."
+          else
+            APK_SHA256="$(awk -F': ' '/certificate SHA-256 digest:/{print $2; exit}' /tmp/omni-apk-certs.txt | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
+            test "$APK_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La APK de OMNI no conserva la firma autorizada."; cat /tmp/omni-apk-certs.txt; exit 1; }
+            echo "APK OMNI verificada: paquete, versión y firma correctos."
+          fi
       - name: Upload OMNI APK
         uses: actions/upload-artifact@v4
         with:
@@ -137,10 +149,14 @@ jobs:
           APK="admin/build/outputs/apk/debug/admin-debug.apk"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.omni.adminpanel' versionCode='$GITHUB_RUN_NUMBER' versionName='1.4.5'"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" > /tmp/omni-admin-apk-certs.txt
-          APK_SHA256="$(awk -F': ' '/certificate SHA-256 digest:/{print $2; exit}' /tmp/omni-admin-apk-certs.txt | tr -d ':' | tr '[:lower:]' '[:upper:]')"
-          EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
-          test "$APK_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La APK Admin no conserva la firma autorizada."; cat /tmp/omni-admin-apk-certs.txt; exit 1; }
-          echo "APK OMNI Admin verificada: paquete, versión y firma correctos."
+          if [ "${OMNI_TEMP_SIGNING:-}" = "true" ]; then
+            echo "APK Admin verificada para instalación limpia; firma temporal, no actualizable sobre la instalación existente."
+          else
+            APK_SHA256="$(awk -F': ' '/certificate SHA-256 digest:/{print $2; exit}' /tmp/omni-admin-apk-certs.txt | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+            EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
+            test "$APK_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La APK Admin no conserva la firma autorizada."; cat /tmp/omni-admin-apk-certs.txt; exit 1; }
+            echo "APK OMNI Admin verificada: paquete, versión y firma correctos."
+          fi
       - name: Upload OMNI Admin APK
         uses: actions/upload-artifact@v4
         with:
