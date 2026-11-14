@@ -1,0 +1,56 @@
+name: OMNI Stage 7 - Safe Validation
+
+on:
+  push:
+    branches: ["feat/omni-cashback-atomic-accrual-1.4.7"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-validation:
+    name: Compile OMNI Principal and Admin (temporary CI signing)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+      - name: Configure Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36.1" "build-tools;36.0.0"
+      - name: Create temporary compile-only Firebase configs
+        run: |
+          mkdir -p app admin
+          for MODULE in app admin; do
+            if [ "$MODULE" = "app" ]; then PACKAGE="com.aistudio.omnihub.qtzmvd"; else PACKAGE="com.omni.adminpanel"; fi
+            cat > "$MODULE/google-services.json" <<JSON
+          {"project_info":{"project_number":"123456789","project_id":"omni-stage7-compile-only","storage_bucket":"omni-stage7-compile-only.firebasestorage.app"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789:android:1234567890abcdef","android_client_info":{"package_name":"$PACKAGE"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDUMMYCOMPILECHECKKEY000000000000000"}],"services":{}}],"configuration_version":"1"}
+          JSON
+          done
+      - name: Create temporary compile-only signing key
+        run: keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=OMNI Stage 7 Compile Check,O=OMNI,C=AR" -keyalg RSA -keysize 2048 -validity 2
+      - name: Compile both Android applications and run Principal unit tests
+        run: gradle :app:assembleDebug :admin:assembleDebug :app:testDebugUnitTest
+  backend-validation:
+    name: Validate Functions and Worker without deployment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check Worker JavaScript syntax
+        run: node --input-type=module --check < workers/src/index.js
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-package-lock
+      - name: TypeScript validation
+        working-directory: functions
+        run: npx tsc --noEmit
