@@ -37,7 +37,16 @@ jobs:
       - name: Create temporary compile-only signing key
         run: keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=OMNI Stage 7 Compile Check,O=OMNI,C=AR" -keyalg RSA -keysize 2048 -validity 2
       - name: Compile both Android applications and run Principal unit tests
-        run: gradle :app:assembleDebug :admin:assembleDebug :app:testDebugUnitTest
+        run: gradle :app:assembleDebug :admin:assembleDebug :app:testDebugUnitTest :admin:testDebugUnitTest
+      - name: Archive compile-only APKs (not for update installation)
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-stage7-compile-only-apks
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            admin/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
   backend-validation:
     name: Validate Functions and Worker without deployment
     runs-on: ubuntu-latest
