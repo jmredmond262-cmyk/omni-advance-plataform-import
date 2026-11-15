@@ -34,6 +34,8 @@ jobs:
           {"project_info":{"project_number":"123456789","project_id":"omni-stage7-compile-only","storage_bucket":"omni-stage7-compile-only.firebasestorage.app"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789:android:1234567890abcdef","android_client_info":{"package_name":"$PACKAGE"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDUMMYCOMPILECHECKKEY000000000000000"}],"services":{}}],"configuration_version":"1"}
           JSON
           done
+      - name: Configure optional API key fallbacks
+        run: printf 'GEMINI_API_KEY=NOT_CONFIGURED\\nGOOGLE_MAPS_API_KEY=NOT_CONFIGURED\\n' > .env
       - name: Create temporary compile-only signing key
         run: keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=OMNI Stage 7 Compile Check,O=OMNI,C=AR" -keyalg RSA -keysize 2048 -validity 2
       - name: Compile both Android applications and run Principal unit tests
