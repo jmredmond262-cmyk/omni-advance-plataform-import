@@ -35,7 +35,11 @@ jobs:
           JSON
           done
       - name: Configure optional API key fallbacks
-        run: printf 'GEMINI_API_KEY=NOT_CONFIGURED\\nGOOGLE_MAPS_API_KEY=NOT_CONFIGURED\\n' > .env
+        run: |
+          cat > .env <<'EOF'
+          GEMINI_API_KEY=NOT_CONFIGURED
+          GOOGLE_MAPS_API_KEY=NOT_CONFIGURED
+          EOF
       - name: Create temporary compile-only signing key
         run: keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=OMNI Stage 7 Compile Check,O=OMNI,C=AR" -keyalg RSA -keysize 2048 -validity 2
       - name: Compile both Android applications and run Principal unit tests
