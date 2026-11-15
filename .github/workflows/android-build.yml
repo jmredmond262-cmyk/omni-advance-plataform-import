@@ -97,7 +97,8 @@ jobs:
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
           GEMINI_VALUE="${GEMINI_API_KEY:-NOT_CONFIGURED}"
-          printf 'GEMINI_API_KEY=%s\nGOOGLE_MAPS_API_KEY=%s\n' "$GEMINI_VALUE" "$GOOGLE_MAPS_API_KEY" > .env
+          MAPS_VALUE="${GOOGLE_MAPS_API_KEY:-NOT_CONFIGURED}"
+printf 'GEMINI_API_KEY=%s\nGOOGLE_MAPS_API_KEY=%s\n' "$GEMINI_VALUE" "$MAPS_VALUE" > .env
       - name: Configure persistent OMNI signing identity
         env:
           OMNI_DEBUG_KEYSTORE_BASE64: ${{ secrets.OMNI_DEBUG_KEYSTORE_BASE64 }}
