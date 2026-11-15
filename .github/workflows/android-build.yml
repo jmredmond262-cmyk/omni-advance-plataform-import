@@ -148,7 +148,7 @@ jobs:
       - name: Verify OMNI Admin package, version and APK signing identity
         run: |
           APK="admin/build/outputs/apk/debug/admin-debug.apk"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.omni.adminpanel' versionCode='$GITHUB_RUN_NUMBER' versionName='1.4.5'"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.omni.adminpanel' versionCode='$GITHUB_RUN_NUMBER' versionName='1.4.9'"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" > /tmp/omni-admin-apk-certs.txt
           if [ "${OMNI_TEMP_SIGNING:-}" = "true" ]; then
             echo "APK Admin verificada para instalación limpia; firma temporal, no actualizable sobre la instalación existente."
