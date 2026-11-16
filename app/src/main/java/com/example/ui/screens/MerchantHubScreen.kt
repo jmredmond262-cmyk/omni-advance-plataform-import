@@ -112,6 +112,7 @@ fun MerchantHubScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val screenScope = rememberCoroutineScope()
     val store by viewModel.managedStore.collectAsState()
     val newsList by viewModel.storeNews.collectAsState()
     val merchantProfileMessage by viewModel.merchantProfileMessage.collectAsState()
@@ -231,7 +232,6 @@ fun MerchantHubScreen(
     var prodDescription by remember { mutableStateOf("") }
     var isAiAnalyzing by remember { mutableStateOf(false) }
     var aiAnalysisMessage by remember { mutableStateOf("") }
-    val screenScope = rememberCoroutineScope()
     var locatingMerchantGps by remember { mutableStateOf(false) }
     val merchantGpsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) {
