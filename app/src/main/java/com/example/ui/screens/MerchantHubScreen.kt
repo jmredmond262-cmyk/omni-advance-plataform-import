@@ -183,6 +183,9 @@ fun MerchantHubScreen(
                                 .sortedBy { it.second }
                         }
                 }
+                .addOnFailureListener { error ->
+                    issueDemoCodeError = error.localizedMessage ?: "No se pudo preparar el catálogo DEMO para emitir códigos."
+                }
         }
     }
 
