@@ -1020,10 +1020,11 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                                     screenScope.launch {
                                         locatingDelivery = true
                                         val location = RealLocationHelper.getCurrentLocation(context)
-                                        deliveryLatitude = location?.latitude
-                                        deliveryLongitude = location?.longitude
+                                        val preciseLocation = location?.takeIf { it.accuracy > 0f && it.accuracy <= 50f }
+                                        deliveryLatitude = preciseLocation?.latitude
+                                        deliveryLongitude = preciseLocation?.longitude
                                         locatingDelivery = false
-                                        feedback = if (location != null) "Ubicación GPS lista para validar la cobertura." else "No se pudo obtener la ubicación. Activá el GPS e intentá nuevamente."
+                                        feedback = if (preciseLocation != null) "Ubicación GPS lista para validar la cobertura." else "No se obtuvo una ubicación con precisión suficiente (máximo 50 m). Activá el GPS e intentá nuevamente."
                                     }
                                 } else deliveryLocationPermission.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
                             }, enabled = !locatingDelivery, modifier = Modifier.fillMaxWidth()) {
