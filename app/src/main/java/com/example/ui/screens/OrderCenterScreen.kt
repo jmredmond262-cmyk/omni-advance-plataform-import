@@ -198,15 +198,40 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     LaunchedEffect(demoMode) {
         if (demoMode) {
             demoStoresLoading = true
+            fun loadProvisionedCatalog() {
+                MerchantProfileRepository.loadDemoStores { result ->
+                    demoStoresLoading = false
+                    result.onSuccess { loaded ->
+                        demoStores = loaded
+                        if (loaded.isNotEmpty() && loaded.none { it.id == selectedStore?.id }) {
+                            viewModel.selectStoreForOrders(loaded.first())
+                        }
+                    }.onFailure { error ->
+                        feedback = error.localizedMessage ?: "No se pudieron cargar los comercios DEMO. Revisá la publicación de las reglas Firestore."
+                    }
+                }
+            }
             MerchantProfileRepository.loadDemoStores { result ->
-                demoStoresLoading = false
-                result.onSuccess { loaded ->
-                    demoStores = loaded
-                    if (loaded.isNotEmpty() && loaded.none { it.id == selectedStore?.id }) {
-                        viewModel.selectStoreForOrders(loaded.first())
+                result.onSuccess { existing ->
+                    if (existing.isNotEmpty()) {
+                        demoStores = existing
+                        demoStoresLoading = false
+                        if (existing.none { it.id == selectedStore?.id }) viewModel.selectStoreForOrders(existing.first())
+                    } else {
+                        // Inicialización idempotente: solo crea el catálogo fijo de comercios ficticios.
+                        // Nunca convierte comercios reales ni asigna titularidades.
+                        FirebaseFunctions.getInstance("us-central1")
+                            .getHttpsCallable("provisionDemoMerchants")
+                            .call()
+                            .addOnSuccessListener { loadProvisionedCatalog() }
+                            .addOnFailureListener { error ->
+                                demoStoresLoading = false
+                                feedback = error.localizedMessage ?: "No se pudo inicializar el catálogo DEMO. Verificá que las funciones estén publicadas."
+                            }
                     }
                 }.onFailure { error ->
-                    feedback = error.localizedMessage ?: "No se pudieron cargar los comercios DEMO."
+                    demoStoresLoading = false
+                    feedback = error.localizedMessage ?: "No se pudieron consultar los comercios DEMO."
                 }
             }
         } else {
