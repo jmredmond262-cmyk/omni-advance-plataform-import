@@ -119,8 +119,11 @@ fun MerchantHubScreen(
     val inventoryMovements = remember(store.id) { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     val merchantOrders = remember(store.id) { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     DisposableEffect(store.id) {
+        val ownerUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
         val registration = FirebaseFirestore.getInstance().collection("storeOrders")
-            .whereEqualTo("storeId", store.id).limit(300)
+            .whereEqualTo("merchantUid", ownerUid)
+            .whereEqualTo("storeId", store.id)
+            .limit(300)
             .addSnapshotListener { snapshot, _ ->
                 merchantOrders.value = snapshot?.documents?.map { it.data ?: emptyMap() } ?: emptyList()
             }
