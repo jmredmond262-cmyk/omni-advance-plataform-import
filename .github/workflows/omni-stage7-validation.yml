@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: omni-stage7-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   android-validation:
     name: Compile OMNI Principal and Admin (temporary CI signing)
