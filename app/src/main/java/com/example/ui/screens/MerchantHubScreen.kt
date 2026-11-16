@@ -168,13 +168,17 @@ fun MerchantHubScreen(
                 .addOnSuccessListener { admin ->
                     isDemoAdmin = admin.getBoolean("enabled") == true && admin.getString("role") in listOf("owner", "admin")
                 }
-            FirebaseFirestore.getInstance().collection("merchantProfiles")
-                .whereEqualTo("environment", "DEMO").get()
-                .addOnSuccessListener { snapshot ->
-                    availableDemoStores = snapshot.documents
-                        .filter { (it.get("seedVersion") as? Number)?.toInt() == 1 && it.getString("ownerUid").isNullOrBlank() }
-                        .map { it.id to (it.getString("storeName") ?: "Comercio DEMO") }
-                        .sortedBy { it.second }
+            FirebaseFunctions.getInstance("us-central1")
+                .getHttpsCallable("provisionDemoMerchants").call()
+                .addOnSuccessListener {
+                    FirebaseFirestore.getInstance().collection("merchantProfiles")
+                        .whereEqualTo("environment", "DEMO").get()
+                        .addOnSuccessListener { snapshot ->
+                            availableDemoStores = snapshot.documents
+                                .filter { (it.get("seedVersion") as? Number)?.toInt() == 1 && it.getString("ownerUid").isNullOrBlank() }
+                                .map { it.id to (it.getString("storeName") ?: "Comercio DEMO") }
+                                .sortedBy { it.second }
+                        }
                 }
         }
     }
