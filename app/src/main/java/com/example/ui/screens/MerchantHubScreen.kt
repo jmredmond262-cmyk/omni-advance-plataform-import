@@ -162,7 +162,7 @@ fun MerchantHubScreen(
     var issuingDemoCode by remember { mutableStateOf(false) }
     var issueDemoCodeError by remember { mutableStateOf("") }
 
-    val currentUid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    val currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     LaunchedEffect(currentUid) {
         if (currentUid.isNotBlank()) {
             FirebaseFirestore.getInstance().collection("systemAdmins").document(currentUid).get()
