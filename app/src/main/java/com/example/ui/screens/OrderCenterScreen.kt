@@ -440,7 +440,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     } else 0.0
 
     fun submitOrder() {
-        if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 ||
+        if (uid.isBlank() || cartLines.isEmpty() || cartLines.size > 30 ||
             total <= 0.0 || total > 50000.0 || itemsSubtotal < store.minimumOrderAmount ||
             (fulfillmentType == "RETIRO" && !store.pickupEnabled) ||
             (fulfillmentType == "DELIVERY" && (!store.deliveryEnabled || deliveryAddress.isBlank() || deliveryLatitude == null || deliveryLongitude == null))) {
@@ -448,32 +448,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             return
         }
         sending = true
-        if (demoMode) {
-            val demoId = "DEMO-" + UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
-            val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
-            createdOrder = OmniStoreOrder(
-                id = demoId,
-                storeId = store.id,
-                storeName = store.name,
-                merchantUid = "",
-                customerUid = uid,
-                customerName = profile.fullName,
-                customerPhone = profile.phone,
-                items = cartLines,
-                total = total,
-                status = "SIMULACIÓN LOCAL",
-                paymentStatus = "NO APLICA · DEMO",
-                fulfillmentType = fulfillmentType,
-                deliveryAddress = deliveryAddress.trim(),
-                qrNonce = nonce,
-                isLocalDemo = true,
-                subtotal = itemsSubtotal,
-                deliveryFee = deliveryFee
-            )
-            updateCart(emptyMap())
-            sending = false
-            return
-        }
+        // DEMO también usa el circuito compartido del servidor: pedido, QR, pagos
+        // simulados, estados, historial e inventario. Solo se excluye dinero real.
         db.collection("merchantProfiles").document(store.id).get()
             .addOnSuccessListener { merchant ->
                 val merchantUid = merchant.getString("ownerUid").orEmpty()
@@ -941,8 +917,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             if (merchantError != null) Text(merchantError.orEmpty(), color = Color(0xFFFF9B8F), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
             else if (!merchantReady && !requiresClaimCode) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
         } else {
-            Text(if (demoMode) "Elegí un comercio de muestra, seleccioná productos y generá un QR DEMO." else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
-            Text(if (demoMode) "CATÁLOGO DEMO INDEPENDIENTE · No requiere aceptación del comercio ni crea movimientos reales." else "CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+            Text(if (demoMode) "Elegí un comercio de prueba, seleccioná productos y enviá un pedido compartido al titular." else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
+            Text(if (demoMode) "ENTORNO DEMO COMPARTIDO · El pedido queda registrado y el titular puede aceptarlo, prepararlo y entregarlo." else "CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
             if (demoMode) Text("COMERCIOS DE MUESTRA", color = Color(0xFFB69CFF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
