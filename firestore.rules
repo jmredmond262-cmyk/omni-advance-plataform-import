@@ -446,6 +446,14 @@ service cloud.firestore {
           (resource.data.status == "LISTO" && request.resource.data.status in ["EN_CAMINO", "ENTREGADO"]) ||
           (resource.data.status == "EN_CAMINO" && request.resource.data.status == "ENTREGADO");
       }
+      // El comprador y el titular necesitan leer los pedidos para consultar el estado
+      // y la trazabilidad. Las consultas cliente deben filtrar por customerUid o merchantUid.
+      // OMNI Admin conserva acceso de auditoría.
+      allow read: if signedIn() && (
+        isSystemAdmin()
+        || resource.data.customerUid == request.auth.uid
+        || resource.data.merchantUid == request.auth.uid
+      );
       // Pedidos nuevos solo pueden ser creados por createDemoStoreOrder (Admin SDK).
       // Así se valida cobertura geográfica en servidor y no se confía en coordenadas del cliente.
       allow create: if false;
