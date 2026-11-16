@@ -112,6 +112,7 @@ fun MerchantHubScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val screenScope = rememberCoroutineScope()
     val store by viewModel.managedStore.collectAsState()
     val newsList by viewModel.storeNews.collectAsState()
     val merchantProfileMessage by viewModel.merchantProfileMessage.collectAsState()
@@ -119,10 +120,14 @@ fun MerchantHubScreen(
     val inventoryMovements = remember(store.id) { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     val merchantOrders = remember(store.id) { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     DisposableEffect(store.id) {
+        val ownerUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
         val registration = FirebaseFirestore.getInstance().collection("storeOrders")
-            .whereEqualTo("storeId", store.id).limit(300)
+            .whereEqualTo("merchantUid", ownerUid)
+            .limit(300)
             .addSnapshotListener { snapshot, _ ->
-                merchantOrders.value = snapshot?.documents?.map { it.data ?: emptyMap() } ?: emptyList()
+                merchantOrders.value = snapshot?.documents
+                    ?.filter { it.getString("storeId") == store.id }
+                    ?.map { it.data ?: emptyMap() } ?: emptyList()
             }
         onDispose { registration.remove() }
     }
@@ -150,6 +155,61 @@ fun MerchantHubScreen(
     var claimCodeInput by remember { mutableStateOf("") }
     var claimCodeBusy by remember { mutableStateOf(false) }
     var claimCodeMessage by remember { mutableStateOf("") }
+    var isDemoAdmin by remember { mutableStateOf(false) }
+    var showIssueDemoCodeDialog by remember { mutableStateOf(false) }
+    var availableDemoStores by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var generatedDemoCode by remember { mutableStateOf("") }
+    var generatedDemoStoreName by remember { mutableStateOf("") }
+    var issuingDemoCode by remember { mutableStateOf(false) }
+    var issueDemoCodeError by remember { mutableStateOf("") }
+
+    val currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
+    LaunchedEffect(currentUid) {
+        if (currentUid.isNotBlank()) {
+            FirebaseFirestore.getInstance().collection("systemAdmins").document(currentUid).get()
+                .addOnSuccessListener { admin ->
+                    val role = admin.getString("role")
+                    isDemoAdmin = admin.getBoolean("enabled") == true && (role == "owner" || role == "admin")
+                }
+            FirebaseFunctions.getInstance("us-central1")
+                .getHttpsCallable("provisionDemoMerchants").call()
+                .addOnSuccessListener {
+                    FirebaseFirestore.getInstance().collection("merchantProfiles")
+                        .whereEqualTo("environment", "DEMO").get()
+                        .addOnSuccessListener { snapshot ->
+                            availableDemoStores = snapshot.documents
+                                .filter { (it.get("seedVersion") as? Number)?.toInt() == 1 && it.getString("ownerUid").isNullOrBlank() }
+                                .map { it.id to (it.getString("storeName") ?: "Comercio DEMO") }
+                                .sortedBy { it.second }
+                        }
+                }
+                .addOnFailureListener { error ->
+                    issueDemoCodeError = error.localizedMessage ?: "No se pudo preparar el catálogo DEMO para emitir códigos."
+                }
+        }
+    }
+
+    fun issueDemoCode(storeId: String, storeName: String) {
+        if (issuingDemoCode) return
+        issuingDemoCode = true
+        issueDemoCodeError = ""
+        screenScope.launch {
+            runCatching {
+                FirebaseFunctions.getInstance("us-central1")
+                    .getHttpsCallable("issueDemoMerchantClaimCode")
+                    .call(mapOf("storeId" to storeId)).await() as? Map<*, *>
+                    ?: error("El servidor no devolvió el código.")
+            }.onSuccess { response ->
+                generatedDemoCode = response["code"]?.toString().orEmpty()
+                generatedDemoStoreName = response["storeName"]?.toString() ?: storeName
+                if (generatedDemoCode.isBlank()) issueDemoCodeError = "No se recibió un código válido."
+                availableDemoStores = availableDemoStores.filterNot { it.first == storeId }
+            }.onFailure { error ->
+                issueDemoCodeError = error.localizedMessage ?: "No se pudo emitir el código."
+            }
+            issuingDemoCode = false
+        }
+    }
 
     // Campos formulario horarios
     var editOpenTime by remember { mutableStateOf(store.openTime) }
@@ -177,7 +237,6 @@ fun MerchantHubScreen(
     var prodDescription by remember { mutableStateOf("") }
     var isAiAnalyzing by remember { mutableStateOf(false) }
     var aiAnalysisMessage by remember { mutableStateOf("") }
-    val screenScope = rememberCoroutineScope()
     var locatingMerchantGps by remember { mutableStateOf(false) }
     val merchantGpsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) {
@@ -337,6 +396,46 @@ fun MerchantHubScreen(
             dismissButton = { TextButton(onClick = { if (!claimCodeBusy) showClaimCodeDialog = false }) { Text("Cancelar") } }
         )
     }
+    if (showIssueDemoCodeDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!issuingDemoCode) showIssueDemoCodeDialog = false },
+            title = { Text("Códigos de titularidad DEMO", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    if (generatedDemoCode.isNotBlank()) {
+                        Text("Código único para $generatedDemoStoreName", fontSize = 12.sp)
+                        Text(generatedDemoCode, color = EmeraldPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        Text("Es de un solo uso y vence en 30 días. Compartilo únicamente con la persona que administrará este comercio de prueba.", fontSize = 11.sp)
+                        TextButton(onClick = {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "Código de titularidad OMNI DEMO para $generatedDemoStoreName: $generatedDemoCode")
+                            }
+                            context.startActivity(Intent.createChooser(send, "Compartir código de titularidad"))
+                        }) { Text("Compartir código") }
+                    } else {
+                        Text("Seleccioná un comercio DEMO sin titular. El código permite que otra cuenta OMNI lo reclame una sola vez.", fontSize = 12.sp)
+                        if (availableDemoStores.isEmpty()) Text("No quedan comercios DEMO libres para asignar.", fontSize = 11.sp)
+                        availableDemoStores.forEach { (storeId, storeName) ->
+                            TextButton(onClick = { issueDemoCode(storeId, storeName) }, enabled = !issuingDemoCode) {
+                                Text(if (issuingDemoCode) "Emitiendo…" else storeName)
+                            }
+                        }
+                    }
+                    if (issueDemoCodeError.isNotBlank()) Text(issueDemoCodeError, color = Color(0xFFFF9B8F), fontSize = 11.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showIssueDemoCodeDialog = false
+                    generatedDemoCode = ""
+                    generatedDemoStoreName = ""
+                    issueDemoCodeError = ""
+                }, enabled = !issuingDemoCode) { Text("Cerrar") }
+            }
+        )
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -352,6 +451,28 @@ fun MerchantHubScreen(
                         Text("Vinculá un comercio DEMO a tu cuenta OMNI", color = Color(0xFF9CB5CC), fontSize = 11.sp)
                     }
                     Text("INGRESAR", color = EmeraldPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
+                }
+            }
+        }
+        if (isDemoAdmin) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        generatedDemoCode = ""
+                        generatedDemoStoreName = ""
+                        issueDemoCodeError = ""
+                        showIssueDemoCodeDialog = true
+                    },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF14253B)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("Asignar comercios DEMO a testers", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Emití códigos únicos para que otras personas tomen la titularidad de un comercio de prueba.", color = Color(0xFF9CB5CC), fontSize = 11.sp)
+                        }
+                        Text("GENERAR", color = EmeraldPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
+                    }
                 }
             }
         }

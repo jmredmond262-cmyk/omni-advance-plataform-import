@@ -198,15 +198,40 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     LaunchedEffect(demoMode) {
         if (demoMode) {
             demoStoresLoading = true
+            fun loadProvisionedCatalog() {
+                MerchantProfileRepository.loadDemoStores { result ->
+                    demoStoresLoading = false
+                    result.onSuccess { loaded ->
+                        demoStores = loaded
+                        if (loaded.isNotEmpty() && loaded.none { it.id == selectedStore?.id }) {
+                            viewModel.selectStoreForOrders(loaded.first())
+                        }
+                    }.onFailure { error ->
+                        feedback = error.localizedMessage ?: "No se pudieron cargar los comercios DEMO. Revisá la publicación de las reglas Firestore."
+                    }
+                }
+            }
             MerchantProfileRepository.loadDemoStores { result ->
-                demoStoresLoading = false
-                result.onSuccess { loaded ->
-                    demoStores = loaded
-                    if (loaded.isNotEmpty() && loaded.none { it.id == selectedStore?.id }) {
-                        viewModel.selectStoreForOrders(loaded.first())
+                result.onSuccess { existing ->
+                    if (existing.isNotEmpty()) {
+                        demoStores = existing
+                        demoStoresLoading = false
+                        if (existing.none { it.id == selectedStore?.id }) viewModel.selectStoreForOrders(existing.first())
+                    } else {
+                        // Inicialización idempotente: solo crea el catálogo fijo de comercios ficticios.
+                        // Nunca convierte comercios reales ni asigna titularidades.
+                        FirebaseFunctions.getInstance("us-central1")
+                            .getHttpsCallable("provisionDemoMerchants")
+                            .call()
+                            .addOnSuccessListener { loadProvisionedCatalog() }
+                            .addOnFailureListener { error ->
+                                demoStoresLoading = false
+                                feedback = error.localizedMessage ?: "No se pudo inicializar el catálogo DEMO. Verificá que las funciones estén publicadas."
+                            }
                     }
                 }.onFailure { error ->
-                    feedback = error.localizedMessage ?: "No se pudieron cargar los comercios DEMO."
+                    demoStoresLoading = false
+                    feedback = error.localizedMessage ?: "No se pudieron consultar los comercios DEMO."
                 }
             }
         } else {
@@ -415,7 +440,7 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     } else 0.0
 
     fun submitOrder() {
-        if ((!demoMode && uid.isBlank()) || cartLines.isEmpty() || cartLines.size > 30 ||
+        if (uid.isBlank() || cartLines.isEmpty() || cartLines.size > 30 ||
             total <= 0.0 || total > 50000.0 || itemsSubtotal < store.minimumOrderAmount ||
             (fulfillmentType == "RETIRO" && !store.pickupEnabled) ||
             (fulfillmentType == "DELIVERY" && (!store.deliveryEnabled || deliveryAddress.isBlank() || deliveryLatitude == null || deliveryLongitude == null))) {
@@ -423,32 +448,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             return
         }
         sending = true
-        if (demoMode) {
-            val demoId = "DEMO-" + UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
-            val nonce = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().take(8)
-            createdOrder = OmniStoreOrder(
-                id = demoId,
-                storeId = store.id,
-                storeName = store.name,
-                merchantUid = "",
-                customerUid = uid,
-                customerName = profile.fullName,
-                customerPhone = profile.phone,
-                items = cartLines,
-                total = total,
-                status = "SIMULACIÓN LOCAL",
-                paymentStatus = "NO APLICA · DEMO",
-                fulfillmentType = fulfillmentType,
-                deliveryAddress = deliveryAddress.trim(),
-                qrNonce = nonce,
-                isLocalDemo = true,
-                subtotal = itemsSubtotal,
-                deliveryFee = deliveryFee
-            )
-            updateCart(emptyMap())
-            sending = false
-            return
-        }
+        // DEMO también usa el circuito compartido del servidor: pedido, QR, pagos
+        // simulados, estados, historial e inventario. Solo se excluye dinero real.
         db.collection("merchantProfiles").document(store.id).get()
             .addOnSuccessListener { merchant ->
                 val merchantUid = merchant.getString("ownerUid").orEmpty()
@@ -916,8 +917,8 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             if (merchantError != null) Text(merchantError.orEmpty(), color = Color(0xFFFF9B8F), fontSize = 12.sp, modifier = Modifier.padding(8.dp))
             else if (!merchantReady && !requiresClaimCode) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF57DDF5)) }
         } else {
-            Text(if (demoMode) "Elegí un comercio de muestra, seleccioná productos y generá un QR DEMO." else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
-            Text(if (demoMode) "CATÁLOGO DEMO INDEPENDIENTE · No requiere aceptación del comercio ni crea movimientos reales." else "CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
+            Text(if (demoMode) "Elegí un comercio de prueba, seleccioná productos y enviá un pedido compartido al titular." else "Elegí un comercio, seleccioná sus productos y enviá tu pedido. El QR identifica el pedido; no acredita un pago.", color = Color(0xFF9AAAC2), fontSize = 11.sp)
+            Text(if (demoMode) "ENTORNO DEMO COMPARTIDO · El pedido queda registrado y el titular puede aceptarlo, prepararlo y entregarlo." else "CATÁLOGO DE PRUEBA · Los precios y la disponibilidad deben confirmarse con el comercio. OMNI Pay no procesa dinero real en este flujo.", color = Color(0xFFFFC978), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp))
             if (demoMode) Text("COMERCIOS DE MUESTRA", color = Color(0xFFB69CFF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
@@ -1019,10 +1020,11 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                                     screenScope.launch {
                                         locatingDelivery = true
                                         val location = RealLocationHelper.getCurrentLocation(context)
-                                        deliveryLatitude = location?.latitude
-                                        deliveryLongitude = location?.longitude
+                                        val preciseLocation = location?.takeIf { it.accuracy > 0f && it.accuracy <= 50f }
+                                        deliveryLatitude = preciseLocation?.latitude
+                                        deliveryLongitude = preciseLocation?.longitude
                                         locatingDelivery = false
-                                        feedback = if (location != null) "Ubicación GPS lista para validar la cobertura." else "No se pudo obtener la ubicación. Activá el GPS e intentá nuevamente."
+                                        feedback = if (preciseLocation != null) "Ubicación GPS lista para validar la cobertura." else "No se obtuvo una ubicación con precisión suficiente (máximo 50 m). Activá el GPS e intentá nuevamente."
                                     }
                                 } else deliveryLocationPermission.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
                             }, enabled = !locatingDelivery, modifier = Modifier.fillMaxWidth()) {

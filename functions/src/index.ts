@@ -1571,12 +1571,8 @@ const DEMO_MERCHANT_SEEDS: DemoMerchantSeed[] = [
  */
 export const provisionDemoMerchants = onCall({ region: REGION }, async (request) => {
   const uid = requireUid(request);
-  const adminSnap = await db.collection("systemAdmins").doc(uid).get();
-  if (!adminSnap.exists || adminSnap.get("enabled") !== true ||
-      !["owner", "admin"].includes(String(adminSnap.get("role") || ""))) {
-    throw new HttpsError("permission-denied", "Solo una cuenta administradora habilitada puede provisionar comercios DEMO.");
-  }
-
+  // El catálogo contiene únicamente cinco comercios ficticios y datos de prueba fijos.
+  // Cualquier cuenta autenticada puede inicializarlo; nunca asigna titulares ni toca perfiles REAL.
   const results: Array<{storeId: string; name: string; result: string; products: number}> = [];
   for (const seed of DEMO_MERCHANT_SEEDS) {
     const profileRef = db.collection("merchantProfiles").doc(seed.id);
@@ -1612,10 +1608,13 @@ export const provisionDemoMerchants = onCall({ region: REGION }, async (request)
         isOnDuty: false,
         openOnHolidays: false,
         pickupEnabled: true,
-        deliveryEnabled: false,
-        deliveryRadiusKm: 3,
-        deliveryFee: 0,
-        freeDeliveryFrom: null,
+        deliveryEnabled: true,
+        // Zona amplia de laboratorio: el titular puede ajustar el radio y la ubicación.
+        deliveryRadiusKm: 50,
+        deliveryFee: 1200,
+        freeDeliveryFrom: 20000,
+        merchantLatitude: -29.346,
+        merchantLongitude: -59.967,
         minimumOrderAmount: 0,
         estimatedPrepMinutes: 20,
         scheduleNotes: "Datos ficticios para pruebas. No representa un comercio real.",
@@ -1631,7 +1630,7 @@ export const provisionDemoMerchants = onCall({ region: REGION }, async (request)
         minSpendDiscountPercent: 0,
         comboDeals: [],
         inventory: seed.products.map((product) => ({
-          ...product, photoUri: null, barcode: ""
+          ...product, stockQuantity: 25, inStock: true, photoUri: null, barcode: ""
         })),
         news: [],
         cashback: { enabled: false, percentage: 0, capPerPurchase: null, monthlyCap: null },

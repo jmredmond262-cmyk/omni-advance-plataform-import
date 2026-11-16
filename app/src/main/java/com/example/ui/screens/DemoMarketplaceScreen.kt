@@ -51,7 +51,7 @@ fun DemoMarketplaceScreen(
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("ENTORNO DEMO · SIN DINERO REAL", color = DemoViolet, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp)
                 Text(
-                    "Elegí entre los comercios de muestra, armá tu carrito y generá un QR DEMO para recorrer la experiencia de compra. No se utiliza dinero real.",
+                    "Elegí entre comercios ficticios, armá tu carrito y enviá un pedido compartido. El titular podrá aceptarlo, prepararlo y marcarlo para retiro o delivery. No se utiliza dinero real.",
                     color = Color.White, fontSize = 11.sp
                 )
             }
@@ -73,11 +73,11 @@ fun DemoMarketplaceScreen(
                         modifier = Modifier.padding(start = 9.dp))
                 }
                 Text(
-                    "Elegí un comercio de muestra, agregá productos y confirmá para generar un QR DEMO. El catálogo de prueba está separado del directorio de comercios reales.",
+                    "Elegí un comercio DEMO, agregá productos y confirmá para crear un pedido registrado en Firebase, visible para el comprador y el titular. El catálogo permanece separado de los comercios reales.",
                     color = DemoMuted, fontSize = 12.sp
                 )
                 Text(
-                    "El QR permite visualizar el resumen de compra y compartir la muestra. Esta ruta no crea pedidos compartidos ni mueve saldos.",
+                    "El QR identifica el pedido compartido y permite abrir su seguimiento. Los pagos disponibles son simulaciones DEMO; no se mueve dinero real.",
                     color = DemoMuted, fontSize = 11.sp
                 )
                 Button(
@@ -100,7 +100,7 @@ fun DemoMarketplaceScreen(
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("¿Qué representa el QR DEMO?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Text(
-                    "Es un QR ilustrativo que contiene el identificador de muestra, comercio, importe y productos. No es una orden aceptada por el comercio ni un comprobante de pago.",
+                    "Es el identificador seguro de un pedido DEMO registrado. No confirma por sí solo el pago ni reemplaza un comprobante fiscal.",
                     color = DemoMuted, fontSize = 10.sp
                 )
             }

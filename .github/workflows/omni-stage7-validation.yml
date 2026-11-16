@@ -2,11 +2,17 @@ name: OMNI Stage 7 - Safe Validation
 
 on:
   push:
+    branches: ["feat/omni-cashback-atomic-accrual-1.4.7", "fix/demo-orders-traceability-merchant-claim"]
+  pull_request:
     branches: ["feat/omni-cashback-atomic-accrual-1.4.7"]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: omni-stage7-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   android-validation:
