@@ -168,7 +168,8 @@ fun MerchantHubScreen(
         if (currentUid.isNotBlank()) {
             FirebaseFirestore.getInstance().collection("systemAdmins").document(currentUid).get()
                 .addOnSuccessListener { admin ->
-                    isDemoAdmin = admin.getBoolean("enabled") == true && admin.getString("role") in listOf("owner", "admin")
+                    val role = admin.getString("role")
+                    isDemoAdmin = admin.getBoolean("enabled") == true && (role == "owner" || role == "admin")
                 }
             FirebaseFunctions.getInstance("us-central1")
                 .getHttpsCallable("provisionDemoMerchants").call()
