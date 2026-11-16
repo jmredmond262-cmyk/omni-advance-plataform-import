@@ -255,6 +255,13 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
+    // Una cuenta puede consultar únicamente su propio estado administrativo;
+    // la elevación de permisos sigue siendo exclusiva del backend.
+    match /systemAdmins/{adminUid} {
+      allow read: if signedIn() && request.auth.uid == adminUid;
+      allow create, update, delete: if false;
+    }
+
     // OMNI CONEX: job, professional, trade and local-service listings.
     // Listings are visible to signed-in users; only the publisher can edit or remove them.
     // Demo merchant ownership. The first authenticated account to activate a
