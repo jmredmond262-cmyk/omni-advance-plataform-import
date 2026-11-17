@@ -83,7 +83,6 @@ import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -102,7 +101,6 @@ import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.RosePromo
 import com.example.ui.theme.SlateNavy
-import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.firestore.FirebaseFirestore
 
 @OptIn(ExperimentalMaterial3Api::class)
