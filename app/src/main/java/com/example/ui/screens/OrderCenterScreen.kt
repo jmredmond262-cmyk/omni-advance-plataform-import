@@ -37,6 +37,7 @@ import com.example.model.Store
 import com.example.data.api.RealLocationHelper
 import com.example.data.wallet.DemoWalletRepository
 import com.example.data.merchant.MerchantProfileRepository
+import com.example.data.merchant.DemoMerchantApi
 import com.example.data.wallet.DemoCardGatewayRepository
 import com.example.model.StoreProduct
 import com.example.model.ProductCategory
@@ -220,14 +221,14 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                     } else {
                         // Inicialización idempotente: solo crea el catálogo fijo de comercios ficticios.
                         // Nunca convierte comercios reales ni asigna titularidades.
-                        FirebaseFunctions.getInstance("us-central1")
-                            .getHttpsCallable("provisionDemoMerchants")
-                            .call()
-                            .addOnSuccessListener { loadProvisionedCatalog() }
-                            .addOnFailureListener { error ->
-                                demoStoresLoading = false
-                                feedback = error.localizedMessage ?: "No se pudo inicializar el catálogo DEMO. Verificá que las funciones estén publicadas."
-                            }
+                        screenScope.launch {
+                            runCatching { DemoMerchantApi.provision() }
+                                .onSuccess { loadProvisionedCatalog() }
+                                .onFailure { error ->
+                                    demoStoresLoading = false
+                                    feedback = error.localizedMessage ?: "No se pudo inicializar el catálogo DEMO desde el servicio OMNI."
+                                }
+                        }
                     }
                 }.onFailure { error ->
                     demoStoresLoading = false
