@@ -678,6 +678,262 @@ async function handleAction(env, action, data, identity) {
     default: throw new ApiError(400, "invalid-argument", "Acción administrativa desconocida.");
   }
 }
+
+const DEMO_SEEDS = [
+ {id:"demo_kiosco_punto_24",name:"Punto 24 · Kiosco DEMO",type:"KIOSCO",sizeTier:"MICRO",description:"Kiosco ficticio para pruebas de compra y retiro.",hoursText:"Todos los días · 08:00 a 23:00",products:[["kp_agua","Agua mineral 2L","BEBIDAS",1100,"bot."],["kp_gaseosa","Gaseosa cola 1.5L","BEBIDAS",2450,"bot."],["kp_galletas","Galletitas surtidas 300g","KIOSCO",1450,"paq."],["kp_chocolate","Chocolate 90g","KIOSCO",1750,"unid."]]},
+ {id:"demo_almacen_esquina",name:"Almacén La Esquina · DEMO",type:"ALMACEN",sizeTier:"PEQUENO",description:"Almacén barrial ficticio para probar catálogo y delivery.",hoursText:"Lun. a sáb. · 08:00 a 20:30",products:[["ae_leche","Leche entera 1L","LACTEOS",1450,"litro"],["ae_arroz","Arroz largo fino 1kg","ALMACEN",1850,"paq."],["ae_fideos","Fideos spaghetti 500g","ALMACEN",1350,"paq."],["ae_huevos","Huevos x 12","FRESCOS",3600,"doc."]]},
+ {id:"demo_panaderia_trigal",name:"Panadería Trigal · DEMO",type:"PANADERIA",sizeTier:"PEQUENO",description:"Panadería ficticia para probar productos diarios y combos.",hoursText:"Todos los días · 06:30 a 19:30",products:[["pt_flauta","Pan francés 1kg","ALMACEN",2600,"kg"],["pt_medialunas","Medialunas x 6","ALMACEN",3900,"pack"],["pt_facturas","Facturas surtidas x 6","ALMACEN",3600,"pack"],["pt_chipa","Chipá x 250g","ALMACEN",2800,"paq."]]},
+ {id:"demo_supermercado_norte",name:"Supermercado Norte · DEMO",type:"SUPERMERCADO",sizeTier:"GRANDE",description:"Supermercado ficticio para probar variedad y compras múltiples.",hoursText:"Lun. a sáb. · 07:30 a 21:00",products:[["sn_leche","Leche entera 1L","LACTEOS",1450,"litro"],["sn_arroz","Arroz largo fino 1kg","ALMACEN",1850,"paq."],["sn_aceite","Aceite girasol 900ml","ALMACEN",2600,"bot."],["sn_gaseosa","Gaseosa cola 1.5L","BEBIDAS",2450,"bot."]]},
+ {id:"demo_tecnologia_pixel",name:"Pixel Lab · Tecnología DEMO",type:"SERVICIOS",sizeTier:"ESPECIALIZADO",description:"Tienda tecnológica ficticia para probar productos unitarios.",hoursText:"Lun. a sáb. · 09:00 a 19:00",products:[["pl_cable","Cable USB-C reforzado 1m","ALMACEN",4500,"unid."],["pl_cargador","Cargador USB-C 25W","ALMACEN",12500,"unid."],["pl_mouse","Mouse inalámbrico","ALMACEN",8900,"unid."],["pl_auris","Auriculares con micrófono","ALMACEN",7200,"unid."]]}
+];
+function seedProfile(seed) {
+ const inventory=seed.products.map(([id,name,category,price,unitLabel])=>({id,name,category,price,originalPrice:null,inStock:true,stockQuantity:20,unitLabel,photoUri:null,barcode:null,description:name}));
+ return {storeId:seed.id,storeName:seed.name,type:seed.type,environment:"DEMO",ownerUid:"",seedVersion:1,sizeTier:seed.sizeTier,capacityLabel:"Catálogo de prueba · entorno DEMO",description:seed.description,address:"Dirección ficticia · Entorno de prueba OMNI",phone:"",isOpen:true,hoursText:seed.hoursText,openTime:"08:00",closeTime:"20:00",pickupEnabled:true,deliveryEnabled:true,deliveryRadiusKm:50,deliveryFee:1200,freeDeliveryFrom:20000,merchantLatitude:-29.346,merchantLongitude:-59.967,minimumOrderAmount:0,estimatedPrepMinutes:20,cashback:{enabled:false,percentage:0,capPerPurchase:null,monthlyCap:null},comboDeals:[],inventory,news:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+}
+async function provisionDemoCatalog(env) {
+ const results=[];
+ for(const seed of DEMO_SEEDS) {
+  const existing=await getDocument(env,"merchantProfiles",seed.id);
+  if(!existing.missing) {
+   const current=decodeFields(existing.fields||{});
+   if(current.environment!=="DEMO") results.push({storeId:seed.id,status:"OMITIDO_PERFIL_NO_DEMO"});
+   else if(String(current.ownerUid||"").trim()) results.push({storeId:seed.id,status:"OMITIDO_YA_RECLAMADO"});
+   else results.push({storeId:seed.id,status:"YA_EXISTE"});
+   continue;
+  }
+  await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[{update:{name:FIRESTORE_ROOT+"/merchantProfiles/"+seed.id,fields:encodeFields(seedProfile(seed))},currentDocument:{exists:false}}]})});
+  results.push({storeId:seed.id,status:"CREADO",products:seed.products.length});
+ }
+ return {items:results,created:results.filter(x=>x.status==="CREADO").length};
+}
+async function claimDemoCatalogStore(env,uid,rawCode) {
+ const code=String(rawCode||"").trim().toUpperCase();
+ if(!/^OMNI-[A-F0-9]{16}$/.test(code)) throw new ApiError(400,"invalid-argument","El código de titularidad no tiene un formato válido.");
+ const hash=await sha256Hex(code);
+ const codePath=FIRESTORE_ROOT+"/demoMerchantClaimCodes/"+hash;
+ const codeDoc=await getDocument(env,"demoMerchantClaimCodes",hash);
+ if(codeDoc.missing) throw new ApiError(404,"not-found","El código no existe o ya fue utilizado.");
+ const codeData=decodeFields(codeDoc.fields||{});
+ if(codeData.active!==true||Date.parse(codeData.expiresAt||"")<=Date.now()) throw new ApiError(410,"failed-precondition","El código venció o ya fue utilizado.");
+ const storeId=String(codeData.storeId||"");
+ if(!DEMO_SEEDS.some(seed=>seed.id===storeId)) throw new ApiError(409,"failed-precondition","El código no corresponde al catálogo DEMO.");
+ const storeDoc=await getDocument(env,"merchantProfiles",storeId);
+ if(storeDoc.missing) throw new ApiError(404,"not-found","El comercio DEMO ya no está disponible.");
+ const store=decodeFields(storeDoc.fields||{});
+ if(store.environment!=="DEMO"||Number(store.seedVersion)!==1||String(store.ownerUid||"").trim()) throw new ApiError(409,"already-exists","El comercio ya tiene titular o no pertenece al catálogo DEMO.");
+ const now=new Date().toISOString();
+ await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[
+  {update:{name:codePath,fields:encodeFields({active:false,claimedByUid:uid,claimedAt:now})},updateMask:{fieldPaths:["active","claimedByUid","claimedAt"]},currentDocument:{updateTime:codeDoc.updateTime}},
+  {update:{name:FIRESTORE_ROOT+"/merchantProfiles/"+storeId,fields:encodeFields({ownerUid:uid,claimedAt:now,updatedAt:now})},updateMask:{fieldPaths:["ownerUid","claimedAt","updatedAt"]},currentDocument:{updateTime:storeDoc.updateTime}}
+ ]})});
+ return {storeId,storeName:String(store.storeName||"Comercio DEMO"),ownerUid:uid,claimed:true};
+}
+
+function demoObject(value,label) {
+ if(!value||typeof value!=="object"||Array.isArray(value)) throw new ApiError(400,"invalid-argument",label+" no tiene un formato válido.");
+ return value;
+}
+function demoList(value,label,max) {
+ if(!Array.isArray(value)||value.length>max||value.some(item=>!item||typeof item!=="object"||Array.isArray(item))) throw new ApiError(400,"invalid-argument",label+": formato o cantidad no válida.");
+ return value;
+}
+function demoText(value,min,max,label,optional=false) {
+ if(optional&&(value===null||value===undefined)) return "";
+ if(typeof value!=="string"||value.trim().length<min||value.length>max) throw new ApiError(400,"invalid-argument",label+": longitud no válida.");
+ return value;
+}
+function demoOnlyKeys(item,allowed,label) {
+ if(Object.keys(item).some(key=>!allowed.includes(key))) throw new ApiError(400,"invalid-argument",label+": contiene campos no permitidos.");
+}
+function validateDemoProducts(raw,limit) {
+ const products=demoList(raw,"Productos",limit), ids=new Set();
+ return products.map((p,index)=>{
+  const label="Producto "+(index+1);
+  demoOnlyKeys(p,["id","name","category","price","originalPrice","inStock","stockQuantity","unitLabel","photoUri","barcode","description"],label);
+  const id=demoText(p.id,1,100,label+" · ID").trim();
+  if(ids.has(id)) throw new ApiError(400,"invalid-argument","Los identificadores de producto deben ser únicos.");
+  ids.add(id);
+  demoText(p.name,2,80,label+" · nombre");
+  if(typeof p.price!=="number"||!Number.isFinite(p.price)||p.price<=0||p.price>50000) throw new ApiError(400,"invalid-argument",label+" · precio: importe no válido.");
+  if(p.originalPrice!==null&&p.originalPrice!==undefined) {
+   if(typeof p.originalPrice!=="number"||!Number.isFinite(p.originalPrice)||p.originalPrice<=p.price||p.originalPrice>100000) throw new ApiError(400,"invalid-argument",label+": el precio anterior debe superar al actual.");
+  }
+  const category=demoText(p.category,1,40,label+" · categoría");
+  if(!/^[A-Z_]+$/.test(category)) throw new ApiError(400,"invalid-argument",label+": categoría no válida.");
+  if(typeof p.inStock!=="boolean"||!Number.isInteger(p.stockQuantity)||p.stockQuantity<0||p.stockQuantity>100000||p.inStock!==(p.stockQuantity>0)) throw new ApiError(400,"invalid-argument",label+": stock no válido.");
+  demoText(p.unitLabel,1,24,label+" · unidad");
+  demoText(p.photoUri,0,1000,label+" · foto",true);
+  demoText(p.barcode,0,64,label+" · código de barras",true);
+  demoText(p.description,0,500,label+" · descripción");
+  return p;
+ });
+}
+function validateDemoCombos(raw) {
+ return demoList(raw,"Combos",30).map((item,index)=>{
+  const label="Combo "+(index+1);
+  demoOnlyKeys(item,["title","description","discountBadge","audience"],label);
+  demoText(item.title,2,80,label+" · título");
+  demoText(item.description,0,300,label+" · descripción");
+  demoText(item.discountBadge,0,24,label+" · etiqueta");
+  demoText(item.audience,0,24,label+" · público");
+  return item;
+ });
+}
+function validateDemoNews(raw,storeId,storeName) {
+ const ids=new Set();
+ return demoList(raw,"Novedades",50).map((item,index)=>{
+  const label="Novedad "+(index+1);
+  demoOnlyKeys(item,["id","storeId","storeName","title","content","timeAgoText","badge","isHot"],label);
+  const id=demoText(item.id,1,100,label+" · ID").trim();
+  if(ids.has(id)) throw new ApiError(400,"invalid-argument","Los identificadores de novedades deben ser únicos.");
+  ids.add(id);
+  if(item.storeId!==storeId||item.storeName!==storeName) throw new ApiError(400,"invalid-argument",label+": no corresponde a este comercio.");
+  demoText(item.title,2,100,label+" · título");
+  demoText(item.content,0,1000,label+" · contenido");
+  demoText(item.timeAgoText,0,40,label+" · fecha");
+  demoText(item.badge,0,40,label+" · etiqueta");
+  if(typeof item.isHot!=="boolean") throw new ApiError(400,"invalid-argument",label+" · indicador no válido.");
+  return item;
+ });
+}
+async function saveDemoMerchantCatalog(env,uid,data) {
+ const storeId=typeof data.storeId==="string"?data.storeId.trim():"";
+ if(!/^[A-Za-z0-9_-]{3,120}$/.test(storeId)) throw new ApiError(400,"invalid-argument","El identificador del comercio no es válido.");
+ const txResult=await firestore(env,":beginTransaction",{method:"POST",body:JSON.stringify({options:{readWrite:{}}})});
+ const transaction=txResult.transaction;
+ if(!transaction) throw new Error("No se pudo iniciar la transacción del catálogo DEMO.");
+ const profileName=FIRESTORE_ROOT+"/merchantProfiles/"+encodeURIComponent(storeId);
+ const batch=await firestore(env,":batchGet",{method:"POST",body:JSON.stringify({documents:[profileName],transaction})});
+ const profile=Array.isArray(batch)?batch.find(item=>item.found)?.found:null;
+ if(!profile) throw new ApiError(404,"not-found","El comercio DEMO no existe.");
+ const current=decodeFields(profile.fields||{});
+ if(current.environment!=="DEMO"||Number(current.seedVersion)!==1||current.ownerUid!==uid||current.storeId!==storeId) throw new ApiError(403,"permission-denied","No sos el titular habilitado de este comercio DEMO.");
+ const limits={MICRO:20,PEQUENO:50,MEDIANO:100,GRANDE:250,ESPECIALIZADO:50};
+ const limit=limits[String(current.sizeTier||"")];
+ if(!limit) throw new ApiError(412,"failed-precondition","El comercio no tiene un tamaño DEMO válido.");
+ const inventory=validateDemoProducts(data.inventory,limit);
+ const combos=validateDemoCombos(data.comboDeals);
+ const news=validateDemoNews(data.news,storeId,String(current.storeName||""));
+ const previous=Array.isArray(current.inventory)?current.inventory:[];
+ const previousById=new Map(previous.map(item=>[String(item.id||""),item]));
+ const now=new Date().toISOString();
+ const writes=[];
+ for(const product of inventory) {
+  const beforeItem=previousById.get(String(product.id));
+  const before=Number.isInteger(Number(beforeItem?.stockQuantity))?Number(beforeItem.stockQuantity):0;
+  const after=Number(product.stockQuantity);
+  if(before===after) continue;
+  const movementId=randomHex(12).toLowerCase();
+  writes.push({update:{name:profileName+"/inventoryMovements/"+movementId,fields:encodeFields({
+   movementId,storeId,productId:String(product.id),productName:String(product.name),
+   type:beforeItem?"AJUSTE_TITULAR":"ALTA_INVENTARIO",quantityDelta:after-before,
+   stockBefore:before,stockAfter:after,actorUid:uid,environment:"DEMO",createdAt:now
+  })},currentDocument:{exists:false}});
+ }
+ writes.push({update:{name:profileName,fields:encodeFields({
+  inventory,comboDeals:combos,news,catalogUpdatedByUid:uid,catalogUpdatedAt:now,updatedAt:now
+ })},updateMask:{fieldPaths:["inventory","comboDeals","news","catalogUpdatedByUid","catalogUpdatedAt","updatedAt"]}});
+ await firestore(env,":commit",{method:"POST",body:JSON.stringify({transaction,writes})});
+ return {saved:true,storeId,products:inventory.length,combos:combos.length,news:news.length};
+}
+
+
+async function createDemoStoreOrder(env,uid,data,identity) {
+ const storeId=String(data.storeId||"").trim();
+ const fulfillmentType=String(data.fulfillmentType||"RETIRO");
+ const address=String(data.deliveryAddress||"").trim();
+ if(!/^[A-Za-z0-9_-]{1,120}$/.test(storeId)||!["RETIRO","DELIVERY"].includes(fulfillmentType))
+  throw new ApiError(400,"invalid-argument","El comercio o la modalidad del pedido no son válidos.");
+ if(fulfillmentType==="DELIVERY"&&(address.length<5||address.length>240))
+  throw new ApiError(400,"invalid-argument","Ingresá una dirección de entrega válida.");
+ const items=demoList(data.items,"Productos del pedido",30);
+ if(items.length<1) throw new ApiError(400,"invalid-argument","El pedido debe contener al menos un producto.");
+ const profileDoc=await getDocument(env,"merchantProfiles",storeId);
+ if(profileDoc.missing) throw new ApiError(404,"not-found","El comercio DEMO no existe.");
+ const profile=decodeFields(profileDoc.fields||{});
+ if(profile.environment!=="DEMO"||Number(profile.seedVersion)!==1||profile.storeId!==storeId)
+  throw new ApiError(412,"failed-precondition","El comercio no está habilitado para pedidos DEMO.");
+ const merchantUid=String(profile.ownerUid||"");
+ if(!merchantUid||merchantUid===uid) throw new ApiError(412,"failed-precondition","El comercio todavía no tiene un titular habilitado para recibir pedidos.");
+ if(fulfillmentType==="RETIRO"&&profile.pickupEnabled===false) throw new ApiError(412,"failed-precondition","El comercio no habilitó el retiro.");
+ let deliveryLatitude=null,deliveryLongitude=null;
+ if(fulfillmentType==="DELIVERY") {
+  const merchantLat=Number(profile.merchantLatitude),merchantLon=Number(profile.merchantLongitude);
+  const buyerLat=Number(data.deliveryLatitude),buyerLon=Number(data.deliveryLongitude);
+  if(profile.deliveryEnabled!==true||![merchantLat,merchantLon,buyerLat,buyerLon].every(Number.isFinite)||
+    Math.abs(merchantLat)>90||Math.abs(buyerLat)>90||Math.abs(merchantLon)>180||Math.abs(buyerLon)>180)
+   throw new ApiError(412,"failed-precondition","El comercio o tu dispositivo no tienen una ubicación válida para verificar la cobertura.");
+  const rad=v=>v*Math.PI/180, dLat=rad(buyerLat-merchantLat),dLon=rad(buyerLon-merchantLon);
+  const h=Math.sin(dLat/2)**2+Math.cos(rad(merchantLat))*Math.cos(rad(buyerLat))*Math.sin(dLon/2)**2;
+  const distance=6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
+  const radius=Number(profile.deliveryRadiusKm);
+  if(!Number.isFinite(radius)||radius<=0||distance>radius+0.05) throw new ApiError(400,"out-of-range","La dirección está fuera del radio de delivery de este comercio.");
+  deliveryLatitude=buyerLat;deliveryLongitude=buyerLon;
+ }
+ const catalog=Array.isArray(profile.inventory)?profile.inventory:[];
+ const seen=new Set();let subtotal=0;
+ const normalizedItems=items.map((line,index)=>{
+  const productId=String(line.productId||"");
+  const quantity=Number(line.quantity),price=Number(line.price);
+  if(!productId||seen.has(productId)||!Number.isInteger(quantity)||quantity<1||quantity>999||!Number.isFinite(price)||price<=0)
+   throw new ApiError(400,"invalid-argument","Hay productos o cantidades inválidas en el pedido.");
+  seen.add(productId);
+  const current=catalog.find(item=>String(item.id||"")===productId);
+  const stock=Number(current?.stockQuantity);
+  if(!current||!Number.isInteger(stock)||stock<quantity||current.inStock!==(stock>0)||Math.abs(Number(current.price)-price)>=0.005)
+   throw new ApiError(412,"failed-precondition","Cambió el precio o la disponibilidad de un producto. Actualizá el carrito.");
+  const name=String(current.name||"");
+  if(!name||name.length>80||String(line.name||"")!==name) throw new ApiError(412,"failed-precondition","Cambió el nombre de un producto. Actualizá el carrito.");
+  subtotal+=price*quantity;
+  return {productId,name,price,quantity};
+ });
+ subtotal=Math.round(subtotal*100)/100;
+ const minimum=Number(profile.minimumOrderAmount??0);
+ const freeRaw=profile.freeDeliveryFrom,freeFrom=freeRaw==null?null:Number(freeRaw);
+ const fee=Number(profile.deliveryFee??0);
+ if(!Number.isFinite(minimum)||minimum<0||minimum>50000||(freeFrom!==null&&(!Number.isFinite(freeFrom)||freeFrom<0||freeFrom>50000))||!Number.isFinite(fee)||fee<0||fee>50000)
+  throw new ApiError(412,"failed-precondition","La configuración de compra mínima o envío no es válida.");
+ if(subtotal<=0||subtotal>50000||subtotal<minimum) throw new ApiError(412,"failed-precondition","El pedido no alcanza la compra mínima o supera el máximo DEMO.");
+ const deliveryFee=fulfillmentType==="DELIVERY"&&!(freeFrom!==null&&subtotal>=freeFrom)?fee:0;
+ const total=Math.round((subtotal+deliveryFee)*100)/100;
+ if(!Number.isFinite(Number(data.expectedTotal))||Math.abs(Number(data.expectedTotal)-total)>=0.005)
+  throw new ApiError(412,"failed-precondition","El total cambió desde la revisión del carrito. Actualizá el pedido.");
+ const cashback=profile.cashback&&typeof profile.cashback==="object"?profile.cashback:{enabled:false,percentage:0,capPerPurchase:null,monthlyCap:null};
+ const expected=data.expectedCashbackPolicy||{};
+ if(expected.enabled!==cashback.enabled||Number(expected.percentage||0)!==Number(cashback.percentage||0)||
+  (expected.capPerPurchase??null)!==(cashback.capPerPurchase??null)||(expected.monthlyCap??null)!==(cashback.monthlyCap??null))
+  throw new ApiError(412,"failed-precondition","El comercio actualizó las condiciones de cashback. Volvé a revisar.");
+ const orderId="ord_"+randomHex(16).toLowerCase(),qrNonce=randomHex(48).toLowerCase(),now=new Date().toISOString();
+ const customerName=String(identity.name||identity.email||"Cliente OMNI").slice(0,80);
+ const order={storeId,storeName:String(profile.storeName||"Comercio DEMO"),environment:"DEMO",merchantUid,customerUid:uid,
+  customerName,customerPhone:String(data.customerPhone||"").slice(0,40),items:normalizedItems,subtotal,deliveryFee,total,cashbackPolicy:cashback,
+  status:"RECIBIDO",paymentStatus:"PENDIENTE",paymentMethod:"PAGO_AL_RETIRAR",fulfillmentType,
+  deliveryAddress:fulfillmentType==="DELIVERY"?address:"",...(deliveryLatitude!==null?{deliveryLatitude,deliveryLongitude}:{}),
+  qrNonce,operationId:orderId,createdAt:now,updatedAt:now};
+ await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[
+  {update:{name:FIRESTORE_ROOT+"/storeOrders/"+orderId,fields:encodeFields(order)},currentDocument:{exists:false}},
+  {update:{name:FIRESTORE_ROOT+"/storeOrders/"+orderId+"/statusHistory/"+randomHex(12).toLowerCase(),fields:encodeFields({
+   orderId,storeId,environment:"DEMO",actorUid:uid,actorRole:"COMPRADOR",fromStatus:"",toStatus:"RECIBIDO",
+   eventType:"ESTADO_PEDIDO",note:"Pedido creado y enviado al comercio",createdAt:now
+  })},currentDocument:{exists:false}}
+ ]})});
+ return {orderId,qrNonce,subtotal,deliveryFee,total,items:normalizedItems,storeId,storeName:order.storeName,merchantUid,cashbackPolicy:cashback,deliveryLatitude,deliveryLongitude};
+}
+
+async function handleDemoMerchantRequest(request,env) {
+ if(request.method!=="POST") return json({ok:false,error:"method-not-allowed",message:"Usá POST."},405);
+ const authHeader=request.headers.get("Authorization")||"";
+ if(!authHeader.startsWith("Bearer ")) throw new ApiError(401,"unauthenticated","Iniciá sesión en OMNI.");
+ const identity=await verifyFirebaseToken(authHeader.slice(7).trim(),PRIMARY_PROJECT);
+ const body=await request.json();
+ const data=body.data&&typeof body.data==="object"?body.data:{};
+ if(body.action==="provision") return json({ok:true,result:await provisionDemoCatalog(env)});
+ if(body.action==="createOrder") return json({ok:true,result:await createDemoStoreOrder(env,identity.uid,data,identity)});
+ if(body.action==="claim") return json({ok:true,result:await claimDemoCatalogStore(env,identity.uid,data.code)});
+ if(body.action==="saveCatalog") return json({ok:true,result:await saveDemoMerchantCatalog(env,identity.uid,data)});
+ throw new ApiError(400,"invalid-argument","Acción DEMO desconocida.");
+}
+
 async function handleGeoPresenceRequest(request, env) {
   if (request.method !== "POST") return json({ ok: false, error: "method-not-allowed", message: "Usá POST." }, 405);
   const authHeader = request.headers.get("Authorization") || "";
@@ -720,6 +976,14 @@ async function handleGeoPresenceRequest(request, env) {
 export default {
   async fetch(request, env) {
     const requestUrl = new URL(request.url);
+    if (requestUrl.pathname === "/demo-merchant") {
+      try { return await handleDemoMerchantRequest(request, env); }
+      catch (error) {
+        if (error instanceof ApiError) return json({ ok:false, error:error.code, message:error.message }, error.status);
+        console.error("OMNI DEMO merchant API error", error);
+        return json({ ok:false, error:"internal", message:"No se pudo completar la operación DEMO." }, 500);
+      }
+    }
     if (requestUrl.pathname === "/geo-presence") {
       try { return await handleGeoPresenceRequest(request, env); }
       catch (error) {
