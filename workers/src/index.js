@@ -709,7 +709,7 @@ async function provisionDemoCatalog(env) {
 async function claimDemoCatalogStore(env,uid,rawCode) {
  const code=String(rawCode||"").trim().toUpperCase();
  if(!/^OMNI-[A-F0-9]{16}$/.test(code)) throw new ApiError(400,"invalid-argument","El código de titularidad no tiene un formato válido.");
- const hash=await sha256Hex(code.toLowerCase());
+ const hash=await sha256Hex(code);
  const codePath=FIRESTORE_ROOT+"/demoMerchantClaimCodes/"+hash;
  const codeDoc=await getDocument(env,"demoMerchantClaimCodes",hash);
  if(codeDoc.missing) throw new ApiError(404,"not-found","El código no existe o ya fue utilizado.");
