@@ -2,7 +2,7 @@ name: OMNI Stage 7 - Safe Validation
 
 on:
   push:
-    branches: ["feat/omni-cashback-atomic-accrual-1.4.7", "fix/demo-orders-traceability-merchant-claim"]
+    branches: ["feat/omni-cashback-atomic-accrual-1.4.7", "fix/demo-orders-traceability-merchant-claim", "feat/demo-merchants-worker-spark"]
   pull_request:
     branches: ["feat/omni-cashback-atomic-accrual-1.4.7"]
   workflow_dispatch:
