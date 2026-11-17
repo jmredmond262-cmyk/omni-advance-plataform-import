@@ -9,7 +9,10 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import com.google.firebase.functions.FirebaseFunctions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 /**
  * Persists the merchant-owned part of a Store in the existing merchantProfiles document.
@@ -179,19 +182,19 @@ object MerchantProfileRepository {
             "comboDeals" to data["comboDeals"],
             "news" to data["news"]
         )
-        FirebaseFunctions.getInstance("us-central1")
-            .getHttpsCallable("saveDemoMerchantCatalog")
-            .call(catalogPayload)
-            .addOnSuccessListener {
-                // Catalog writes are accepted only by the server-side validator.
-                // Firestore rules intentionally reject direct client catalog edits.
-                val operationalData = data - setOf("inventory", "comboDeals", "news")
-                db.collection("merchantProfiles").document(store.id)
-                    .set(operationalData, SetOptions.merge())
-                    .addOnSuccessListener { callback(Result.success(Unit)) }
-                    .addOnFailureListener { callback(Result.failure(it)) }
-            }
-            .addOnFailureListener { callback(Result.failure(it)) }
+        CoroutineScope(Dispatchers.Main).launch {
+            runCatching { DemoMerchantApi.saveCatalog(JSONObject(catalogPayload)) }
+                .onSuccess {
+                    // The Worker validates and writes catalog data atomically. Operational
+                    // fields remain a separate owner-authorized Firestore update.
+                    val operationalData = data - setOf("inventory", "comboDeals", "news")
+                    db.collection("merchantProfiles").document(store.id)
+                        .set(operationalData, SetOptions.merge())
+                        .addOnSuccessListener { callback(Result.success(Unit)) }
+                        .addOnFailureListener { callback(Result.failure(it)) }
+                }
+                .onFailure { callback(Result.failure(it)) }
+        }
     }
 
 
