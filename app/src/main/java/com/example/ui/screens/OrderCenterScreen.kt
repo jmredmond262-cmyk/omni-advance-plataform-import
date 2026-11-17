@@ -505,27 +505,25 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         requestData["deliveryLatitude"] = deliveryLatitude!!
                         requestData["deliveryLongitude"] = deliveryLongitude!!
                     }
-                    FirebaseFunctions.getInstance("us-central1").getHttpsCallable("createDemoStoreOrder")
-                        .call(requestData)
-                        .addOnSuccessListener { result ->
-                            @Suppress("UNCHECKED_CAST")
-                            val response = result.data as? Map<String, Any?> ?: emptyMap()
-                            val orderId = response["orderId"] as? String
-                            val nonce = response["qrNonce"] as? String
-                            val confirmedSubtotal = (response["subtotal"] as? Number)?.toDouble()
-                            val confirmedFee = (response["deliveryFee"] as? Number)?.toDouble()
-                            val confirmedTotal = (response["total"] as? Number)?.toDouble()
-                            val rawConfirmedItems = response["items"] as? List<*>
-                            val confirmedItems = rawConfirmedItems?.mapNotNull { raw ->
-                                val item = raw as? Map<*, *> ?: return@mapNotNull null
-                                val productId = item["productId"] as? String ?: return@mapNotNull null
-                                val name = item["name"] as? String ?: return@mapNotNull null
-                                val price = (item["price"] as? Number)?.toDouble() ?: return@mapNotNull null
-                                val quantity = (item["quantity"] as? Number)?.toInt() ?: return@mapNotNull null
-                                if (productId.isBlank() || name.isBlank() || !price.isFinite() || price <= 0.0 || quantity !in 1..999) {
-                                    return@mapNotNull null
+                    screenScope.launch {
+                        try {
+                            val response = DemoMerchantApi.createOrder(JSONObject(requestData))
+                            val orderId = response.optString("orderId").takeIf { it.isNotBlank() }
+                            val nonce = response.optString("qrNonce").takeIf { it.isNotBlank() }
+                            val confirmedSubtotal = response.optDouble("subtotal").takeIf { it.isFinite() }
+                            val confirmedFee = response.optDouble("deliveryFee").takeIf { it.isFinite() }
+                            val confirmedTotal = response.optDouble("total").takeIf { it.isFinite() }
+                            val rawConfirmedItems = response.optJSONArray("items")
+                            val confirmedItems = rawConfirmedItems?.let { array ->
+                                (0 until array.length()).mapNotNull { index ->
+                                    val item = array.optJSONObject(index) ?: return@mapNotNull null
+                                    val productId = item.optString("productId")
+                                    val name = item.optString("name")
+                                    val price = item.optDouble("price", Double.NaN)
+                                    val quantity = item.optInt("quantity", 0)
+                                    if (productId.isBlank() || name.isBlank() || !price.isFinite() || price <= 0.0 || quantity !in 1..999) null
+                                    else OrderLine(productId, name, price, quantity)
                                 }
-                                OrderLine(productId, name, price, quantity)
                             }
                             val confirmedItemsValid = confirmedItems != null &&
                                 confirmedItems.size == cartLines.size &&
@@ -539,22 +537,22 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                             if (orderId.isNullOrBlank() || nonce.isNullOrBlank() || !totalsValid || !confirmedItemsValid) {
                                 sending = false
                                 feedback = "El servidor registró una respuesta incompleta o distinta al carrito. Conservamos los productos para que puedas revisar el pedido."
-                                return@addOnSuccessListener
+                                return@launch
                             }
                             UsageAnalyticsRepository.trackEvent(uid, "orders", "STORE_ORDER_CREATED", mapOf("operationId" to orderId, "stage" to "SERVER_VALIDATION_CONFIRMED", "success" to true))
                             sending = false
                             createdOrder = OmniStoreOrder(
-                                orderId, store.id, response["storeName"] as? String ?: store.name, merchantUid, uid,
-                                profile.fullName, profile.phone, confirmedItems ?: emptyList(), confirmedTotal ?: 0.0,
+                                orderId, store.id, response.optString("storeName").ifBlank { store.name }, merchantUid, uid,
+                                profile.fullName, profile.phone, confirmedItems, confirmedTotal,
                                 "RECIBIDO", "PENDIENTE", fulfillmentType, deliveryAddress.trim(), nonce,
-                                cashbackPolicy, subtotal = confirmedSubtotal ?: 0.0, deliveryFee = confirmedFee ?: 0.0
+                                cashbackPolicy, subtotal = confirmedSubtotal, deliveryFee = confirmedFee
                             )
                             updateCart(emptyMap())
-                        }
-                        .addOnFailureListener { e ->
+                        } catch (e: Exception) {
                             sending = false
                             feedback = e.localizedMessage ?: "No se pudo validar y registrar el pedido en el servidor."
                         }
+                    }
                 }
             }.addOnFailureListener { e ->
                 sending = false
