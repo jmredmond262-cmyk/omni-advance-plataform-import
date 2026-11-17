@@ -29,6 +29,7 @@ android {
         ?.trim()
       ?: ""
     buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"${googleMapsApiKey}\"")
+    buildConfigField("String", "OMNI_WORKER_BASE_URL", "\"https://omni-admin-api.jmredmond262.workers.dev\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
