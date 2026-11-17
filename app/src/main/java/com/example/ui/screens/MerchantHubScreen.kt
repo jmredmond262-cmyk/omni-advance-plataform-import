@@ -171,44 +171,27 @@ fun MerchantHubScreen(
                     val role = admin.getString("role")
                     isDemoAdmin = admin.getBoolean("enabled") == true && (role == "owner" || role == "admin")
                 }
-            FirebaseFunctions.getInstance("us-central1")
-                .getHttpsCallable("provisionDemoMerchants").call()
-                .addOnSuccessListener {
-                    FirebaseFirestore.getInstance().collection("merchantProfiles")
-                        .whereEqualTo("environment", "DEMO").get()
-                        .addOnSuccessListener { snapshot ->
-                            availableDemoStores = snapshot.documents
-                                .filter { (it.get("seedVersion") as? Number)?.toInt() == 1 && it.getString("ownerUid").isNullOrBlank() }
-                                .map { it.id to (it.getString("storeName") ?: "Comercio DEMO") }
-                                .sortedBy { it.second }
-                        }
-                }
-                .addOnFailureListener { error ->
-                    issueDemoCodeError = error.localizedMessage ?: "No se pudo preparar el catálogo DEMO para emitir códigos."
-                }
+            screenScope.launch {
+                runCatching { DemoMerchantApi.provision() }
+                    .onSuccess {
+                        FirebaseFirestore.getInstance().collection("merchantProfiles")
+                            .whereEqualTo("environment", "DEMO").get()
+                            .addOnSuccessListener { snapshot ->
+                                availableDemoStores = snapshot.documents
+                                    .filter { (it.get("seedVersion") as? Number)?.toInt() == 1 && it.getString("ownerUid").isNullOrBlank() }
+                                    .map { it.id to (it.getString("storeName") ?: "Comercio DEMO") }
+                                    .sortedBy { it.second }
+                            }
+                    }
+                    .onFailure { error ->
+                        issueDemoCodeError = error.localizedMessage ?: "No se pudo preparar el catálogo DEMO."
+                    }
+            }
         }
     }
 
     fun issueDemoCode(storeId: String, storeName: String) {
-        if (issuingDemoCode) return
-        issuingDemoCode = true
-        issueDemoCodeError = ""
-        screenScope.launch {
-            runCatching {
-                FirebaseFunctions.getInstance("us-central1")
-                    .getHttpsCallable("issueDemoMerchantClaimCode")
-                    .call(mapOf("storeId" to storeId)).await() as? Map<*, *>
-                    ?: error("El servidor no devolvió el código.")
-            }.onSuccess { response ->
-                generatedDemoCode = response["code"]?.toString().orEmpty()
-                generatedDemoStoreName = response["storeName"]?.toString() ?: storeName
-                if (generatedDemoCode.isBlank()) issueDemoCodeError = "No se recibió un código válido."
-                availableDemoStores = availableDemoStores.filterNot { it.first == storeId }
-            }.onFailure { error ->
-                issueDemoCodeError = error.localizedMessage ?: "No se pudo emitir el código."
-            }
-            issuingDemoCode = false
-        }
+        issueDemoCodeError = "La emisión de códigos se realiza desde OMNI Admin > Titularidad DEMO."
     }
 
     // Campos formulario horarios
@@ -369,8 +352,8 @@ fun MerchantHubScreen(
         claimCodeMessage = "Validando código y asignando comercio…"
         screenScope.launch {
             runCatching {
-                val response = FirebaseFunctions.getInstance("us-central1").getHttpsCallable("claimDemoMerchant").call(mapOf("code" to code)).await()
-                response.data as? Map<*, *> ?: error("El servidor no devolvió la asignación.")
+                val response = DemoMerchantApi.claim(code)
+                mapOf("storeName" to response.optString("storeName"), "storeId" to response.optString("storeId"))
             }.onSuccess { result ->
                 val name = result["storeName"]?.toString().orEmpty()
                 claimCodeMessage = if (name.isNotBlank()) "Comercio asignado correctamente: $name" else "Comercio asignado correctamente."
