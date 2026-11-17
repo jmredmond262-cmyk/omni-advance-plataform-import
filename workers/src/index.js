@@ -678,6 +678,68 @@ async function handleAction(env, action, data, identity) {
     default: throw new ApiError(400, "invalid-argument", "Acción administrativa desconocida.");
   }
 }
+
+const DEMO_SEEDS = [
+ {id:"demo_kiosco_punto_24",name:"Punto 24 · Kiosco DEMO",type:"KIOSCO",sizeTier:"MICRO",description:"Kiosco ficticio para pruebas de compra y retiro.",hoursText:"Todos los días · 08:00 a 23:00",products:[["kp_agua","Agua mineral 2L","BEBIDAS",1100,"bot."],["kp_gaseosa","Gaseosa cola 1.5L","BEBIDAS",2450,"bot."],["kp_galletas","Galletitas surtidas 300g","KIOSCO",1450,"paq."],["kp_chocolate","Chocolate 90g","KIOSCO",1750,"unid."]]},
+ {id:"demo_almacen_esquina",name:"Almacén La Esquina · DEMO",type:"ALMACEN",sizeTier:"PEQUENO",description:"Almacén barrial ficticio para probar catálogo y delivery.",hoursText:"Lun. a sáb. · 08:00 a 20:30",products:[["ae_leche","Leche entera 1L","LACTEOS",1450,"litro"],["ae_arroz","Arroz largo fino 1kg","ALMACEN",1850,"paq."],["ae_fideos","Fideos spaghetti 500g","ALMACEN",1350,"paq."],["ae_huevos","Huevos x 12","FRESCOS",3600,"doc."]]},
+ {id:"demo_panaderia_trigal",name:"Panadería Trigal · DEMO",type:"PANADERIA",sizeTier:"PEQUENO",description:"Panadería ficticia para probar productos diarios y combos.",hoursText:"Todos los días · 06:30 a 19:30",products:[["pt_flauta","Pan francés 1kg","ALMACEN",2600,"kg"],["pt_medialunas","Medialunas x 6","ALMACEN",3900,"pack"],["pt_facturas","Facturas surtidas x 6","ALMACEN",3600,"pack"],["pt_chipa","Chipá x 250g","ALMACEN",2800,"paq."]]},
+ {id:"demo_supermercado_norte",name:"Supermercado Norte · DEMO",type:"SUPERMERCADO",sizeTier:"GRANDE",description:"Supermercado ficticio para probar variedad y compras múltiples.",hoursText:"Lun. a sáb. · 07:30 a 21:00",products:[["sn_leche","Leche entera 1L","LACTEOS",1450,"litro"],["sn_arroz","Arroz largo fino 1kg","ALMACEN",1850,"paq."],["sn_aceite","Aceite girasol 900ml","ALMACEN",2600,"bot."],["sn_gaseosa","Gaseosa cola 1.5L","BEBIDAS",2450,"bot."]]},
+ {id:"demo_tecnologia_pixel",name:"Pixel Lab · Tecnología DEMO",type:"SERVICIOS",sizeTier:"ESPECIALIZADO",description:"Tienda tecnológica ficticia para probar productos unitarios.",hoursText:"Lun. a sáb. · 09:00 a 19:00",products:[["pl_cable","Cable USB-C reforzado 1m","ALMACEN",4500,"unid."],["pl_cargador","Cargador USB-C 25W","ALMACEN",12500,"unid."],["pl_mouse","Mouse inalámbrico","ALMACEN",8900,"unid."],["pl_auris","Auriculares con micrófono","ALMACEN",7200,"unid."]]}
+];
+function seedProfile(seed) {
+ const inventory=seed.products.map(([id,name,category,price,unitLabel])=>({id,name,category,price,originalPrice:null,inStock:true,stockQuantity:20,unitLabel,photoUri:null,barcode:null,description:name}));
+ return {storeId:seed.id,storeName:seed.name,type:seed.type,environment:"DEMO",ownerUid:"",seedVersion:1,sizeTier:seed.sizeTier,capacityLabel:"Catálogo de prueba · entorno DEMO",description:seed.description,address:"Dirección ficticia · Entorno de prueba OMNI",phone:"",isOpen:true,hoursText:seed.hoursText,openTime:"08:00",closeTime:"20:00",pickupEnabled:true,deliveryEnabled:false,deliveryRadiusKm:0,deliveryFee:0,freeDeliveryFrom:null,minimumOrderAmount:0,estimatedPrepMinutes:15,cashback:{enabled:false,percentage:0,capPerPurchase:null,monthlyCap:null},comboDeals:[],inventory,news:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+}
+async function provisionDemoCatalog(env) {
+ const results=[];
+ for(const seed of DEMO_SEEDS) {
+  const existing=await getDocument(env,"merchantProfiles",seed.id);
+  if(!existing.missing) {
+   const current=decodeFields(existing.fields||{});
+   if(current.environment!=="DEMO") results.push({storeId:seed.id,status:"OMITIDO_PERFIL_NO_DEMO"});
+   else if(String(current.ownerUid||"").trim()) results.push({storeId:seed.id,status:"OMITIDO_YA_RECLAMADO"});
+   else results.push({storeId:seed.id,status:"YA_EXISTE"});
+   continue;
+  }
+  await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[{update:{name:FIRESTORE_ROOT+"/merchantProfiles/"+seed.id,fields:encodeFields(seedProfile(seed))},currentDocument:{exists:false}}]})});
+  results.push({storeId:seed.id,status:"CREADO",products:seed.products.length});
+ }
+ return {items:results,created:results.filter(x=>x.status==="CREADO").length};
+}
+async function claimDemoCatalogStore(env,uid,rawCode) {
+ const code=String(rawCode||"").trim().toUpperCase();
+ if(!/^OMNI-[A-F0-9]{16}$/.test(code)) throw new ApiError(400,"invalid-argument","El código de titularidad no tiene un formato válido.");
+ const hash=await sha256Hex(code.toLowerCase());
+ const codePath=FIRESTORE_ROOT+"/demoMerchantClaimCodes/"+hash;
+ const codeDoc=await getDocument(env,"demoMerchantClaimCodes",hash);
+ if(codeDoc.missing) throw new ApiError(404,"not-found","El código no existe o ya fue utilizado.");
+ const codeData=decodeFields(codeDoc.fields||{});
+ if(codeData.active!==true||Date.parse(codeData.expiresAt||"")<=Date.now()) throw new ApiError(410,"failed-precondition","El código venció o ya fue utilizado.");
+ const storeId=String(codeData.storeId||"");
+ if(!DEMO_SEEDS.some(seed=>seed.id===storeId)) throw new ApiError(409,"failed-precondition","El código no corresponde al catálogo DEMO.");
+ const storeDoc=await getDocument(env,"merchantProfiles",storeId);
+ if(storeDoc.missing) throw new ApiError(404,"not-found","El comercio DEMO ya no está disponible.");
+ const store=decodeFields(storeDoc.fields||{});
+ if(store.environment!=="DEMO"||Number(store.seedVersion)!==1||String(store.ownerUid||"").trim()) throw new ApiError(409,"already-exists","El comercio ya tiene titular o no pertenece al catálogo DEMO.");
+ const now=new Date().toISOString();
+ await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[
+  {update:{name:codePath,fields:encodeFields({active:false,claimedByUid:uid,claimedAt:now})},updateMask:{fieldPaths:["active","claimedByUid","claimedAt"]},currentDocument:{updateTime:codeDoc.updateTime}},
+  {update:{name:FIRESTORE_ROOT+"/merchantProfiles/"+storeId,fields:encodeFields({ownerUid:uid,claimedAt:now,updatedAt:now})},updateMask:{fieldPaths:["ownerUid","claimedAt","updatedAt"]},currentDocument:{updateTime:storeDoc.updateTime}}
+ ]})});
+ return {storeId,storeName:String(store.storeName||"Comercio DEMO"),ownerUid:uid,claimed:true};
+}
+async function handleDemoMerchantRequest(request,env) {
+ if(request.method!=="POST") return json({ok:false,error:"method-not-allowed",message:"Usá POST."},405);
+ const authHeader=request.headers.get("Authorization")||"";
+ if(!authHeader.startsWith("Bearer ")) throw new ApiError(401,"unauthenticated","Iniciá sesión en OMNI.");
+ const identity=await verifyFirebaseToken(authHeader.slice(7).trim(),PRIMARY_PROJECT);
+ const body=await request.json();
+ const data=body.data&&typeof body.data==="object"?body.data:{};
+ if(body.action==="provision") return json({ok:true,result:await provisionDemoCatalog(env)});
+ if(body.action==="claim") return json({ok:true,result:await claimDemoCatalogStore(env,identity.uid,data.code)});
+ throw new ApiError(400,"invalid-argument","Acción DEMO desconocida.");
+}
+
 async function handleGeoPresenceRequest(request, env) {
   if (request.method !== "POST") return json({ ok: false, error: "method-not-allowed", message: "Usá POST." }, 405);
   const authHeader = request.headers.get("Authorization") || "";
@@ -720,6 +782,14 @@ async function handleGeoPresenceRequest(request, env) {
 export default {
   async fetch(request, env) {
     const requestUrl = new URL(request.url);
+    if (requestUrl.pathname === "/demo-merchant") {
+      try { return await handleDemoMerchantRequest(request, env); }
+      catch (error) {
+        if (error instanceof ApiError) return json({ ok:false, error:error.code, message:error.message }, error.status);
+        console.error("OMNI DEMO merchant API error", error);
+        return json({ ok:false, error:"internal", message:"No se pudo completar la operación DEMO." }, 500);
+      }
+    }
     if (requestUrl.pathname === "/geo-presence") {
       try { return await handleGeoPresenceRequest(request, env); }
       catch (error) {
