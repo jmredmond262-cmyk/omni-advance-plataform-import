@@ -688,7 +688,7 @@ const DEMO_SEEDS = [
 ];
 function seedProfile(seed) {
  const inventory=seed.products.map(([id,name,category,price,unitLabel])=>({id,name,category,price,originalPrice:null,inStock:true,stockQuantity:20,unitLabel,photoUri:null,barcode:null,description:name}));
- return {storeId:seed.id,storeName:seed.name,type:seed.type,environment:"DEMO",ownerUid:"",seedVersion:1,sizeTier:seed.sizeTier,capacityLabel:"Catálogo de prueba · entorno DEMO",description:seed.description,address:"Dirección ficticia · Entorno de prueba OMNI",phone:"",isOpen:true,hoursText:seed.hoursText,openTime:"08:00",closeTime:"20:00",pickupEnabled:true,deliveryEnabled:false,deliveryRadiusKm:0,deliveryFee:0,freeDeliveryFrom:null,minimumOrderAmount:0,estimatedPrepMinutes:15,cashback:{enabled:false,percentage:0,capPerPurchase:null,monthlyCap:null},comboDeals:[],inventory,news:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+ return {storeId:seed.id,storeName:seed.name,type:seed.type,environment:"DEMO",ownerUid:"",seedVersion:1,sizeTier:seed.sizeTier,capacityLabel:"Catálogo de prueba · entorno DEMO",description:seed.description,address:"Dirección ficticia · Entorno de prueba OMNI",phone:"",isOpen:true,hoursText:seed.hoursText,openTime:"08:00",closeTime:"20:00",pickupEnabled:true,deliveryEnabled:true,deliveryRadiusKm:50,deliveryFee:1200,freeDeliveryFrom:20000,merchantLatitude:-29.346,merchantLongitude:-59.967,minimumOrderAmount:0,estimatedPrepMinutes:20,cashback:{enabled:false,percentage:0,capPerPurchase:null,monthlyCap:null},comboDeals:[],inventory,news:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
 }
 async function provisionDemoCatalog(env) {
  const results=[];
