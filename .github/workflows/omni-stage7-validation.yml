@@ -4,7 +4,7 @@ on:
   push:
     branches: ["feat/omni-cashback-atomic-accrual-1.4.7", "fix/demo-orders-traceability-merchant-claim", "feat/demo-merchants-worker-spark"]
   pull_request:
-    branches: ["feat/omni-cashback-atomic-accrual-1.4.7"]
+    branches: ["feat/omni-cashback-atomic-accrual-1.4.7", "fix/demo-orders-traceability-merchant-claim"]
   workflow_dispatch:
 
 permissions:
