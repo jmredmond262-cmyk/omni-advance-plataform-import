@@ -53,3 +53,13 @@
 - Report exact commit SHA, changed files, checks executed, results, and remaining blockers.
 - If the repository does not provide enough evidence, say "unverified" and explain what evidence is needed. Do not guess.
 - Keep user-facing updates concise and concrete; do not repeatedly ask the user to say "continue".
+
+## Infrastructure, Android signing, and Firebase references
+
+Before investigating or changing infrastructure, Android signing, Firebase, or external API integrations, consult the relevant documentation in [`docs/infraestructura/credenciales/INDICE.md`](../docs/infraestructura/credenciales/INDICE.md), including:
+
+- [`firebase.md`](../docs/infraestructura/credenciales/firebase.md)
+- [`android-signing.md`](../docs/infraestructura/credenciales/android-signing.md)
+- [`apis.md`](../docs/infraestructura/credenciales/apis.md)
+
+Use the documents as a safety and integration reference, not as evidence that an item is currently integrated or deployed. Never copy credential values or sensitive material into the repository.

@@ -124,3 +124,13 @@ Perform a read-only audit of this handoff branch and the source PR #16:
 - produce an evidence-backed status report.
 
 Do not edit application code, merge PRs, deploy services, change Firebase rules, or write production data during this first audit.
+
+## Infrastructure documentation
+
+Before any later work involving infrastructure, Android signing, Firebase, or external APIs, consult the security and integration references in [`docs/infraestructura/credenciales/INDICE.md`](docs/infraestructura/credenciales/INDICE.md):
+
+- [Firebase configuration and safeguards](docs/infraestructura/credenciales/firebase.md)
+- [Android signing identity and workflows](docs/infraestructura/credenciales/android-signing.md)
+- [External APIs and integrations](docs/infraestructura/credenciales/apis.md)
+
+These references contain no credential values. Treat their inventory gaps as unverified; inspect only non-sensitive configuration and never add secrets to the repository.
