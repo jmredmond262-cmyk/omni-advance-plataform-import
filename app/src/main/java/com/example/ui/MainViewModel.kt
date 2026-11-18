@@ -466,6 +466,8 @@ class MainViewModel : ViewModel() {
     val merchantProfileMessage: StateFlow<String?> = _merchantProfileMessage.asStateFlow()
     private var merchantProfileReady = false
     private var merchantProfileLoading = false
+    private var merchantSaveInProgress = false
+    private var merchantSaveQueued = false
     private val _merchantProfileLoadingState = MutableStateFlow(false)
     val merchantProfileLoadingState: StateFlow<Boolean> = _merchantProfileLoadingState.asStateFlow()
 
@@ -523,11 +525,28 @@ class MainViewModel : ViewModel() {
         if (!merchantProfileReady) return
         val uid = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
         if (uid.isBlank()) return
-        MerchantProfileRepository.save(_managedStore.value, _storeNews.value, uid) { result ->
-            result.onSuccess { _merchantProfileMessage.value = null }
-            result.onFailure { error ->
-                _merchantProfileMessage.value = error.localizedMessage ?: "No se pudo guardar el comercio en Firebase."
-                android.util.Log.e("MainViewModel", "Merchant profile save failed", error)
+        if (merchantSaveInProgress) {
+            merchantSaveQueued = true
+            return
+        }
+        merchantSaveInProgress = true
+        val storeSnapshot = _managedStore.value
+        val newsSnapshot = _storeNews.value.toList()
+        MerchantProfileRepository.save(storeSnapshot, newsSnapshot, uid) { result ->
+            val hasQueuedSave = merchantSaveQueued
+            merchantSaveQueued = false
+            merchantSaveInProgress = false
+            if (hasQueuedSave) {
+                result.onFailure {
+                    android.util.Log.w("MainViewModel", "Superseded merchant profile save failed", it)
+                }
+                persistManagedStore()
+            } else {
+                result.onSuccess { _merchantProfileMessage.value = null }
+                result.onFailure { error ->
+                    _merchantProfileMessage.value = error.localizedMessage ?: "No se pudo guardar el comercio en Firebase."
+                    android.util.Log.e("MainViewModel", "Merchant profile save failed", error)
+                }
             }
         }
     }

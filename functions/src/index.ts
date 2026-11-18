@@ -1,7 +1,13 @@
 import { getApps, initializeApp } from "firebase-admin/app";
-import { FieldValue, getFirestore, type DocumentReference } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, type DocumentReference, type Transaction } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import {
+  DEMO_ORDER_TTL_MS,
+  demoOrderExpiryState,
+  hasValidCashCollectionReplayEvidence,
+  isConfirmedCashCollectionReplay
+} from "./demoOrderLifecycle";
 
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
@@ -27,6 +33,73 @@ function safeName(value: unknown): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 80) : "Usuario OMNI";
 }
 
+function timestampMillis(value: unknown): number {
+  if (value instanceof Date) return value.getTime();
+  if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") {
+    const date: unknown = value.toDate();
+    return date instanceof Date ? date.getTime() : Number.NaN;
+  }
+  return Number.NaN;
+}
+
+function orderExpiryState(order: Record<string, any>, nowMillis = Date.now()) {
+  return demoOrderExpiryState(
+    timestampMillis(order.createdAt),
+    order.expiresAt == null ? null : timestampMillis(order.expiresAt),
+    nowMillis
+  );
+}
+
+function expirePendingDemoOrder(
+  tx: Transaction,
+  orderRef: DocumentReference,
+  orderId: string,
+  order: Record<string, any>,
+  actorUid: string,
+  actorRole: string
+): boolean {
+  const currentStatus = String(order.status || "");
+  if (order.paymentStatus !== "PENDIENTE" ||
+      !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO"].includes(currentStatus)) {
+    return false;
+  }
+  const expiryState = orderExpiryState(order);
+  if (expiryState === "INVALID") {
+    throw new HttpsError("failed-precondition", "No se pudo verificar la fecha de vencimiento de este pedido DEMO.");
+  }
+  if (expiryState !== "EXPIRED") return false;
+  if (order.inventoryDeducted === true) {
+    throw new HttpsError("data-loss", "El pedido sigue pendiente pero ya tiene stock descontado; requiere revisión.");
+  }
+
+  const now = FieldValue.serverTimestamp();
+  const createdAtMillis = timestampMillis(order.createdAt);
+  tx.update(orderRef, {
+    status: "CANCELADO",
+    paymentStatus: "VENCIDO · DEMO",
+    expiresAt: order.expiresAt ?? new Date(createdAtMillis + DEMO_ORDER_TTL_MS),
+    expirationReason: "PLAZO_24_HORAS",
+    expiredAt: now,
+    updatedAt: now,
+    lastStatusActorUid: actorUid,
+    lastStatusActorRole: actorRole,
+    lastStatusFrom: currentStatus,
+    lastStatusTo: "CANCELADO"
+  });
+  tx.create(orderRef.collection("statusHistory").doc(), {
+    orderId,
+    storeId: order.storeId,
+    environment: "DEMO",
+    actorUid,
+    actorRole,
+    fromStatus: currentStatus,
+    toStatus: "CANCELADO",
+    eventType: "ORDER_EXPIRED",
+    note: "El pedido DEMO venció a las 24 horas. No se había reservado ni descontado stock.",
+    createdAt: now
+  });
+  return true;
+}
 
 function demoReceiptNumber(orderId: string): string {
   return `OMNI-DEMO-${orderId.replace(/[^A-Za-z0-9]/g, "").slice(-10).toUpperCase()}`;
@@ -314,6 +387,7 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
   const orderRef = db.collection("storeOrders").doc();
   const qrNonce = randomUUID().replace(/-/g, "") + randomBytes(8).toString("hex");
   const createdAt = FieldValue.serverTimestamp();
+  const expiresAt = new Date(Date.now() + DEMO_ORDER_TTL_MS);
   const initialHistoryRef = orderRef.collection("statusHistory").doc();
   const createBatch = db.batch();
   createBatch.create(orderRef, {
@@ -326,7 +400,7 @@ export const createDemoStoreOrder = onCall({ region: REGION }, async (request) =
     fulfillmentType, deliveryAddress: fulfillmentType === "DELIVERY" ? address : "",
     ...(deliveryLatitude != null && deliveryLongitude != null
       ? { deliveryLatitude, deliveryLongitude } : {}),
-    qrNonce, operationId: orderRef.id,
+    qrNonce, operationId: orderRef.id, expiresAt,
     createdAt, updatedAt: createdAt
   });
   createBatch.create(initialHistoryRef, {
@@ -395,6 +469,9 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
     if (order.environment !== "DEMO" || order.customerUid !== customerUid) {
       throw new HttpsError("permission-denied", "Solo el comprador puede simular el pago de este pedido DEMO.");
     }
+    if (order.paymentStatus === "VENCIDO · DEMO") {
+      return { message: "El pedido venció a las 24 horas. Solicitá uno nuevo.", approved: false, expired: true };
+    }
     if (order.paymentStatus !== "PENDIENTE" ||
         !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO"].includes(String(order.status || "")) ||
         Math.abs(Number(order.total || 0) - amount) >= 0.005) {
@@ -409,9 +486,14 @@ export const simulateDemoCardPayment = onCall({ region: REGION }, async (request
       }
       throw new HttpsError("failed-precondition", "El pedido ya no admite este pago o cambió su importe.");
     }
-    const createdAt = order.createdAt?.toDate?.();
-    if (!createdAt || Date.now() < createdAt.getTime() || Date.now() - createdAt.getTime() >= 24 * 60 * 60 * 1000) {
-      throw new HttpsError("deadline-exceeded", "El pedido venció. Solicitá uno nuevo.");
+    const expiryState = orderExpiryState(order);
+    if (expiryState === "INVALID") {
+      throw new HttpsError("failed-precondition", "No se pudo verificar la fecha de vencimiento de este pedido DEMO.");
+    }
+    if (expiryState === "EXPIRED" &&
+        expirePendingDemoOrder(tx, orderRef, orderId, order, customerUid, "COMPRADOR")) {
+      return { message: "El pedido venció a las 24 horas. Solicitá uno nuevo.", approved: false,
+        expired: true, paymentStatus: "VENCIDO · DEMO" };
     }
     const profileRef = db.collection("merchantProfiles").doc(String(order.storeId || ""));
     const profileSnap = await tx.get(profileRef);
@@ -606,16 +688,23 @@ export const payStoreOrderDemo = onCall({ region: REGION }, async (request) => {
       };
     }
 
-    if (!customerSnap.exists) throw new HttpsError("failed-precondition", "Tu billetera DEMO no está inicializada.");
+    if (order.paymentStatus === "VENCIDO · DEMO") {
+      return { operationId, status: "PEDIDO VENCIDO · DEMO", expired: true, paymentStatus: "VENCIDO · DEMO" };
+    }
     if (order.paymentStatus !== "PENDIENTE" ||
         !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO"].includes(String(order.status || ""))) {
       throw new HttpsError("failed-precondition", "El pedido ya fue pagado o está cerrado.");
     }
-    const createdAt = order.createdAt?.toDate?.();
-    if (!createdAt || Date.now() < createdAt.getTime() ||
-        Date.now() - createdAt.getTime() > 24 * 60 * 60 * 1000) {
-      throw new HttpsError("deadline-exceeded", "El pedido venció. Solicitá al comercio uno nuevo.");
+    const expiryState = orderExpiryState(order);
+    if (expiryState === "INVALID") {
+      throw new HttpsError("failed-precondition", "No se pudo verificar la fecha de vencimiento de este pedido DEMO.");
     }
+    if (expiryState === "EXPIRED" &&
+        expirePendingDemoOrder(tx, orderRef, orderId, order, customerUid, "COMPRADOR")) {
+      return { operationId, status: "PEDIDO VENCIDO · DEMO", expired: true, paymentStatus: "VENCIDO · DEMO" };
+    }
+
+    if (!customerSnap.exists) throw new HttpsError("failed-precondition", "Tu billetera DEMO no está inicializada.");
 
     const profileRef = db.collection("merchantProfiles").doc(storeId);
     const merchantSnap = await tx.get(merchantRef);
@@ -893,6 +982,12 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
     if (!actorRole) {
       throw new HttpsError("permission-denied", "Solo el comprador o el titular del comercio pueden actualizar este pedido.");
     }
+    if (order.paymentStatus === "VENCIDO · DEMO") {
+      return { orderId, status: "CANCELADO", paymentStatus: "VENCIDO · DEMO", actorRole, expired: true, duplicate: true };
+    }
+    if (expirePendingDemoOrder(tx, orderRef, orderId, order, uid, actorRole)) {
+      return { orderId, status: "CANCELADO", paymentStatus: "VENCIDO · DEMO", actorRole, expired: true, duplicate: false };
+    }
     // Recuperación idempotente: si el servidor aplicó la transición pero la
     // respuesta se perdió, el reintento devuelve éxito sin duplicar el historial.
     if (current === nextStatus &&
@@ -927,6 +1022,8 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
     const update = {
       status: nextStatus,
       updatedAt: now,
+      ...(nextStatus === "CANCELADO" ? { paymentStatus: "CANCELADO · SIN_PAGO" } : {}),
+      ...(nextStatus === "RECHAZADO" ? { paymentStatus: "RECHAZADO · SIN_PAGO" } : {}),
       lastStatusActorUid: uid,
       lastStatusActorRole: isMerchant ? "COMERCIO" : "COMPRADOR",
       lastStatusFrom: current,
@@ -942,6 +1039,7 @@ export const updateDemoStoreOrderStatus = onCall({ region: REGION }, async (requ
       fromStatus: current, toStatus: nextStatus,
       eventType: nextStatus === "ENTREGADO_POR_COMERCIO" ? "DELIVERY_HANDOFF" : nextStatus === "ENTREGADO" ? "DELIVERY_CONFIRMED" : "ESTADO_PEDIDO",
       ...(nextStatus === "RECHAZADO" ? { reason: rejectionReason } : {}),
+      ...(["CANCELADO", "RECHAZADO"].includes(nextStatus) ? { note: "Pedido cerrado sin pago; no se había reservado ni descontado stock." } : {}),
       createdAt: now
     });
     return { orderId, status: nextStatus, previousStatus: current, actorRole: isMerchant ? "COMERCIO" : "COMPRADOR" };
@@ -973,6 +1071,43 @@ export const confirmDemoCashCollection = onCall({ region: REGION }, async (reque
         profileSnap.get("seedVersion") !== 1 || profileSnap.get("storeId") !== order.storeId ||
         profileSnap.get("ownerUid") !== uid) {
       throw new HttpsError("failed-precondition", "La titularidad DEMO del comercio ya no está habilitada.");
+    }
+    if (isConfirmedCashCollectionReplay(order, uid)) {
+      const savedItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+      const total = Number(order.total);
+      if (order.inventoryDeducted !== true || savedItems.length === 0 || savedItems.length > 30 ||
+          !Number.isFinite(total) || total <= 0 || total > 50000 ||
+          Number(order.cashCollectionAmount) !== total ||
+          savedItems.some((item) => !String(item.productId || "") ||
+            !Number.isInteger(Number(item.quantity)) || Number(item.quantity) < 1 || Number(item.quantity) > 999) ||
+          new Set(savedItems.map((item) => String(item.productId || ""))).size !== savedItems.length) {
+        throw new HttpsError("data-loss", "El cobro figura confirmado pero sus datos de stock o importe son inconsistentes.");
+      }
+      const saleMovementRefs = savedItems.map((line) => profileRef.collection("inventoryMovements")
+        .doc(inventoryMovementId("sale", orderId, String(line.productId || ""))));
+      const receiptRef = db.collection("storeReceipts").doc(orderId);
+      const [movementSnaps, receiptSnap] = await Promise.all([
+        Promise.all(saleMovementRefs.map((ref) => tx.get(ref))),
+        tx.get(receiptRef)
+      ]);
+      const movementRecords = movementSnaps.map((movement) =>
+        movement.exists ? movement.data() || {} : null);
+      const receiptRecord = receiptSnap.exists ? receiptSnap.data() || {} : null;
+      if (!hasValidCashCollectionReplayEvidence(orderId, order, uid, movementRecords, receiptRecord)) {
+        throw new HttpsError("data-loss", "El cobro figura confirmado pero falta su recibo o descuento de inventario.");
+      }
+      return { orderId, confirmed: true, duplicate: true, walletMovement: false };
+    }
+    if (order.paymentStatus === "VENCIDO · DEMO") {
+      return { orderId, confirmed: false, expired: true, paymentStatus: "VENCIDO · DEMO" };
+    }
+    const expiryState = order.paymentStatus === "PENDIENTE" ? orderExpiryState(order) : "ACTIVE";
+    if (expiryState === "INVALID") {
+      throw new HttpsError("failed-precondition", "No se pudo verificar la fecha de vencimiento de este pedido DEMO.");
+    }
+    if (expiryState === "EXPIRED" &&
+        expirePendingDemoOrder(tx, orderRef, orderId, order, uid, "COMERCIO")) {
+      return { orderId, confirmed: false, expired: true, paymentStatus: "VENCIDO · DEMO" };
     }
     const items = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
     const inventory = Array.isArray(profileSnap.get("inventory"))
@@ -1011,17 +1146,6 @@ export const confirmDemoCashCollection = onCall({ region: REGION }, async (reque
       });
     }
     const movementSnaps = await Promise.all(deductions.map((item) => tx.get(item.ref as DocumentReference)));
-    if (order.paymentStatus === "PAGADA · EFECTIVO_DEMO" &&
-        order.paymentMethod === "EFECTIVO_DEMO" &&
-        order.cashCollectionConfirmedBy === uid) {
-      if (order.inventoryDeducted !== true ||
-          movementSnaps.length !== deductions.length ||
-          movementSnaps.some((snapshot) => !snapshot.exists ||
-            snapshot.get("type") !== "VENTA_EFECTIVO_DEMO")) {
-        throw new HttpsError("data-loss", "El cobro figura confirmado pero falta su descuento de inventario.");
-      }
-      return { orderId, confirmed: true, duplicate: true, walletMovement: false };
-    }
     if (order.paymentStatus !== "PENDIENTE" || order.paymentMethod !== "PAGO_AL_RETIRAR" ||
         order.status !== "ENTREGADO_POR_COMERCIO") {
       throw new HttpsError("failed-precondition", "El cobro presencial solo se registra cuando el comercio informó la entrega y el pedido sigue pendiente de pago al retirar/recibir.");
@@ -1141,19 +1265,54 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
           return { orderId, refunded: true, duplicate: true, paymentMethod: "OMNI_PAY_DEMO",
             refundedAmount: originalAmount, cashbackReversed, walletMovement: true };
         }
+        if (order.paymentMethod === "EFECTIVO_DEMO") {
+          if (order.inventoryDeducted !== true || order.cashRefundRecorded !== true) {
+            throw new HttpsError("data-loss", "La devolución de efectivo figura cerrada sin descuento de inventario confirmado.");
+          }
+          const orderItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+          const saleMovementRefs = orderItems.map((line) => db.collection("merchantProfiles").doc(String(order.storeId))
+            .collection("inventoryMovements").doc(inventoryMovementId("sale", orderId, String(line.productId || ""))));
+          const saleMovementSnaps = await Promise.all(saleMovementRefs.map((ref) => tx.get(ref)));
+          const adjustmentSnap = await tx.get(db.collection("storeReceiptAdjustments").doc(orderId));
+          const cashRefundAmount = Number(order.refundAmount);
+          if (existingRefundOperation.get("kind") !== "CASH_DEMO_REVERSAL" ||
+              Number(existingRefundOperation.get("amount")) !== 0 ||
+              Number(existingRefundOperation.get("originalAmount")) !== cashRefundAmount ||
+              Number(existingRefundOperation.get("cashRefundAmount")) !== cashRefundAmount ||
+              existingRefundOperation.get("walletMovement") !== false ||
+              existingRefundOperation.get("environment") !== "DEMO" ||
+              !Number.isFinite(cashRefundAmount) || cashRefundAmount !== Number(order.total) ||
+              order.cashRefundRecordedBy !== uid ||
+              !adjustmentSnap.exists || adjustmentSnap.get("type") !== "DEVOLUCION_EFECTIVO_DEMO" ||
+              adjustmentSnap.get("paymentMethod") !== "EFECTIVO_DEMO" ||
+              adjustmentSnap.get("environment") !== "DEMO" ||
+              Number(adjustmentSnap.get("amount")) !== cashRefundAmount ||
+              Number(adjustmentSnap.get("originalAmount")) !== cashRefundAmount ||
+              adjustmentSnap.get("walletMovement") !== false ||
+              saleMovementSnaps.length !== orderItems.length ||
+              saleMovementSnaps.some((movement, index) =>
+                !movement.exists || movement.get("type") !== "VENTA_EFECTIVO_DEMO" ||
+                movement.get("paymentMethod") !== "EFECTIVO_DEMO" || movement.get("environment") !== "DEMO" ||
+                Number(movement.get("quantityDelta")) !== -Number(orderItems[index]?.quantity))) {
+            throw new HttpsError("data-loss", "La devolución de efectivo tiene registros de stock o comprobante incompletos.");
+          }
+          return { orderId, refunded: true, duplicate: true, paymentMethod: "EFECTIVO_DEMO",
+            refundedAmount: cashRefundAmount, cashRefundRecorded: true, walletMovement: false };
+        }
         throw new HttpsError("data-loss", "El método de pago de la devolución no es válido.");
       }
       throw new HttpsError("failed-precondition", "El pedido ya está cerrado.");
     }
-    if (order.paymentStatus !== "PAGADA · DEMO" ||
+    const supportedPaymentState =
+      (order.paymentStatus === "PAGADA · DEMO" && ["TARJETA_DEMO", "OMNI_PAY_DEMO"].includes(String(order.paymentMethod))) ||
+      (order.paymentStatus === "PAGADA · EFECTIVO_DEMO" && order.paymentMethod === "EFECTIVO_DEMO");
+    if (!supportedPaymentState ||
         !["RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO"].includes(String(order.status || ""))) {
       throw new HttpsError("failed-precondition", "Solo se pueden devolver pedidos pagados que todavía no fueron entregados.");
     }
     const profileRef = db.collection("merchantProfiles").doc(String(order.storeId));
-    const merchantRef = accountRef(uid);
-    const customerRef = accountRef(String(order.customerUid));
-    const [profileSnap, merchantSnap, customerSnap, operationSnap] = await Promise.all([
-      tx.get(profileRef), tx.get(merchantRef), tx.get(customerRef), tx.get(refundOperationRef)
+    const [profileSnap, operationSnap] = await Promise.all([
+      tx.get(profileRef), tx.get(refundOperationRef)
     ]);
     if (!profileSnap.exists || profileSnap.get("environment") !== "DEMO" ||
         profileSnap.get("seedVersion") !== 1 || profileSnap.get("ownerUid") !== uid ||
@@ -1189,15 +1348,77 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
         throw new HttpsError("data-loss", "Ya existe una restitución parcial de inventario para este pedido; se bloqueó la devolución duplicada.");
       }
     }
-    if (!merchantSnap.exists || !customerSnap.exists) {
-      throw new HttpsError("failed-precondition", "No se encontraron ambas billeteras DEMO.");
-    }
     const amount = Number(order.total);
     if (!Number.isFinite(amount) || amount <= 0 || amount > 50000) {
       throw new HttpsError("failed-precondition", "El importe original no es válido.");
     }
     const now = FieldValue.serverTimestamp();
     const historyRef = orderRef.collection("statusHistory").doc();
+    if (order.paymentMethod === "EFECTIVO_DEMO") {
+      const orderItems = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+      if (order.inventoryDeducted !== true ||
+          order.cashCollectionConfirmedBy !== uid ||
+          Number(order.cashCollectionAmount) !== amount ||
+          orderItems.length === 0 || inventoryRestock.length !== orderItems.length) {
+        throw new HttpsError("data-loss", "El cobro presencial no tiene un descuento de stock verificable para devolver.");
+      }
+      const saleMovementRefs = orderItems.map((line) => profileRef.collection("inventoryMovements")
+        .doc(inventoryMovementId("sale", orderId, String(line.productId || ""))));
+      const receiptRef = db.collection("storeReceipts").doc(orderId);
+      const adjustmentRef = db.collection("storeReceiptAdjustments").doc(orderId);
+      const [saleMovementSnaps, receiptSnap, adjustmentSnap] = await Promise.all([
+        Promise.all(saleMovementRefs.map((ref) => tx.get(ref))),
+        tx.get(receiptRef),
+        tx.get(adjustmentRef)
+      ]);
+      if (!receiptSnap.exists || receiptSnap.get("orderId") !== orderId ||
+          receiptSnap.get("environment") !== "DEMO" ||
+          receiptSnap.get("paymentMethod") !== "EFECTIVO_DEMO" ||
+          receiptSnap.get("paymentStatus") !== "PAGADA · EFECTIVO_DEMO" ||
+          Number(receiptSnap.get("total")) !== amount ||
+          adjustmentSnap.exists ||
+          saleMovementSnaps.length !== orderItems.length ||
+          saleMovementSnaps.some((movement, index) =>
+            !movement.exists || movement.get("type") !== "VENTA_EFECTIVO_DEMO" ||
+            movement.get("paymentMethod") !== "EFECTIVO_DEMO" || movement.get("environment") !== "DEMO" ||
+            Number(movement.get("quantityDelta")) !== -Number(orderItems[index]?.quantity))) {
+        throw new HttpsError("data-loss", "El cobro presencial tiene registros de recibo o stock incompletos.");
+      }
+      tx.update(profileRef, { inventory: restoredInventory, inventoryUpdatedAt: now });
+      for (const item of inventoryRestock) tx.create(item.ref, {
+        movementId: item.ref.id, storeId: String(order.storeId), orderId, productId: item.productId,
+        productName: item.productName, type: "DEVOLUCION_PEDIDO", quantityDelta: item.quantity,
+        stockBefore: item.stockBefore, stockAfter: item.stockAfter, actorUid: uid,
+        paymentMethod: "EFECTIVO_DEMO", environment: "DEMO", createdAt: now
+      });
+      tx.update(orderRef, {
+        status: "CANCELADO", paymentStatus: "REEMBOLSADA · DEMO",
+        refundOperationId, refundReason: reason, refundAmount: amount,
+        cashRefundRecorded: true, cashRefundRecordedBy: uid, cashRefundRecordedAt: now,
+        cashbackReversed: 0, refundedAt: now, updatedAt: now
+      });
+      tx.create(adjustmentRef, {
+        adjustmentId: orderId, receiptId: orderId, orderId, storeId: String(order.storeId),
+        merchantUid: uid, customerUid: String(order.customerUid), type: "DEVOLUCION_EFECTIVO_DEMO",
+        originalReceiptNumber: demoReceiptNumber(orderId), amount, originalAmount: amount,
+        cashRefundAmount: amount, reason, paymentMethod: "EFECTIVO_DEMO",
+        walletMovement: false, environment: "DEMO", createdAt: now
+      });
+      tx.create(refundOperationRef, {
+        operationId: refundOperationId, kind: "CASH_DEMO_REVERSAL", orderId,
+        senderUid: uid, recipientUid: order.customerUid, amount: 0, originalAmount: amount,
+        cashRefundAmount: amount, reason, walletMovement: false, environment: "DEMO", createdAt: now
+      });
+      tx.create(historyRef, {
+        orderId, storeId: order.storeId, environment: "DEMO", actorUid: uid,
+        actorRole: "COMERCIO", fromStatus: String(order.status), toStatus: "CANCELADO",
+        reason, eventType: "REFUND", paymentMethod: "EFECTIVO_DEMO",
+        note: "Se registró la devolución presencial DEMO. No hubo movimientos de billetera OMNI.",
+        createdAt: now
+      });
+      return { orderId, refunded: true, duplicate: false, paymentMethod: "EFECTIVO_DEMO",
+        refundedAmount: amount, cashRefundRecorded: true, walletMovement: false };
+    }
     if (order.paymentMethod === "TARJETA_DEMO") {
       const cardPaymentId = String(order.cardPaymentId || "");
       if (!cardPaymentId) throw new HttpsError("data-loss", "Falta el registro de la tarjeta DEMO; no se puede resolver automáticamente.");
@@ -1244,6 +1465,14 @@ export const refundDemoStoreOrder = onCall({ region: REGION }, async (request) =
     }
     if (order.paymentMethod !== "OMNI_PAY_DEMO") {
       throw new HttpsError("failed-precondition", "El método de pago no admite devolución automática.");
+    }
+    const merchantRef = accountRef(uid);
+    const customerRef = accountRef(String(order.customerUid));
+    const [merchantSnap, customerSnap] = await Promise.all([
+      tx.get(merchantRef), tx.get(customerRef)
+    ]);
+    if (!merchantSnap.exists || !customerSnap.exists) {
+      throw new HttpsError("failed-precondition", "No se encontraron ambas billeteras DEMO.");
     }
     const cashbackRef = db.collection("cashbackAccruals").doc(orderId);
     const [cashbackSnap] = await Promise.all([tx.get(cashbackRef)]);

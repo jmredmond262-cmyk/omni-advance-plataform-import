@@ -207,6 +207,10 @@ class DemoWalletRepository(
             .call(mapOf("orderId" to orderId))
             .addOnSuccessListener { result ->
                 val data = result.data as? Map<*, *>
+                if (data?.get("expired") == true) {
+                    done(Result.failure(IllegalStateException("El pedido DEMO venció a las 24 horas y se canceló sin descontar stock.")))
+                    return@addOnSuccessListener
+                }
                 val status = data?.get("status") as? String
                 if (status.isNullOrBlank() || data == null) {
                     done(Result.failure(IllegalStateException("El servidor no devolvió la confirmación del pedido.")))

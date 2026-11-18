@@ -59,7 +59,10 @@ class DemoCardGatewayRepository(
                 @Suppress("UNCHECKED_CAST")
                 val response = result.data as? Map<String, Any?> ?: emptyMap()
                 val message = response["message"] as? String
-                if (message.isNullOrBlank()) done(Result.failure(IllegalStateException("La pasarela no devolvió un resultado válido.")))
+                if (response["expired"] == true) {
+                    clearAttemptId(attemptKey)
+                    done(Result.failure(IllegalStateException(message ?: "El pedido DEMO venció a las 24 horas y se canceló sin descontar stock.")))
+                } else if (message.isNullOrBlank()) done(Result.failure(IllegalStateException("La pasarela no devolvió un resultado válido.")))
                 else {
                     clearAttemptId(attemptKey)
                     done(Result.success(message))

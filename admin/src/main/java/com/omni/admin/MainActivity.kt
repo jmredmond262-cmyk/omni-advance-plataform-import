@@ -96,10 +96,17 @@ private fun OmniAdminRoot() {
   var hasMore by remember { mutableStateOf(false) }
   var issuedClaimCode by remember { mutableStateOf("") }
   var issuedClaimStore by remember { mutableStateOf("") }
+  var showOrderContext by remember { mutableStateOf(false) }
+  var orderContext by remember { mutableStateOf<JSONObject?>(null) }
+  var orderContextLoading by remember { mutableStateOf(false) }
+  var orderContextError by remember { mutableStateOf("") }
   val scope = rememberCoroutineScope()
 
   fun refresh() {
-    val current = auth.currentUser ?: return
+    val current = auth.currentUser ?: run {
+      orderContextError = "La sesión administrativa ya no está disponible."
+      return
+    }
     scope.launch {
       loading = true
       error = ""
@@ -162,6 +169,35 @@ private fun OmniAdminRoot() {
     }
   }
 
+  fun openOrderContext(record: Map<String, Any?>) {
+    val orderId = record["id"]?.toString().orEmpty()
+    val storeId = record["storeId"]?.toString().orEmpty()
+    showOrderContext = true
+    orderContext = null
+    orderContextError = ""
+    if (orderId.isBlank() || storeId.isBlank()) {
+      orderContextError = "El pedido no incluye una referencia válida de comercio."
+      return
+    }
+    val current = auth.currentUser ?: return
+    scope.launch {
+      orderContextLoading = true
+      try {
+        val token = current.getIdToken(true).await().token
+          ?: throw IllegalStateException("No se pudo renovar la sesión.")
+        orderContext = AdminApi.call(
+          token,
+          "orderContext",
+          JSONObject().put("orderId", orderId).put("storeId", storeId)
+        )
+      } catch (ex: Exception) {
+        orderContextError = ex.message ?: "No se pudo cargar la trazabilidad del pedido."
+      } finally {
+        orderContextLoading = false
+      }
+    }
+  }
+
   LaunchedEffect(user?.uid, selected) { if (user != null) refresh() }
 
   if (user == null) {
@@ -198,12 +234,25 @@ private fun OmniAdminRoot() {
       issuedClaimStore = issuedClaimStore,
       onIssueDemoCode = ::issueDemoCode,
       onClearIssuedCode = { issuedClaimCode = ""; issuedClaimStore = "" },
+      showOrderContext = showOrderContext,
+      orderContext = orderContext,
+      orderContextLoading = orderContextLoading,
+      orderContextError = orderContextError,
+      onOpenOrderContext = ::openOrderContext,
+      onCloseOrderContext = {
+        showOrderContext = false
+        orderContext = null
+        orderContextError = ""
+      },
       onSignOut = {
         auth.signOut()
         user = null
         payload = JSONObject()
         error = ""
         selected = "dashboard"
+        showOrderContext = false
+        orderContext = null
+        orderContextError = ""
       }
     )
   }
@@ -249,7 +298,10 @@ private fun AdminHome(
   email: String, selected: String, payload: JSONObject, loading: Boolean, error: String,
   onSelect: (String) -> Unit, onRefresh: () -> Unit, onLoadMore: () -> Unit, hasMore: Boolean,
   issuedClaimCode: String, issuedClaimStore: String, onIssueDemoCode: (String, String) -> Unit,
-  onClearIssuedCode: () -> Unit, onSignOut: () -> Unit
+  onClearIssuedCode: () -> Unit,
+  showOrderContext: Boolean, orderContext: JSONObject?, orderContextLoading: Boolean,
+  orderContextError: String, onOpenOrderContext: (Map<String, Any?>) -> Unit,
+  onCloseOrderContext: () -> Unit, onSignOut: () -> Unit
 ) {
   val activeGroup = navGroups.firstOrNull { selected in it.tabIds } ?: navGroups.first()
   val activeTab = tabs.firstOrNull { it.id == selected }
@@ -368,7 +420,18 @@ private fun AdminHome(
         "modules" -> ModuleContent(payload.optJSONArray("items") ?: JSONArray())
         "settings" -> ConfigContent(payload.optJSONObject("config") ?: JSONObject())
         "invitations" -> InvitationContent(payload.optJSONArray("items") ?: JSONArray())
-        else -> RecordsContent(selected, payload.optJSONArray("items") ?: JSONArray(), hasMore, onLoadMore)
+        else -> RecordsContent(
+          selected, payload.optJSONArray("items") ?: JSONArray(), hasMore, onLoadMore,
+          onOpenOrderContext = if (selected == "orders") onOpenOrderContext else null
+        )
+      }
+      if (showOrderContext) {
+        OrderContextDialog(
+          payload = orderContext,
+          loading = orderContextLoading,
+          error = orderContextError,
+          onClose = onCloseOrderContext
+        )
       }
     }
   }
@@ -792,7 +855,13 @@ private fun DemoMerchantClaimsContent(payload: JSONObject, issuedCode: String, i
   }
 }
 @Composable
-private fun RecordsContent(selected: String, array: JSONArray, hasMore: Boolean, onLoadMore: () -> Unit) {
+private fun RecordsContent(
+  selected: String,
+  array: JSONArray,
+  hasMore: Boolean,
+  onLoadMore: () -> Unit,
+  onOpenOrderContext: ((Map<String, Any?>) -> Unit)? = null
+) {
   val records = jsonArrayToList(array)
   var search by remember(selected) { mutableStateOf("") }
   val filtered = remember(records, search) {
@@ -828,11 +897,93 @@ private fun RecordsContent(selected: String, array: JSONArray, hasMore: Boolean,
       )
     }
     if (filtered.isEmpty()) item { EmptyState(if (records.isEmpty()) "Todavía no hay registros para mostrar." else "No hay coincidencias con esa búsqueda.") }
-    items(filtered) { RecordCard(it, selected) }
+    items(filtered) { record ->
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        RecordCard(record, selected)
+        if (onOpenOrderContext != null) {
+          TextButton(onClick = { onOpenOrderContext(record) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Ver trazabilidad del pedido", color = Mint, fontSize = 11.sp)
+          }
+        }
+      }
+    }
     if (hasMore && search.isBlank()) item {
       Button(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("Cargar más registros") }
     }
   }
+}
+
+@Composable
+private fun OrderContextDialog(
+  payload: JSONObject?,
+  loading: Boolean,
+  error: String,
+  onClose: () -> Unit
+) {
+  Dialog(
+    onDismissRequest = onClose,
+    properties = DialogProperties(usePlatformDefaultWidth = false)
+  ) {
+    Surface(
+      modifier = Modifier.fillMaxWidth().fillMaxHeight(0.88f).padding(16.dp),
+      shape = RoundedCornerShape(20.dp),
+      color = Panel
+    ) {
+      Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Column(Modifier.weight(1f)) {
+            Text("Trazabilidad del pedido", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            Text("Vista administrativa · solo lectura", color = Muted, fontSize = 11.sp)
+          }
+          IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Cerrar", tint = Muted) }
+        }
+        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Mint)
+        if (error.isNotBlank()) Text(error, color = Danger, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+        val order = payload?.optJSONObject("order")
+        if (payload == null && !loading && error.isBlank()) {
+          EmptyState("No se recibió el contexto del pedido.")
+        } else if (order != null) {
+          val movements = jsonArrayToList(payload?.optJSONArray("inventoryMovements"))
+          val adjustments = jsonArrayToList(payload?.optJSONArray("receiptAdjustments"))
+          val financialOperations = jsonArrayToList(payload?.optJSONArray("financialOperations"))
+          val cardPayments = jsonArrayToList(payload?.optJSONArray("cardPayments"))
+          val receipt = payload?.optJSONObject("receipt")
+            ?.takeUnless { it == JSONObject.NULL }
+            ?.let(::jsonObjectToMap)
+          LazyColumn(
+            Modifier.weight(1f),
+            contentPadding = PaddingValues(vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            item {
+              Text("Pedido", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+              RecordCard(jsonObjectToMap(order), "orders")
+            }
+            item { ContextSectionTitle("Movimientos de inventario", movements.size) }
+            if (movements.isEmpty()) item { EmptyState("No hay movimientos vinculados por pedido y comercio.") }
+            items(movements) { RecordCard(it, "inventoryMovements") }
+            item { ContextSectionTitle("Comprobante", if (receipt == null) 0 else 1) }
+            if (receipt == null) item { EmptyState("No hay comprobante vinculado a este pedido.") }
+            else item { RecordCard(receipt, "receipts") }
+            item { ContextSectionTitle("Ajustes de comprobante", adjustments.size) }
+            if (adjustments.isEmpty()) item { EmptyState("No hay ajustes vinculados a este pedido.") }
+            items(adjustments) { RecordCard(it, "receiptAdjustments") }
+            item { ContextSectionTitle("Operaciones financieras", financialOperations.size) }
+            if (financialOperations.isEmpty()) item { EmptyState("No hay operaciones de billetera vinculadas a este pedido.") }
+            items(financialOperations) { RecordCard(it, "operations") }
+            item { ContextSectionTitle("Registros de tarjeta DEMO", cardPayments.size) }
+            if (cardPayments.isEmpty()) item { EmptyState("No hay intentos o pagos de tarjeta vinculados a este pedido.") }
+            items(cardPayments) { RecordCard(it, "demoCardPayments") }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ContextSectionTitle(title: String, count: Int) {
+  Text("$title · $count", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold)
 }
 
 private val technicalFields = setOf(
@@ -924,6 +1075,9 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "storeOrders" -> "Pedido " + firstPresentValue(item, "orderNumber", "status").ifBlank { "de comercio · número no informado" }
     "storeReceipts" -> "Comprobante " + firstPresentValue(item, "receiptNumber", "orderId").ifBlank { "DEMO · referencia no informada" }
     "storeReceiptAdjustments" -> "Ajuste de comprobante · " + firstPresentValue(item, "originalReceiptNumber", "orderId").ifBlank { "referencia no informada" }
+    "inventoryMovements" -> friendlyEnum(firstPresentValue(item, "type").ifBlank { "Movimiento de inventario" }) + " · " +
+      firstPresentValue(item, "productName", "productId").ifBlank { "producto no informado" }
+    "demoCardPayments" -> friendlyEnum(firstPresentValue(item, "status", "paymentStatus", "type").ifBlank { "Registro de tarjeta DEMO" })
     "appFeedback" -> "Comentario de usuario"
     "usageEvents" -> friendlyEnum(firstPresentValue(item, "event", "eventName").ifBlank { "Evento de uso · tipo no informado" })
     "walletTransactions" -> friendlyEnum(firstPresentValue(item, "operationType", "transactionType", "type", "kind", "action", "title", "description").ifBlank { "Tipo de movimiento no informado" })
@@ -941,6 +1095,10 @@ private fun RecordCard(item: Map<String, Any?>, type: String) {
     "walletTransactions" -> listOf("amount", "status", "peerName", "createdAt")
     "merchantProfiles" -> listOf("description", "category", "address", "status", "createdAt")
     "storeOrders" -> listOf("total", "paymentStatus", "fulfillmentType", "createdAt")
+    "storeReceipts" -> listOf("receiptNumber", "total", "paymentMethod", "paymentStatus", "issuedAt", "createdAt")
+    "storeReceiptAdjustments" -> listOf("type", "amount", "reason", "createdAt")
+    "inventoryMovements" -> listOf("quantityDelta", "stockBefore", "stockAfter", "createdAt")
+    "demoCardPayments" -> listOf("amount", "status", "paymentStatus", "createdAt")
     "appFeedback" -> listOf("message", "createdAt")
     "usageEvents" -> listOf("userLabel", "module", "appVersion", "createdAt")
     "omniEvents" -> listOf("description", "category", "status", "startAt", "createdAt")

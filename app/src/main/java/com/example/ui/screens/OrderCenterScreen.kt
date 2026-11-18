@@ -55,6 +55,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import java.util.UUID
 import java.util.Locale
 import java.text.SimpleDateFormat
+import java.security.MessageDigest
 import org.json.JSONObject
 import kotlinx.coroutines.launch
 
@@ -105,6 +106,11 @@ private data class OmniStoreOrder(
     val cashbackReversed: Double = 0.0
 )
 
+private fun orderRequestFingerprint(payload: JSONObject): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(payload.toString().toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
 private fun decodeCashbackTerms(raw: Any?): CashbackTerms {
     val map = raw as? Map<*, *> ?: return CashbackTerms()
     val percentage = (map["percentage"] as? Number)?.toDouble() ?: 0.0
@@ -147,6 +153,14 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     var claimingMerchant by remember { mutableStateOf(false) }
     var orders by remember { mutableStateOf<List<OmniStoreOrder>>(emptyList()) }
     val cartPreferences = remember { context.getSharedPreferences("omni_order_cart_drafts", 0) }
+    val pendingOrderIdempotencyKeyPreference = remember(store.id) { "pending_order_idempotency_key_${store.id}" }
+    val pendingOrderFingerprintPreference = remember(store.id) { "pending_order_fingerprint_${store.id}" }
+    var pendingOrderIdempotencyKey by remember(store.id) {
+        mutableStateOf(cartPreferences.getString(pendingOrderIdempotencyKeyPreference, null))
+    }
+    var pendingOrderFingerprint by remember(store.id) {
+        mutableStateOf(cartPreferences.getString(pendingOrderFingerprintPreference, null))
+    }
     fun readSavedCart(storeId: String): Map<String, Int> {
         val json = runCatching { JSONObject(cartPreferences.getString(storeId, "{}") ?: "{}") }.getOrNull() ?: JSONObject()
         return json.keys().asSequence().mapNotNull { key ->
@@ -155,7 +169,16 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         }.toMap()
     }
     var cart by remember(store.id) { mutableStateOf(readSavedCart(store.id)) }
+    fun clearPendingOrderRequest() {
+        pendingOrderIdempotencyKey = null
+        pendingOrderFingerprint = null
+        cartPreferences.edit()
+            .remove(pendingOrderIdempotencyKeyPreference)
+            .remove(pendingOrderFingerprintPreference)
+            .apply()
+    }
     fun updateCart(next: Map<String, Int>) {
+        if (next != cart) clearPendingOrderRequest()
         cart = next
         val json = JSONObject()
         next.filterValues { it > 0 }.forEach { (id, quantity) -> json.put(id, quantity) }
@@ -505,6 +528,22 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                         requestData["deliveryLatitude"] = deliveryLatitude!!
                         requestData["deliveryLongitude"] = deliveryLongitude!!
                     }
+                    val requestFingerprint = orderRequestFingerprint(JSONObject(requestData))
+                    val idempotencyKey = if (
+                        pendingOrderIdempotencyKey != null && pendingOrderFingerprint == requestFingerprint
+                    ) {
+                        pendingOrderIdempotencyKey!!
+                    } else {
+                        UUID.randomUUID().toString().also { key ->
+                            pendingOrderIdempotencyKey = key
+                            pendingOrderFingerprint = requestFingerprint
+                            cartPreferences.edit()
+                                .putString(pendingOrderIdempotencyKeyPreference, key)
+                                .putString(pendingOrderFingerprintPreference, requestFingerprint)
+                                .apply()
+                        }
+                    }
+                    requestData["idempotencyKey"] = idempotencyKey
                     screenScope.launch {
                         try {
                             val response = DemoMerchantApi.createOrder(JSONObject(requestData))
@@ -700,16 +739,36 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 "nextStatus" to next,
                 "rejectionReason" to rejectionReason.trim()
             ))
-            .addOnSuccessListener {
+            .addOnSuccessListener { result ->
                 statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
-                UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$next", mapOf("operationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
-                orders = orders.map { current -> if (current.id == order.id) current.copy(status = next, rejectionReason = rejectionReason.trim()) else current }
-                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = next, rejectionReason = rejectionReason.trim())
+                val response = result.data as? Map<*, *>
+                val expired = response?.get("expired") == true
+                val effectiveStatus = if (expired) "CANCELADO" else next
+                val effectivePaymentStatus = when {
+                    expired -> "VENCIDO · DEMO"
+                    next == "CANCELADO" -> "CANCELADO · SIN_PAGO"
+                    next == "RECHAZADO" -> "RECHAZADO · SIN_PAGO"
+                    else -> order.paymentStatus
+                }
+                UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_STATUS_$effectiveStatus", mapOf("operationId" to order.id, "stage" to "STATUS_UPDATE_CONFIRMED", "success" to true))
+                orders = orders.map { current ->
+                    if (current.id == order.id) current.copy(
+                        status = effectiveStatus,
+                        paymentStatus = effectivePaymentStatus,
+                        rejectionReason = if (expired) current.rejectionReason else rejectionReason.trim()
+                    ) else current
+                }
+                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(
+                    status = effectiveStatus,
+                    paymentStatus = effectivePaymentStatus,
+                    rejectionReason = if (expired) selectedScannedOrder?.rejectionReason.orEmpty() else rejectionReason.trim()
+                )
                 if (next == "RECHAZADO") {
                     showRejectReasonDialog = false
                     selectedScannedOrder = null
                 }
-                feedback = "Pedido actualizado: $next."
+                feedback = if (expired) "El pedido venció a las 24 horas y se canceló sin descontar ni reservar stock."
+                    else "Pedido actualizado: $next."
             }
             .addOnFailureListener {
                 statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
@@ -718,9 +777,12 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
     }
 
     fun refundPaidOrder(order: OmniStoreOrder, reason: String) {
+        val refundablePayment =
+            (order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod in listOf("OMNI_PAY_DEMO", "TARJETA_DEMO")) ||
+                (order.paymentStatus == "PAGADA · EFECTIVO_DEMO" && order.paymentMethod == "EFECTIVO_DEMO")
         if (!merchantMode || !merchantReady || uid.isBlank() || order.storeId != store.id ||
             order.merchantUid != uid || order.environment != "DEMO" ||
-            order.paymentStatus != "PAGADA · DEMO" || reason.trim().length !in 10..240) {
+            !refundablePayment || reason.trim().length !in 10..240) {
             feedback = "La devolución no cumple las condiciones del comercio DEMO."
             return
         }
@@ -753,7 +815,11 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
                 )
                 UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_REFUNDED", mapOf("operationId" to order.id, "stage" to "REFUND_CONFIRMED", "paymentMethod" to paymentMethod, "success" to true))
                 selectedRefundOrder = null
-                feedback = if (paymentMethod == "TARJETA_DEMO") "Se anuló la simulación de tarjeta. No hubo movimientos de billetera." else "Devolución DEMO confirmada. Se revirtieron el pago y el cashback en forma atómica."
+                feedback = when (paymentMethod) {
+                    "TARJETA_DEMO" -> "Se anuló la simulación de tarjeta. No hubo movimientos de billetera."
+                    "EFECTIVO_DEMO" -> "Reversa del cobro presencial DEMO registrada por OM$ ${String.format("%,.2f", refundedAmount)}. No hubo movimientos de billetera."
+                    else -> "Devolución DEMO confirmada. Se revirtieron el pago y el cashback en forma atómica."
+                }
             }
             .addOnFailureListener { error ->
                 refundInProgress = false
@@ -771,12 +837,24 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         FirebaseFunctions.getInstance("us-central1")
             .getHttpsCallable("updateDemoStoreOrderStatus")
             .call(mapOf("orderId" to order.id, "nextStatus" to "CANCELADO"))
-            .addOnSuccessListener {
+            .addOnSuccessListener { result ->
                 statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
-                UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_CANCELLED_BY_CUSTOMER", mapOf("operationId" to order.id, "stage" to "CUSTOMER_CANCELLATION_CONFIRMED", "success" to true))
-                orders = orders.map { current -> if (current.id == order.id) current.copy(status = "CANCELADO") else current }
-                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(status = "CANCELADO")
-                feedback = "El pedido fue cancelado."
+                val response = result.data as? Map<*, *>
+                val expired = response?.get("expired") == true
+                val paymentStatus = if (expired) "VENCIDO · DEMO" else "CANCELADO · SIN_PAGO"
+                if (!expired) {
+                    UsageAnalyticsRepository.trackEvent(uid, "orders", "ORDER_CANCELLED_BY_CUSTOMER", mapOf("operationId" to order.id, "stage" to "CUSTOMER_CANCELLATION_CONFIRMED", "success" to true))
+                }
+                orders = orders.map { current ->
+                    if (current.id == order.id) current.copy(status = "CANCELADO", paymentStatus = paymentStatus) else current
+                }
+                if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(
+                    status = "CANCELADO",
+                    paymentStatus = paymentStatus
+                )
+                feedback = if (expired) {
+                    "El pedido venció a las 24 horas y se canceló sin descontar ni reservar stock."
+                } else "El pedido fue cancelado sin pago ni reserva de stock."
             }
             .addOnFailureListener {
                 statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
@@ -827,8 +905,20 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
         FirebaseFunctions.getInstance("us-central1")
             .getHttpsCallable("confirmDemoCashCollection")
             .call(mapOf("orderId" to order.id))
-            .addOnSuccessListener {
+            .addOnSuccessListener { result ->
                 statusUpdatingOrderIds = statusUpdatingOrderIds - order.id
+                val response = result.data as? Map<*, *>
+                if (response?.get("expired") == true) {
+                    orders = orders.map { current ->
+                        if (current.id == order.id) current.copy(status = "CANCELADO", paymentStatus = "VENCIDO · DEMO") else current
+                    }
+                    if (selectedScannedOrder?.id == order.id) selectedScannedOrder = selectedScannedOrder?.copy(
+                        status = "CANCELADO",
+                        paymentStatus = "VENCIDO · DEMO"
+                    )
+                    feedback = "El pedido venció a las 24 horas y se canceló sin descontar ni reservar stock."
+                    return@addOnSuccessListener
+                }
                 orders = orders.map { current ->
                     if (current.id == order.id) current.copy(
                         paymentStatus = "PAGADA · EFECTIVO_DEMO",
@@ -1225,7 +1315,14 @@ fun OrderCenterScreen(viewModel: MainViewModel, merchantMode: Boolean, onBack: (
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Pedido ${order.id.take(9)} · OM$ ${String.format("%,.2f", order.total)}", color = Color(0xFF57DDF5), fontWeight = FontWeight.Bold)
-                    Text(if (order.paymentMethod == "TARJETA_DEMO") "Se anulará el registro de tarjeta simulado; no hubo movimiento de billeteras." else "Se devolverá el pago al comprador y se revertirá el cashback de este pedido. El proceso requiere saldo suficiente en el comercio y en la billetera del comprador para absorber la reversión del cashback.", color = Color(0xFFB8C8D9), fontSize = 11.sp)
+                    Text(
+                        when (order.paymentMethod) {
+                            "TARJETA_DEMO" -> "Se anulará el registro de tarjeta simulado; no hubo movimiento de billeteras."
+                            "EFECTIVO_DEMO" -> "Se registrará la reversa del cobro presencial DEMO por OM$ ${String.format("%,.2f", order.total)}. No se moverá saldo ni se procesará dinero real; el stock volverá al catálogo."
+                            else -> "Se devolverá el pago al comprador y se revertirá el cashback de este pedido. El proceso requiere saldo suficiente en el comercio y en la billetera del comprador para absorber la reversión del cashback."
+                        },
+                        color = Color(0xFFB8C8D9), fontSize = 11.sp
+                    )
                     OutlinedTextField(value = refundReasonInput, onValueChange = { refundReasonInput = it.take(240) }, label = { Text("Motivo (10 a 240 caracteres)") }, minLines = 3, maxLines = 5, enabled = !refundInProgress)
                     Text("${refundReasonInput.trim().length}/240", color = Color(0xFF9AAAC2), fontSize = 10.sp)
                 }
@@ -1456,16 +1553,17 @@ private fun OrderStatusCard(
         "EN_CAMINO" -> "ENTREGADO_POR_COMERCIO"
         else -> ""
     }
-    val label = when (order.status) {
-        "RECIBIDO" -> "Recibido"
-        "ACEPTADO" -> "Aceptado"
-        "EN_PREPARACION" -> "En preparación"
-        "LISTO" -> "Listo para retirar"
-        "EN_CAMINO" -> "En camino"
-        "ENTREGADO_POR_COMERCIO" -> "Entrega informada por el comercio · falta tu confirmación"
-        "ENTREGADO" -> "Recibido y confirmado"
-        "RECHAZADO" -> "Rechazado"
-        "CANCELADO" -> "Cancelado"
+    val label = when {
+        order.paymentStatus == "VENCIDO · DEMO" -> "Vencido · cancelado"
+        order.status == "RECIBIDO" -> "Recibido"
+        order.status == "ACEPTADO" -> "Aceptado"
+        order.status == "EN_PREPARACION" -> "En preparación"
+        order.status == "LISTO" -> "Listo para retirar"
+        order.status == "EN_CAMINO" -> "En camino"
+        order.status == "ENTREGADO_POR_COMERCIO" -> "Entrega informada por el comercio · falta tu confirmación"
+        order.status == "ENTREGADO" -> "Recibido y confirmado"
+        order.status == "RECHAZADO" -> "Rechazado"
+        order.status == "CANCELADO" -> "Cancelado"
         else -> order.status
     }
     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF101B30)), shape = RoundedCornerShape(14.dp)) {
@@ -1535,6 +1633,7 @@ private fun OrderStatusCard(
                             "REFUND" -> "Devolución confirmada"
                             "PAYMENT" -> "Pago confirmado"
                             "PAYMENT_ATTEMPT" -> "Intento de pago rechazado"
+                            "ORDER_EXPIRED" -> "Pedido vencido (24 h)"
                             else -> if (event.fromStatus.isBlank()) {
                                 event.toStatus.replace("_", " ")
                             } else {
@@ -1594,10 +1693,13 @@ private fun OrderStatusCard(
                 )
                 Text(
                     when {
-                        order.paymentStatus == "REEMBOLSADA · DEMO" -> "Cashback de este pedido revertido."
+                        order.paymentStatus == "REEMBOLSADA · DEMO" && order.cashbackReversed > 0.0 -> "Cashback de este pedido revertido."
+                        order.paymentStatus == "REEMBOLSADA · DEMO" -> "Este método no generó cashback."
                         order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "OMNI_PAY_DEMO" -> "Cashback acreditado: OM$ ${String.format("%,.2f", order.cashbackAmount)}."
                         order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "TARJETA_DEMO" -> "Tarjeta DEMO simulada: no genera cashback ni mueve saldo."
                         order.paymentStatus == "PAGADA · EFECTIVO_DEMO" -> "Cobro presencial registrado: no genera cashback ni modifica billeteras OMNI."
+                        order.paymentStatus == "VENCIDO · DEMO" -> "Pedido vencido antes del pago; no se generó cashback ni se descontó stock."
+                        order.paymentStatus in listOf("CANCELADO · SIN_PAGO", "RECHAZADO · SIN_PAGO") -> "Pedido cerrado sin pago; no se generó cashback ni se descontó stock."
                         else -> "El cashback se acredita al pagar con OMNI Pay DEMO; tarjeta y cobro presencial DEMO no mueven saldo."
                     },
                     color = if (order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod == "OMNI_PAY_DEMO") Color(0xFF65E6A5) else Color(0xFFFFC978),
@@ -1605,6 +1707,8 @@ private fun OrderStatusCard(
                 )
             }
             val paymentMethodLabel = when {
+                order.paymentStatus == "VENCIDO · DEMO" -> "No se registró pago ni se reservó stock"
+                order.paymentStatus == "CANCELADO · SIN_PAGO" || order.paymentStatus == "RECHAZADO · SIN_PAGO" -> "Sin pago ni reserva de stock"
                 order.paymentStatus == "PENDIENTE" -> "Aún sin método confirmado"
                 order.paymentMethod == "OMNI_PAY_DEMO" -> "OMNI Pay DEMO"
                 order.paymentMethod == "TARJETA_DEMO" -> "Tarjeta DEMO"
@@ -1614,6 +1718,9 @@ private fun OrderStatusCard(
             Text(
                 when {
                     order.paymentStatus == "REEMBOLSADA · DEMO" -> "Pago devuelto · $paymentMethodLabel"
+                    order.paymentStatus == "VENCIDO · DEMO" -> "Pedido vencido · $paymentMethodLabel"
+                    order.paymentStatus == "CANCELADO · SIN_PAGO" -> "Pedido cancelado · $paymentMethodLabel"
+                    order.paymentStatus == "RECHAZADO · SIN_PAGO" -> "Pedido rechazado · $paymentMethodLabel"
                     order.paymentStatus.startsWith("PAGADA") -> "Pago confirmado · $paymentMethodLabel"
                     else -> "Pago pendiente · $paymentMethodLabel"
                 },
@@ -1627,8 +1734,13 @@ private fun OrderStatusCard(
                 )
             }
             if (order.paymentStatus == "REEMBOLSADA · DEMO") {
+                val refundSummary = when (order.paymentMethod) {
+                    "TARJETA_DEMO" -> "Reversión de tarjeta simulada"
+                    "EFECTIVO_DEMO" -> "Reversa de cobro presencial DEMO: OM$ ${String.format("%,.2f", order.refundAmount.takeIf { it > 0.0 } ?: order.total)} · sin movimiento de billetera"
+                    else -> "Importe devuelto: OM$ ${String.format("%,.2f", order.refundAmount.takeIf { it > 0.0 } ?: order.total)}"
+                }
                 Text(
-                    "Devolución confirmada · ${if (order.paymentMethod == "TARJETA_DEMO") "Reversión de tarjeta simulada" else "Importe devuelto: OM$ ${String.format("%,.2f", order.refundAmount.takeIf { it > 0.0 } ?: order.total)}"}",
+                    "Devolución confirmada · $refundSummary",
                     color = Color(0xFF65E6A5), fontSize = 10.sp, fontWeight = FontWeight.Bold
                 )
                 if (order.cashbackReversed > 0.0) {
@@ -1641,7 +1753,10 @@ private fun OrderStatusCard(
                     Text("Motivo informado por el comercio: ${order.refundReason}", color = Color(0xFFB8C8D9), fontSize = 9.sp)
                 }
             }
-            if (merchantMode && order.paymentStatus == "PAGADA · DEMO" && order.status in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO") && onRefund != null) {
+            val refundablePayment =
+                (order.paymentStatus == "PAGADA · DEMO" && order.paymentMethod in listOf("OMNI_PAY_DEMO", "TARJETA_DEMO")) ||
+                    (order.paymentStatus == "PAGADA · EFECTIVO_DEMO" && order.paymentMethod == "EFECTIVO_DEMO")
+            if (merchantMode && refundablePayment && order.status in listOf("RECIBIDO", "ACEPTADO", "EN_PREPARACION", "LISTO", "EN_CAMINO", "ENTREGADO_POR_COMERCIO") && onRefund != null) {
                 OutlinedButton(onClick = onRefund, modifier = Modifier.fillMaxWidth()) { Text("Resolver devolución DEMO", fontSize = 10.sp) }
             }
             if (!merchantMode && onPay != null && order.paymentStatus == "PENDIENTE" &&

@@ -157,6 +157,62 @@ async function queryRecentDocuments(env, collection, orderField, limit) {
   const rows = await firestore(env, ":runQuery", { method: "POST", body: JSON.stringify({ structuredQuery }) });
   return (rows || []).filter(row => row.document).map(row => documentData(row.document));
 }
+export function parseOrderContextRequest(data) {
+ const orderId=String(data?.orderId||"").trim();
+ const storeId=String(data?.storeId||"").trim();
+ if(!/^[A-Za-z0-9_-]{8,120}$/.test(orderId)||!/^[A-Za-z0-9_-]{3,120}$/.test(storeId))
+  throw new ApiError(400,"invalid-argument","El pedido o el comercio no son válidos.");
+ return {orderId,storeId};
+}
+export function buildOrderContextQuery(orderId,collectionId) {
+ if(!/^[A-Za-z0-9_-]{8,120}$/.test(orderId)||typeof collectionId!=="string"||
+    !/^[A-Za-z][A-Za-z0-9_]*$/.test(collectionId))
+  throw new ApiError(400,"invalid-argument","No se pudo construir una consulta de trazabilidad válida.");
+ return {structuredQuery:{
+  from:[{collectionId}],
+  where:{fieldFilter:{field:{fieldPath:"orderId"},op:"EQUAL",value:{stringValue:orderId}}},
+  limit:100
+ }};
+}
+async function documentsByOrderId(env,collectionId,orderId,parentDocumentPath="") {
+ const path=parentDocumentPath?parentDocumentPath+":runQuery":":runQuery";
+ const rows=await firestore(env,path,{method:"POST",body:JSON.stringify(buildOrderContextQuery(orderId,collectionId))});
+ return (rows||[]).filter(row=>row.document).map(row=>documentData(row.document));
+}
+async function orderContext(env,data) {
+ const {orderId,storeId}=parseOrderContextRequest(data);
+ const orderDoc=await getDocument(env,"storeOrders",orderId);
+ if(orderDoc.missing) throw new ApiError(404,"not-found","El pedido solicitado no existe.");
+ const order=documentData(orderDoc);
+ if(String(order.storeId||"")!==storeId)
+  throw new ApiError(404,"not-found","El pedido no corresponde al comercio indicado.");
+ const [movementRows,receiptDoc,adjustments,financialOperations,cardPayments]=await Promise.all([
+  documentsByOrderId(env,"inventoryMovements",orderId,"/merchantProfiles/"+encodeURIComponent(storeId)),
+  getDocument(env,"storeReceipts",orderId),
+  documentsByOrderId(env,"storeReceiptAdjustments",orderId),
+  documentsByOrderId(env,"walletOperations",orderId),
+  documentsByOrderId(env,"demoCardPayments",orderId)
+ ]);
+ const inventoryMovements=movementRows.filter(item=>
+  String(item.orderId||"")===orderId&&String(item.storeId||"")===storeId);
+ const receipt=receiptDoc.missing?null:documentData(receiptDoc);
+ const linkedReceipt=receipt&&String(receipt.orderId||"")===orderId&&
+  (!receipt.storeId||String(receipt.storeId)===storeId)?receipt:null;
+ const receiptAdjustments=adjustments.filter(item=>
+  String(item.orderId||"")===orderId&&(!item.storeId||String(item.storeId)===storeId));
+ const linkedOperations=financialOperations.filter(item=>
+  String(item.orderId||"")===orderId&&(!item.storeId||String(item.storeId)===storeId));
+ const linkedCardPayments=cardPayments.filter(item=>
+  String(item.orderId||"")===orderId&&(!item.merchantUid||String(item.merchantUid)===String(order.merchantUid||"")));
+ const orderSummary={
+  id:orderId,orderId,storeId,storeName:order.storeName||"",status:order.status||"",
+  paymentStatus:order.paymentStatus||"",paymentMethod:order.paymentMethod||"",
+  total:order.total??null,createdAt:order.createdAt??null,updatedAt:order.updatedAt??null,
+  refundAmount:order.refundAmount??null,refundReason:order.refundReason||""
+ };
+ return {order:orderSummary,inventoryMovements,receipt:linkedReceipt,
+  receiptAdjustments,financialOperations:linkedOperations,cardPayments:linkedCardPayments};
+}
 async function usageEventsLast7Days(env) {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const structuredQuery = {
@@ -529,6 +585,44 @@ async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
 }
+export async function demoOrderDocumentId(uid, idempotencyKey) {
+ return "ord_"+(await sha256Hex(`${uid}:${idempotencyKey}`)).slice(0,32);
+}
+export async function demoOrderRequestFingerprint(data) {
+ const expected=data.expectedCashbackPolicy&&typeof data.expectedCashbackPolicy==="object"?data.expectedCashbackPolicy:{};
+ const fulfillmentType=String(data.fulfillmentType||"RETIRO");
+ const normalized={
+  storeId:String(data.storeId||"").trim(),fulfillmentType,
+  deliveryAddress:fulfillmentType==="DELIVERY"?String(data.deliveryAddress||"").trim():"",
+  items:Array.isArray(data.items)?data.items.map(line=>{
+   const item=line&&typeof line==="object"?line:{};
+   return {productId:String(item.productId||""),name:String(item.name||""),price:Number(item.price),quantity:Number(item.quantity)};
+  }):[],
+  deliveryLatitude:fulfillmentType==="DELIVERY"?Number(data.deliveryLatitude):null,
+  deliveryLongitude:fulfillmentType==="DELIVERY"?Number(data.deliveryLongitude):null,
+  expectedTotal:Number(data.expectedTotal),
+  expectedCashbackPolicy:{
+   enabled:expected.enabled??null,percentage:Number(expected.percentage||0),
+   capPerPurchase:expected.capPerPurchase??null,monthlyCap:expected.monthlyCap??null
+  },
+  customerPhone:String(data.customerPhone||"").slice(0,40)
+ };
+ return sha256Hex(JSON.stringify(normalized));
+}
+function demoOrderResult(orderId,order) {
+ return {orderId,qrNonce:order.qrNonce,subtotal:order.subtotal,deliveryFee:order.deliveryFee,total:order.total,
+  items:order.items,storeId:order.storeId,storeName:order.storeName,merchantUid:order.merchantUid,
+  cashbackPolicy:order.cashbackPolicy,deliveryLatitude:order.deliveryLatitude??null,
+  deliveryLongitude:order.deliveryLongitude??null};
+}
+async function findDemoOrderRetry(env,orderId,uid,requestFingerprint) {
+ const doc=await getDocument(env,"storeOrders",orderId);
+ if(doc.missing) return null;
+ const order=decodeFields(doc.fields||{});
+ if(order.customerUid!==uid) throw new ApiError(409,"already-exists","La solicitud DEMO ya está asociada a otro comprador.");
+ if(order.requestFingerprint!==requestFingerprint) throw new ApiError(409,"already-exists","La clave de idempotencia ya se utilizó para otro pedido.");
+ return demoOrderResult(orderId,order);
+}
 async function issueDemoMerchantCode(env, uid, storeId) {
   if (!/^[A-Za-z0-9_-]{3,100}$/.test(storeId)) throw new ApiError(400, "invalid-argument", "Seleccioná un comercio DEMO válido.");
   const transactionResult = await firestore(env, ":beginTransaction", { method: "POST", body: JSON.stringify({ options: { readWrite: {} } }) });
@@ -623,6 +717,7 @@ async function handleAction(env, action, data, identity) {
       };
     }
     case "finance": return finance(env);
+    case "orderContext": return orderContext(env,data);
     case "demoMerchants": return demoMerchants(env);
     case "issueDemoMerchantClaimCode": return issueDemoMerchantCode(env, identity.uid, String(data.storeId || "").trim());
     case "list": {
@@ -796,6 +891,83 @@ function validateDemoNews(raw,storeId,storeName) {
   return item;
  });
 }
+export function validateDemoOperationalFields(raw) {
+ const fields=demoObject(raw,"Datos operativos");
+ const allowed=["address","phone","description","isOpen","hoursText","openTime","closeTime",
+  "weekendHoursText","is24Hours","isOnDuty","openOnHolidays","scheduleNotes","pickupEnabled",
+  "deliveryEnabled","deliveryRadiusKm","deliveryFee","freeDeliveryFrom","minimumOrderAmount",
+  "estimatedPrepMinutes","merchantLatitude","merchantLongitude","minSpendDiscountThreshold",
+  "minSpendDiscountPercent","specialOfferText","cashback"];
+ demoOnlyKeys(fields,allowed,"Datos operativos");
+ const optional=["freeDeliveryFrom","merchantLatitude","merchantLongitude"];
+ if(allowed.some(key=>!optional.includes(key)&&!Object.prototype.hasOwnProperty.call(fields,key)))
+  throw new ApiError(400,"invalid-argument","Faltan campos operativos requeridos para guardar el perfil DEMO.");
+ const text=(key,min,max,optionalValue=false)=>demoText(fields[key],min,max,"Campo "+key,optionalValue);
+ const number=(value,label,min,max,allowZero=true)=>{
+  if(typeof value!=="number"||!Number.isFinite(value)||value<min||value>max||(!allowZero&&value===0))
+   throw new ApiError(400,"invalid-argument",label+" no es válido.");
+  return value;
+ };
+ const optionalNumber=(key,min,max,allowZero=true)=>{
+  const value=fields[key];
+  return value===null||value===undefined?null:number(value,"Campo "+key,min,max,allowZero);
+ };
+ const boolean=(key)=>{
+  if(typeof fields[key]!=="boolean") throw new ApiError(400,"invalid-argument","Campo "+key+" no es válido.");
+  return fields[key];
+ };
+ const address=text("address",1,240);
+ const phone=text("phone",0,40,true);
+ const description=text("description",0,500,true);
+ const isOpen=boolean("isOpen");
+ const hoursText=text("hoursText",1,160);
+ const openTime=text("openTime",0,5,true);
+ const closeTime=text("closeTime",0,5,true);
+ if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(openTime)||!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(closeTime))
+  throw new ApiError(400,"invalid-argument","Los horarios de apertura y cierre deben usar HH:mm.");
+ const weekendHoursText=text("weekendHoursText",0,200,true);
+ const is24Hours=boolean("is24Hours");
+ const isOnDuty=boolean("isOnDuty");
+ const openOnHolidays=boolean("openOnHolidays");
+ const scheduleNotes=text("scheduleNotes",0,500,true);
+ const pickupEnabled=boolean("pickupEnabled");
+ const deliveryEnabled=boolean("deliveryEnabled");
+ if(!pickupEnabled&&!deliveryEnabled) throw new ApiError(400,"invalid-argument","El comercio debe habilitar retiro o delivery.");
+ const deliveryRadiusKm=number(fields.deliveryRadiusKm,"Radio de entrega",0,50,false);
+ const deliveryFee=number(fields.deliveryFee,"Costo de envío",0,50000);
+ const freeDeliveryFrom=optionalNumber("freeDeliveryFrom",0,50000,false);
+ const minimumOrderAmount=number(fields.minimumOrderAmount,"Compra mínima",0,50000);
+ if(!Number.isInteger(fields.estimatedPrepMinutes)||fields.estimatedPrepMinutes<1||fields.estimatedPrepMinutes>240)
+  throw new ApiError(400,"invalid-argument","El tiempo de preparación debe estar entre 1 y 240 minutos.");
+ const merchantLatitude=optionalNumber("merchantLatitude",-90,90);
+ const merchantLongitude=optionalNumber("merchantLongitude",-180,180);
+ if((merchantLatitude===null)!==(merchantLongitude===null)||(deliveryEnabled&&(merchantLatitude===null||merchantLongitude===null)))
+  throw new ApiError(400,"invalid-argument","Delivery requiere coordenadas válidas y completas del comercio.");
+ const minSpendDiscountThreshold=number(fields.minSpendDiscountThreshold,"Umbral de descuento",0,50000);
+ if(!Number.isInteger(fields.minSpendDiscountPercent)||fields.minSpendDiscountPercent<0||fields.minSpendDiscountPercent>100)
+  throw new ApiError(400,"invalid-argument","El porcentaje de descuento debe estar entre 0 y 100.");
+ const specialOfferText=text("specialOfferText",0,240,true);
+ const cashbackFields=demoObject(fields.cashback,"Política de cashback");
+ demoOnlyKeys(cashbackFields,["enabled","percentage","capPerPurchase","monthlyCap"],"Política de cashback");
+ if(typeof cashbackFields.enabled!=="boolean") throw new ApiError(400,"invalid-argument","La habilitación de cashback no es válida.");
+ const cashbackPercentage=number(cashbackFields.percentage,"Porcentaje de cashback",0,100);
+ if(cashbackFields.enabled&&cashbackPercentage===0)
+  throw new ApiError(400,"invalid-argument","El cashback activo debe tener un porcentaje mayor que cero.");
+ const cashbackCap=(key)=>{
+  const value=cashbackFields[key];
+  return value===null||value===undefined?null:number(value,"Tope de cashback",0,10000000,false);
+ };
+ const cashback={
+  enabled:cashbackFields.enabled,percentage:cashbackPercentage,
+  capPerPurchase:cashbackCap("capPerPurchase"),monthlyCap:cashbackCap("monthlyCap")
+ };
+ return {address,phone,description,isOpen,hoursText,openTime,closeTime,weekendHoursText,
+  is24Hours,isOnDuty,openOnHolidays,scheduleNotes,pickupEnabled,deliveryEnabled,
+  deliveryRadiusKm,deliveryFee,freeDeliveryFrom,minimumOrderAmount,
+  estimatedPrepMinutes:fields.estimatedPrepMinutes,merchantLatitude,merchantLongitude,
+  minSpendDiscountThreshold,minSpendDiscountPercent:fields.minSpendDiscountPercent,
+  specialOfferText,cashback};
+}
 async function saveDemoMerchantCatalog(env,uid,data) {
  const storeId=typeof data.storeId==="string"?data.storeId.trim():"";
  if(!/^[A-Za-z0-9_-]{3,120}$/.test(storeId)) throw new ApiError(400,"invalid-argument","El identificador del comercio no es válido.");
@@ -814,6 +986,7 @@ async function saveDemoMerchantCatalog(env,uid,data) {
  const inventory=validateDemoProducts(data.inventory,limit);
  const combos=validateDemoCombos(data.comboDeals);
  const news=validateDemoNews(data.news,storeId,String(current.storeName||""));
+ const operational=validateDemoOperationalFields(data.operational);
  const previous=Array.isArray(current.inventory)?current.inventory:[];
  const previousById=new Map(previous.map(item=>[String(item.id||""),item]));
  const now=new Date().toISOString();
@@ -831,10 +1004,10 @@ async function saveDemoMerchantCatalog(env,uid,data) {
   })},currentDocument:{exists:false}});
  }
  writes.push({update:{name:profileName,fields:encodeFields({
-  inventory,comboDeals:combos,news,catalogUpdatedByUid:uid,catalogUpdatedAt:now,updatedAt:now
- })},updateMask:{fieldPaths:["inventory","comboDeals","news","catalogUpdatedByUid","catalogUpdatedAt","updatedAt"]}});
+  ...operational,inventory,comboDeals:combos,news,catalogUpdatedByUid:uid,catalogUpdatedAt:now,updatedAt:now
+ })},updateMask:{fieldPaths:[...Object.keys(operational),"inventory","comboDeals","news","catalogUpdatedByUid","catalogUpdatedAt","updatedAt"]}});
  await firestore(env,":commit",{method:"POST",body:JSON.stringify({transaction,writes})});
- return {saved:true,storeId,products:inventory.length,combos:combos.length,news:news.length};
+ return {saved:true,operationalFieldsUpdated:true,storeId,products:inventory.length,combos:combos.length,news:news.length};
 }
 
 
@@ -842,12 +1015,20 @@ async function createDemoStoreOrder(env,uid,data,identity) {
  const storeId=String(data.storeId||"").trim();
  const fulfillmentType=String(data.fulfillmentType||"RETIRO");
  const address=String(data.deliveryAddress||"").trim();
+ const idempotencyKey=String(data.idempotencyKey||"").trim();
  if(!/^[A-Za-z0-9_-]{1,120}$/.test(storeId)||!["RETIRO","DELIVERY"].includes(fulfillmentType))
   throw new ApiError(400,"invalid-argument","El comercio o la modalidad del pedido no son válidos.");
+ if(!/^[A-Za-z0-9_-]{16,80}$/.test(idempotencyKey))
+  throw new ApiError(400,"invalid-argument","La solicitud de pedido no tiene una clave de idempotencia válida.");
  if(fulfillmentType==="DELIVERY"&&(address.length<5||address.length>240))
   throw new ApiError(400,"invalid-argument","Ingresá una dirección de entrega válida.");
  const items=demoList(data.items,"Productos del pedido",30);
  if(items.length<1) throw new ApiError(400,"invalid-argument","El pedido debe contener al menos un producto.");
+ const normalizedRequest={...data,storeId,fulfillmentType,deliveryAddress:address,items};
+ const requestFingerprint=await demoOrderRequestFingerprint(normalizedRequest);
+ const orderId=await demoOrderDocumentId(uid,idempotencyKey);
+ const existingOrder=await findDemoOrderRetry(env,orderId,uid,requestFingerprint);
+ if(existingOrder) return existingOrder;
  const profileDoc=await getDocument(env,"merchantProfiles",storeId);
  if(profileDoc.missing) throw new ApiError(404,"not-found","El comercio DEMO no existe.");
  const profile=decodeFields(profileDoc.fields||{});
@@ -903,21 +1084,28 @@ async function createDemoStoreOrder(env,uid,data,identity) {
  if(expected.enabled!==cashback.enabled||Number(expected.percentage||0)!==Number(cashback.percentage||0)||
   (expected.capPerPurchase??null)!==(cashback.capPerPurchase??null)||(expected.monthlyCap??null)!==(cashback.monthlyCap??null))
   throw new ApiError(412,"failed-precondition","El comercio actualizó las condiciones de cashback. Volvé a revisar.");
- const orderId="ord_"+randomHex(16).toLowerCase(),qrNonce=randomHex(48).toLowerCase(),now=new Date().toISOString();
+ const qrNonce=randomHex(48).toLowerCase(),now=new Date().toISOString();
+ const expiresAt=new Date(Date.parse(now)+24*60*60*1000).toISOString();
  const customerName=String(identity.name||identity.email||"Cliente OMNI").slice(0,80);
  const order={storeId,storeName:String(profile.storeName||"Comercio DEMO"),environment:"DEMO",merchantUid,customerUid:uid,
   customerName,customerPhone:String(data.customerPhone||"").slice(0,40),items:normalizedItems,subtotal,deliveryFee,total,cashbackPolicy:cashback,
   status:"RECIBIDO",paymentStatus:"PENDIENTE",paymentMethod:"PAGO_AL_RETIRAR",fulfillmentType,
   deliveryAddress:fulfillmentType==="DELIVERY"?address:"",...(deliveryLatitude!==null?{deliveryLatitude,deliveryLongitude}:{}),
-  qrNonce,operationId:orderId,createdAt:now,updatedAt:now};
- await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[
+  qrNonce,operationId:orderId,requestFingerprint,createdAt:now,expiresAt,updatedAt:now};
+ try {
+  await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[
   {update:{name:FIRESTORE_ROOT+"/storeOrders/"+orderId,fields:encodeFields(order)},currentDocument:{exists:false}},
   {update:{name:FIRESTORE_ROOT+"/storeOrders/"+orderId+"/statusHistory/"+randomHex(12).toLowerCase(),fields:encodeFields({
    orderId,storeId,environment:"DEMO",actorUid:uid,actorRole:"COMPRADOR",fromStatus:"",toStatus:"RECIBIDO",
    eventType:"ESTADO_PEDIDO",note:"Pedido creado y enviado al comercio",createdAt:now
   })},currentDocument:{exists:false}}
- ]})});
- return {orderId,qrNonce,subtotal,deliveryFee,total,items:normalizedItems,storeId,storeName:order.storeName,merchantUid,cashbackPolicy:cashback,deliveryLatitude,deliveryLongitude};
+  ]})});
+ } catch(error) {
+  const committedOrder=await findDemoOrderRetry(env,orderId,uid,requestFingerprint);
+  if(committedOrder) return committedOrder;
+  throw error;
+ }
+ return demoOrderResult(orderId,order);
 }
 
 async function handleDemoMerchantRequest(request,env) {

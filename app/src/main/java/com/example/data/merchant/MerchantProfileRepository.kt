@@ -6,9 +6,7 @@ import com.example.model.Store
 import com.example.model.StoreNews
 import com.example.model.StoreProduct
 import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -174,24 +172,34 @@ object MerchantProfileRepository {
                     "isHot" to item.isHot
                 )
             },
-            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        val operationalData = data - setOf(
+            "storeId", "ownerUid", "storeName", "environment",
+            "inventory", "comboDeals", "news"
         )
         val catalogPayload = mapOf(
             "storeId" to store.id,
             "inventory" to data["inventory"],
             "comboDeals" to data["comboDeals"],
-            "news" to data["news"]
+            "news" to data["news"],
+            "operational" to operationalData
         )
         CoroutineScope(Dispatchers.Main).launch {
             runCatching { DemoMerchantApi.saveCatalog(JSONObject(catalogPayload)) }
-                .onSuccess {
-                    // The Worker validates and writes catalog data atomically. Operational
-                    // fields remain a separate owner-authorized Firestore update.
-                    val operationalData = data - setOf("inventory", "comboDeals", "news")
-                    db.collection("merchantProfiles").document(store.id)
-                        .set(operationalData, SetOptions.merge())
-                        .addOnSuccessListener { callback(Result.success(Unit)) }
-                        .addOnFailureListener { callback(Result.failure(it)) }
+                .onSuccess { response ->
+                    val responseMatchesRequest = response.optBoolean("saved") &&
+                        response.optBoolean("operationalFieldsUpdated") &&
+                        response.optString("storeId") == store.id &&
+                        response.optInt("products", -1) == store.inventory.size &&
+                        response.optInt("combos", -1) == store.comboDeals.size &&
+                        response.optInt("news", -1) == news.size
+                    if (responseMatchesRequest) {
+                        callback(Result.success(Unit))
+                    } else {
+                        callback(Result.failure(IllegalStateException(
+                            "El servicio DEMO no confirmó el guardado completo del catálogo y los datos operativos."
+                        )))
+                    }
                 }
                 .onFailure { callback(Result.failure(it)) }
         }
