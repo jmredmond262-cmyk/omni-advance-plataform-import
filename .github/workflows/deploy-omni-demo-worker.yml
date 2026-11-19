@@ -32,7 +32,18 @@ jobs:
           grep -q 'OMNI_ENVIRONMENT = "DEMO"' workers/wrangler.demo.toml
           sed -i "s/REPLACE_WITH_NEW_FIREBASE_DEMO_PROJECT_ID/$DEMO_PROJECT_ID/" workers/wrangler.demo.toml
           grep -q "OMNI_FIREBASE_PROJECT_ID = \"$DEMO_PROJECT_ID\"" workers/wrangler.demo.toml
-          echo "Configuración DEMO validada; no se utiliza el Worker productivo."
+          printf '%s' "$DEMO_SERVICE_ACCOUNT" | base64 --decode > "$RUNNER_TEMP/omni-demo-service-account.json"
+          python3 - <<'PY'
+          import json, os
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "omni-demo-service-account.json"), encoding="utf-8") as f:
+              account = json.load(f)
+          if account.get("project_id") != os.environ["DEMO_PROJECT_ID"]:
+              raise SystemExit("La cuenta de servicio no pertenece al Firebase DEMO configurado.")
+          if not account.get("client_email") or not account.get("private_key"):
+              raise SystemExit("La cuenta de servicio DEMO está incompleta.")
+          PY
+          rm -f "$RUNNER_TEMP/omni-demo-service-account.json"
+          echo "Configuración DEMO y pertenencia de la cuenta de servicio validadas."
 
       - name: Install Wrangler
         run: npm install --global wrangler@4
