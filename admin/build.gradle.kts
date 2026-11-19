@@ -12,6 +12,8 @@ android {
     applicationId = "com.omni.adminpanel"
     minSdk = 24
     targetSdk = 36
+    buildFeatures.buildConfig = true
+    buildConfigField("String", "OMNI_ADMIN_API_URL", "\\\"https://omni-admin-api.jmredmond262.workers.dev\\\"")
     // GitHub Actions run numbers increase monotonically, allowing in-place Android updates.
     versionCode = (System.getenv("OMNI_ADMIN_VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "4").toInt()
     versionName = "1.4.9"
@@ -28,6 +30,13 @@ android {
   }
 
   buildTypes {
+    create("demo") {
+      initWith(getByName("debug"))
+      applicationIdSuffix = ".demo"
+      versionNameSuffix = "-demo"
+      val demoApiUrl = System.getenv("OMNI_DEMO_WORKER_BASE_URL") ?: ""
+      buildConfigField("String", "OMNI_ADMIN_API_URL", "\\\"${demoApiUrl}\\\"")
+    }
     debug {
       signingConfig = signingConfigs.getByName("debugConfig")
     }
