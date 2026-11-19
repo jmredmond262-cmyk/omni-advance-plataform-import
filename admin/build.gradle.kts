@@ -12,7 +12,6 @@ android {
     applicationId = "com.omni.adminpanel"
     minSdk = 24
     targetSdk = 36
-    buildFeatures.buildConfig = true
     buildConfigField("String", "OMNI_ADMIN_API_URL", "\"https://omni-admin-api.jmredmond262.workers.dev\"")
     // GitHub Actions run numbers increase monotonically, allowing in-place Android updates.
     versionCode = (System.getenv("OMNI_ADMIN_VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "4").toInt()
@@ -46,7 +45,7 @@ android {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
-  buildFeatures { compose = true }
+  buildFeatures { compose = true; buildConfig = true }
 }
 
 
