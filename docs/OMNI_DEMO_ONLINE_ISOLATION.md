@@ -25,7 +25,12 @@ Habilitar pruebas entre teléfonos externos con cuentas, comercios, pedidos, inv
    - Secret `OMNI_DEMO_FIREBASE_SERVICE_ACCOUNT_BASE64`: JSON de cuenta de servicio DEMO codificado en Base64.
    - Secrets existentes `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID`.
 6. Ejecutar manualmente el workflow `Deploy isolated OMNI DEMO Worker` desde esta rama.
-7. Configurar la app de pruebas para usar la URL `workers.dev` del Worker DEMO. La URL productiva no debe cambiarse.
+7. Configurar la variable `OMNI_DEMO_WORKER_BASE_URL` con la URL HTTPS `workers.dev` del Worker DEMO.
+8. Registrar las apps Android DEMO en Firebase:
+   - Principal: `com.aistudio.omnihub.qtzmvd.demo` dentro del proyecto Firebase DEMO.
+   - Admin: `com.omni.adminpanel.demo` dentro del proyecto de autenticación administrativa existente.
+9. Guardar sus archivos `google-services.json` codificados en Base64 como `OMNI_DEMO_GOOGLE_SERVICES_JSON_BASE64` y `OMNI_ADMIN_DEMO_GOOGLE_SERVICES_JSON_BASE64`.
+10. Ejecutar manualmente `Build OMNI DEMO Android APKs`. El workflow verifica la firma persistente y genera Principal y Admin DEMO como apps separadas, instalables en paralelo con las actuales. La URL productiva no se modifica.
 
 ## Seguridad
 
@@ -37,4 +42,4 @@ Habilitar pruebas entre teléfonos externos con cuentas, comercios, pedidos, inv
 
 ## Estado real
 
-La separación de proyectos en el código, la configuración Wrangler dedicada y el bloqueo fail-closed están implementados. La validación automatizada del Worker está configurada en GitHub Actions. La creación del proyecto Firebase, la configuración de secretos, el despliegue Cloudflare y la variante Android que apunta al Worker DEMO aún no se han realizado.
+La separación de proyectos en el código, la configuración Wrangler dedicada y el bloqueo fail-closed están implementados. La validación automatizada del Worker está configurada en GitHub Actions. Las variantes Android `demo` para Principal y Admin y su workflow de compilación ya están preparados. La creación del proyecto Firebase, el registro de las dos apps Android, la configuración de secretos, el despliegue Cloudflare y la compilación final de APKs aún no se han realizado.
