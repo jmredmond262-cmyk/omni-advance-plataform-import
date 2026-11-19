@@ -25,6 +25,7 @@ jobs:
       - name: Check Worker syntax
         run: npm --prefix workers run check
       - name: Validate DEMO workflow YAML
-        run: ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path); puts "Valid YAML: #{path}" }' .github/workflows/deploy-omni-demo-worker.yml .github/workflows/build-omni-demo-apks.yml
+        run: |
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path); puts "Valid YAML: #{path}" }' .github/workflows/deploy-omni-demo-worker.yml .github/workflows/build-omni-demo-apks.yml
       - name: Run complete Worker test suite
         run: npm --prefix workers test
