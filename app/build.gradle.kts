@@ -58,7 +58,7 @@ android {
       applicationIdSuffix = ".demo"
       versionNameSuffix = "-demo"
       val demoWorkerUrl = System.getenv("OMNI_DEMO_WORKER_BASE_URL") ?: ""
-      buildConfigField("String", "OMNI_WORKER_BASE_URL", "\\\"${demoWorkerUrl}\\\"")
+      buildConfigField("String", "OMNI_WORKER_BASE_URL", "\"${demoWorkerUrl}\"")
     }
     release {
       isCrunchPngs = false
