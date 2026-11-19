@@ -1,0 +1,118 @@
+name: Build OMNI DEMO Android APKs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-demo:
+    name: Build isolated Principal and Admin DEMO APKs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Configure Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36.1" "build-tools;36.0.0"
+
+      - name: Configure isolated Firebase apps and Worker endpoint
+        env:
+          PRINCIPAL_DEMO_JSON: ${{ secrets.OMNI_DEMO_GOOGLE_SERVICES_JSON_BASE64 }}
+          ADMIN_DEMO_JSON: ${{ secrets.OMNI_ADMIN_DEMO_GOOGLE_SERVICES_JSON_BASE64 }}
+          DEMO_PROJECT_ID: ${{ vars.OMNI_DEMO_FIREBASE_PROJECT_ID }}
+          ADMIN_AUTH_PROJECT_ID: ${{ secrets.OMNI_ADMIN_AUTH_PROJECT_ID }}
+          DEMO_WORKER_URL: ${{ vars.OMNI_DEMO_WORKER_BASE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$PRINCIPAL_DEMO_JSON" || { echo "::error::Falta OMNI_DEMO_GOOGLE_SERVICES_JSON_BASE64"; exit 1; }
+          test -n "$ADMIN_DEMO_JSON" || { echo "::error::Falta OMNI_ADMIN_DEMO_GOOGLE_SERVICES_JSON_BASE64"; exit 1; }
+          test -n "$DEMO_PROJECT_ID" || { echo "::error::Falta OMNI_DEMO_FIREBASE_PROJECT_ID"; exit 1; }
+          test -n "$ADMIN_AUTH_PROJECT_ID" || { echo "::error::Falta OMNI_ADMIN_AUTH_PROJECT_ID"; exit 1; }
+          [[ "$DEMO_WORKER_URL" == https://* ]] || { echo "::error::OMNI_DEMO_WORKER_BASE_URL debe ser HTTPS"; exit 1; }
+          mkdir -p app/src/demo admin/src/demo/res/values
+          printf '%s' "$PRINCIPAL_DEMO_JSON" | base64 --decode > app/src/demo/google-services.json
+          printf '%s' "$ADMIN_DEMO_JSON" | base64 --decode > admin/src/demo/google-services.json
+          python3 - <<'PY'
+          import json, os, sys, xml.sax.saxutils as xml
+          with open("app/src/demo/google-services.json", encoding="utf-8") as f:
+              principal = json.load(f)
+          if principal["project_info"]["project_id"] != os.environ["DEMO_PROJECT_ID"]:
+              raise SystemExit("El google-services de Principal no corresponde al Firebase DEMO.")
+          p = next((x for x in principal["client"] if x["client_info"]["android_client_info"]["package_name"] == "com.aistudio.omnihub.qtzmvd.demo"), None)
+          if p is None:
+              raise SystemExit("Firebase DEMO no tiene registrada la app Android com.aistudio.omnihub.qtzmvd.demo.")
+          with open("admin/src/demo/google-services.json", encoding="utf-8") as f:
+              admin = json.load(f)
+          if admin["project_info"]["project_id"] != os.environ["ADMIN_AUTH_PROJECT_ID"]:
+              raise SystemExit("El google-services de Admin DEMO no corresponde al proyecto de autenticación administrativa.")
+          a = next((x for x in admin["client"] if x["client_info"]["android_client_info"]["package_name"] == "com.omni.adminpanel.demo"), None)
+          if a is None:
+              raise SystemExit("El proyecto Admin Auth no tiene registrada la app com.omni.adminpanel.demo.")
+          project = admin["project_info"]
+          values = {
+              "google_app_id": a["client_info"]["mobilesdk_app_id"],
+              "google_api_key": a["api_key"][0]["current_key"],
+              "project_id": project["project_id"],
+              "gcm_defaultSenderId": project["project_number"],
+              "google_storage_bucket": project.get("storage_bucket", ""),
+          }
+          web_client = next((oauth["client_id"] for item in admin["client"] for oauth in item.get("oauth_client", []) if oauth.get("client_type") == 3), None)
+          if web_client:
+              values["default_web_client_id"] = web_client
+          with open("admin/src/demo/res/values/firebase_config.xml", "w", encoding="utf-8") as f:
+              f.write("<resources>\\n")
+              for key, value in values.items():
+                  f.write(f'  <string name="{key}" translatable="false">{xml.escape(value)}</string>\\n')
+              f.write("</resources>\\n")
+          PY
+          echo "OMNI_DEMO_WORKER_BASE_URL=$DEMO_WORKER_URL" >> "$GITHUB_ENV"
+
+      - name: Configure persistent OMNI signing identity
+        env:
+          OMNI_DEBUG_KEYSTORE_BASE64: ${{ secrets.OMNI_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$OMNI_DEBUG_KEYSTORE_BASE64" || { echo "::error::Falta OMNI_DEBUG_KEYSTORE_BASE64"; exit 1; }
+          printf '%s' "$OMNI_DEBUG_KEYSTORE_BASE64" | base64 --decode > debug.keystore
+          EXPECTED_SHA256="486513DCA524F8C09134DB97A7D5650A2F2461E4306DB181B7C2DFE2D40E495B"
+          ACTUAL_SHA256="$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | awk '/SHA256:/{print $2; exit}' | tr -d ':')"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La firma persistente de OMNI no coincide."; exit 1; }
+          echo "Firma persistente validada."
+
+      - name: Build Principal and Admin DEMO variants
+        env:
+          OMNI_VERSION_CODE: ${{ github.run_number }}
+          OMNI_ADMIN_VERSION_CODE: ${{ github.run_number }}
+        run: gradle :app:assembleDemo :admin:assembleDemo
+
+      - name: Upload DEMO APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-demo-apks
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/demo/app-demo.apk
+            admin/build/outputs/apk/demo/admin-demo.apk
