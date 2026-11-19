@@ -43,17 +43,13 @@ jobs:
 
       - name: Configure isolated Firebase apps and Worker endpoint
         env:
-          PRINCIPAL_DEMO_JSON: ${{ secrets.OMNI_DEMO_GOOGLE_SERVICES_JSON_BASE64 }}
-          ADMIN_DEMO_JSON: ${{ secrets.OMNI_ADMIN_DEMO_GOOGLE_SERVICES_JSON_BASE64 }}
-          DEMO_PROJECT_ID: ${{ vars.OMNI_DEMO_FIREBASE_PROJECT_ID }}
-          ADMIN_AUTH_PROJECT_ID: ${{ secrets.OMNI_ADMIN_AUTH_PROJECT_ID }}
+          PRINCIPAL_DEMO_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
+          ADMIN_DEMO_JSON: ${{ secrets.OMNI_ADMIN_GOOGLE_SERVICES_JSON_BASE64 }}
           DEMO_WORKER_URL: ${{ vars.OMNI_DEMO_WORKER_BASE_URL }}
         run: |
           set -euo pipefail
           test -n "$PRINCIPAL_DEMO_JSON" || { echo "::error::Falta OMNI_DEMO_GOOGLE_SERVICES_JSON_BASE64"; exit 1; }
           test -n "$ADMIN_DEMO_JSON" || { echo "::error::Falta OMNI_ADMIN_DEMO_GOOGLE_SERVICES_JSON_BASE64"; exit 1; }
-          test -n "$DEMO_PROJECT_ID" || { echo "::error::Falta OMNI_DEMO_FIREBASE_PROJECT_ID"; exit 1; }
-          test -n "$ADMIN_AUTH_PROJECT_ID" || { echo "::error::Falta OMNI_ADMIN_AUTH_PROJECT_ID"; exit 1; }
           [[ "$DEMO_WORKER_URL" == https://* ]] || { echo "::error::OMNI_DEMO_WORKER_BASE_URL debe ser HTTPS"; exit 1; }
           mkdir -p app/src/demo admin/src/demo/res/values
           printf '%s' "$PRINCIPAL_DEMO_JSON" | base64 --decode > app/src/demo/google-services.json
@@ -62,14 +58,14 @@ jobs:
           import json, os, sys, xml.sax.saxutils as xml
           with open("app/src/demo/google-services.json", encoding="utf-8") as f:
               principal = json.load(f)
-          if principal["project_info"]["project_id"] != os.environ["DEMO_PROJECT_ID"]:
+          if principal["project_info"]["project_id"] != "omni-demo-33675":
               raise SystemExit("El google-services de Principal no corresponde al Firebase DEMO.")
           p = next((x for x in principal["client"] if x["client_info"]["android_client_info"]["package_name"] == "com.aistudio.omnihub.qtzmvd.demo"), None)
           if p is None:
               raise SystemExit("Firebase DEMO no tiene registrada la app Android com.aistudio.omnihub.qtzmvd.demo.")
           with open("admin/src/demo/google-services.json", encoding="utf-8") as f:
               admin = json.load(f)
-          if admin["project_info"]["project_id"] != os.environ["ADMIN_AUTH_PROJECT_ID"]:
+          if admin["project_info"]["project_id"] != "omni-admin-52e3f":
               raise SystemExit("El google-services de Admin DEMO no corresponde al proyecto de autenticación administrativa.")
           a = next((x for x in admin["client"] if x["client_info"]["android_client_info"]["package_name"] == "com.omni.adminpanel.demo"), None)
           if a is None:
