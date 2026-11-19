@@ -1,0 +1,28 @@
+name: OMNI DEMO Worker isolation tests
+
+on:
+  push:
+    branches:
+      - feat/omni-demo-online-isolated
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "workers/**"
+      - ".github/workflows/omni-demo-isolation-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  worker-isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check Worker syntax
+        run: npm --prefix workers run check
+      - name: Run DEMO isolation tests
+        run: npm --prefix workers test
