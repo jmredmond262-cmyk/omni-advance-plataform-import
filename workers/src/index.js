@@ -1,7 +1,23 @@
-const PRIMARY_PROJECT = "omni-57f69";
-const ADMIN_AUTH_PROJECT = "omni-admin-52e3f";
-const FIRESTORE_ROOT = `https://firestore.googleapis.com/v1/projects/${PRIMARY_PROJECT}/databases/(default)/documents`;
-const TOKEN_ISSUER = `https://securetoken.google.com/${ADMIN_AUTH_PROJECT}`;
+const DEFAULT_PRIMARY_PROJECT = "omni-57f69";
+const DEFAULT_ADMIN_AUTH_PROJECT = "omni-admin-52e3f";
+export function firebaseProjectId(env) {
+  const isDemo = String(env.OMNI_ENVIRONMENT || "").toUpperCase() === "DEMO";
+  const configured = String(env.OMNI_FIREBASE_PROJECT_ID || "").trim();
+  if (isDemo && (!configured || configured === DEFAULT_PRIMARY_PROJECT)) {
+    throw new Error("Worker DEMO bloqueado: falta un proyecto Firebase DEMO independiente.");
+  }
+  const id = configured || DEFAULT_PRIMARY_PROJECT;
+  if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(id)) throw new Error("OMNI_FIREBASE_PROJECT_ID no es válido.");
+  return id;
+}
+function adminAuthProjectId(env) {
+  const id = String(env.OMNI_ADMIN_AUTH_PROJECT_ID || DEFAULT_ADMIN_AUTH_PROJECT).trim();
+  if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(id)) throw new Error("OMNI_ADMIN_AUTH_PROJECT_ID no es válido.");
+  return id;
+}
+export function firestoreRoot(env) {
+  return `https://firestore.googleapis.com/v1/projects/${firebaseProjectId(env)}/databases/(default)/documents`;
+}
 let serviceTokenCache = { token: "", expiresAt: 0 };
 let firebaseKeysCache = { keys: [], expiresAt: 0 };
 
@@ -26,7 +42,7 @@ function encodeBase64Url(bytes) {
   for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
-async function verifyFirebaseToken(token, projectId = ADMIN_AUTH_PROJECT) {
+async function verifyFirebaseToken(token, projectId = DEFAULT_ADMIN_AUTH_PROJECT) {
   const parts = token.split(".");
   if (parts.length !== 3) throw new ApiError(401, "unauthenticated", "La sesión administrativa no es válida o venció. Ingresá nuevamente.");
   const header = decodeJwtPart(parts[0]);
@@ -58,7 +74,7 @@ async function googleAccessToken(env) {
   const now = Math.floor(Date.now() / 1000);
   if (serviceTokenCache.token && serviceTokenCache.expiresAt > now + 60) return serviceTokenCache.token;
   const account = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
-  if (!account.client_email || !account.private_key || account.project_id !== PRIMARY_PROJECT) throw new Error("La credencial de Firebase no corresponde al proyecto principal esperado.");
+  if (!account.client_email || !account.private_key || account.project_id !== firebaseProjectId(env)) throw new Error("La credencial de Firebase no corresponde al proyecto principal esperado.");
   const header = encodeBase64Url(new TextEncoder().encode(JSON.stringify({ alg: "RS256", typ: "JWT" })));
   const claims = encodeBase64Url(new TextEncoder().encode(JSON.stringify({
     iss: account.client_email, scope: "https://www.googleapis.com/auth/datastore",
@@ -114,7 +130,7 @@ function documentData(doc) {
 }
 async function firestore(env, path, options = {}) {
   const token = await googleAccessToken(env);
-  const response = await fetch(FIRESTORE_ROOT + path, {
+  const response = await fetch(firestoreRoot(env) + path, {
     ...options,
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json", ...(options.headers || {}) }
   });
@@ -628,7 +644,7 @@ async function issueDemoMerchantCode(env, uid, storeId) {
   const transactionResult = await firestore(env, ":beginTransaction", { method: "POST", body: JSON.stringify({ options: { readWrite: {} } }) });
   const transaction = transactionResult.transaction;
   if (!transaction) throw new Error("No se pudo iniciar la transacción de titularidad.");
-  const profileName = `${FIRESTORE_ROOT}/merchantProfiles/${encodeURIComponent(storeId)}`;
+  const profileName = `${firestoreRoot(env)}/merchantProfiles/${encodeURIComponent(storeId)}`;
   const batch = await firestore(env, ":batchGet", { method: "POST", body: JSON.stringify({ documents: [profileName], transaction }) });
   const profile = Array.isArray(batch) ? batch.find(item => item.found)?.found : null;
   if (!profile) throw new ApiError(404, "not-found", "El comercio DEMO no existe.");
@@ -639,7 +655,7 @@ async function issueDemoMerchantCode(env, uid, storeId) {
   const codeHash = await sha256Hex(code);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const codeName = `${FIRESTORE_ROOT}/demoMerchantClaimCodes/${codeHash}`;
+  const codeName = `${firestoreRoot(env)}/demoMerchantClaimCodes/${codeHash}`;
   await firestore(env, ":commit", {
     method: "POST",
     body: JSON.stringify({
@@ -796,7 +812,7 @@ async function provisionDemoCatalog(env) {
    else results.push({storeId:seed.id,status:"YA_EXISTE"});
    continue;
   }
-  await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[{update:{name:FIRESTORE_ROOT+"/merchantProfiles/"+seed.id,fields:encodeFields(seedProfile(seed))},currentDocument:{exists:false}}]})});
+  await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[{update:{name:firestoreRoot(env)+"/merchantProfiles/"+seed.id,fields:encodeFields(seedProfile(seed))},currentDocument:{exists:false}}]})});
   results.push({storeId:seed.id,status:"CREADO",products:seed.products.length});
  }
  return {items:results,created:results.filter(x=>x.status==="CREADO").length};
@@ -805,7 +821,7 @@ async function claimDemoCatalogStore(env,uid,rawCode) {
  const code=String(rawCode||"").trim().toUpperCase();
  if(!/^OMNI-[A-F0-9]{16}$/.test(code)) throw new ApiError(400,"invalid-argument","El código de titularidad no tiene un formato válido.");
  const hash=await sha256Hex(code);
- const codePath=FIRESTORE_ROOT+"/demoMerchantClaimCodes/"+hash;
+ const codePath=firestoreRoot(env)+"/demoMerchantClaimCodes/"+hash;
  const codeDoc=await getDocument(env,"demoMerchantClaimCodes",hash);
  if(codeDoc.missing) throw new ApiError(404,"not-found","El código no existe o ya fue utilizado.");
  const codeData=decodeFields(codeDoc.fields||{});
@@ -819,7 +835,7 @@ async function claimDemoCatalogStore(env,uid,rawCode) {
  const now=new Date().toISOString();
  await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[
   {update:{name:codePath,fields:encodeFields({active:false,claimedByUid:uid,claimedAt:now})},updateMask:{fieldPaths:["active","claimedByUid","claimedAt"]},currentDocument:{updateTime:codeDoc.updateTime}},
-  {update:{name:FIRESTORE_ROOT+"/merchantProfiles/"+storeId,fields:encodeFields({ownerUid:uid,claimedAt:now,updatedAt:now})},updateMask:{fieldPaths:["ownerUid","claimedAt","updatedAt"]},currentDocument:{updateTime:storeDoc.updateTime}}
+  {update:{name:firestoreRoot(env)+"/merchantProfiles/"+storeId,fields:encodeFields({ownerUid:uid,claimedAt:now,updatedAt:now})},updateMask:{fieldPaths:["ownerUid","claimedAt","updatedAt"]},currentDocument:{updateTime:storeDoc.updateTime}}
  ]})});
  return {storeId,storeName:String(store.storeName||"Comercio DEMO"),ownerUid:uid,claimed:true};
 }
@@ -974,7 +990,7 @@ async function saveDemoMerchantCatalog(env,uid,data) {
  const txResult=await firestore(env,":beginTransaction",{method:"POST",body:JSON.stringify({options:{readWrite:{}}})});
  const transaction=txResult.transaction;
  if(!transaction) throw new Error("No se pudo iniciar la transacción del catálogo DEMO.");
- const profileName=FIRESTORE_ROOT+"/merchantProfiles/"+encodeURIComponent(storeId);
+ const profileName=firestoreRoot(env)+"/merchantProfiles/"+encodeURIComponent(storeId);
  const batch=await firestore(env,":batchGet",{method:"POST",body:JSON.stringify({documents:[profileName],transaction})});
  const profile=Array.isArray(batch)?batch.find(item=>item.found)?.found:null;
  if(!profile) throw new ApiError(404,"not-found","El comercio DEMO no existe.");
@@ -1094,8 +1110,8 @@ async function createDemoStoreOrder(env,uid,data,identity) {
   qrNonce,operationId:orderId,requestFingerprint,createdAt:now,expiresAt,updatedAt:now};
  try {
   await firestore(env,":commit",{method:"POST",body:JSON.stringify({writes:[
-  {update:{name:FIRESTORE_ROOT+"/storeOrders/"+orderId,fields:encodeFields(order)},currentDocument:{exists:false}},
-  {update:{name:FIRESTORE_ROOT+"/storeOrders/"+orderId+"/statusHistory/"+randomHex(12).toLowerCase(),fields:encodeFields({
+  {update:{name:firestoreRoot(env)+"/storeOrders/"+orderId,fields:encodeFields(order)},currentDocument:{exists:false}},
+  {update:{name:firestoreRoot(env)+"/storeOrders/"+orderId+"/statusHistory/"+randomHex(12).toLowerCase(),fields:encodeFields({
    orderId,storeId,environment:"DEMO",actorUid:uid,actorRole:"COMPRADOR",fromStatus:"",toStatus:"RECIBIDO",
    eventType:"ESTADO_PEDIDO",note:"Pedido creado y enviado al comercio",createdAt:now
   })},currentDocument:{exists:false}}
@@ -1112,7 +1128,7 @@ async function handleDemoMerchantRequest(request,env) {
  if(request.method!=="POST") return json({ok:false,error:"method-not-allowed",message:"Usá POST."},405);
  const authHeader=request.headers.get("Authorization")||"";
  if(!authHeader.startsWith("Bearer ")) throw new ApiError(401,"unauthenticated","Iniciá sesión en OMNI.");
- const identity=await verifyFirebaseToken(authHeader.slice(7).trim(),PRIMARY_PROJECT);
+ const identity=await verifyFirebaseToken(authHeader.slice(7).trim(),firebaseProjectId(env));
  const body=await request.json();
  const data=body.data&&typeof body.data==="object"?body.data:{};
  if(body.action==="provision") return json({ok:true,result:await provisionDemoCatalog(env)});
@@ -1126,7 +1142,7 @@ async function handleGeoPresenceRequest(request, env) {
   if (request.method !== "POST") return json({ ok: false, error: "method-not-allowed", message: "Usá POST." }, 405);
   const authHeader = request.headers.get("Authorization") || "";
   if (!authHeader.startsWith("Bearer ")) throw new ApiError(401, "unauthenticated", "Falta la sesión de OMNI.");
-  const identity = await verifyFirebaseToken(authHeader.slice(7).trim(), PRIMARY_PROJECT);
+  const identity = await verifyFirebaseToken(authHeader.slice(7).trim(), firebaseProjectId(env));
   const data = await request.json();
   if (data.enabled === false) {
     await firestore(env, "/geoPresence/" + encodeURIComponent(identity.uid), { method: "DELETE" });
@@ -1184,7 +1200,7 @@ export default {
     try {
       const authHeader = request.headers.get("Authorization") || "";
       if (!authHeader.startsWith("Bearer ")) throw new ApiError(401, "unauthenticated", "Falta la sesión administrativa.");
-      const identity = await verifyFirebaseToken(authHeader.slice(7).trim());
+      const identity = await verifyFirebaseToken(authHeader.slice(7).trim(), adminAuthProjectId(env));
       const admin = await getDocument(env, "systemAdmins", identity.uid);
       if (admin.missing) throw new ApiError(403, "permission-denied", "Esta cuenta no está habilitada como administradora de OMNI.");
       const fields = decodeFields(admin.fields || {});
