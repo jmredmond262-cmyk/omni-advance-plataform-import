@@ -1,7 +1,8 @@
 # OMNI DEMO — seguimiento del trabajo
 
 **Actualizado:** 2026-11-19  
-**Rama:** `feat/omni-demo-online-isolated-complete`
+**Rama:** `feat/omni-demo-online-isolated-complete`  
+**Último commit de la rama:** `a10124d00df9c38c725befa16c10de6fede6d534`
 
 ## Objetivo
 Generar dos APK independientes de prueba: **OMNI Principal DEMO** y **OMNI Admin DEMO**, manteniendo intactas las aplicaciones de producción.
@@ -10,31 +11,32 @@ Generar dos APK independientes de prueba: **OMNI Principal DEMO** y **OMNI Admin
 
 | Área | Estado |
 |---|---|
-| Configuración Firebase Principal DEMO | Recibida y validada para el proyecto `omni-demo-33675` y el paquete DEMO previsto |
-| Configuración Firebase Admin | Recibida; corresponde al proyecto `omni-admin-52e3f` |
-| Variantes DEMO de Principal y Admin | Preparadas en la rama |
-| Configuración del Worker DEMO | Preparada en la rama |
-| Workflow de compilación de APK | Existe; ejecución pendiente |
-| APK Principal DEMO | **No generado todavía** |
-| APK Admin DEMO | **No generado todavía** |
-| Worker DEMO desplegado | **No** |
+| Firebase Principal DEMO | Configuración recibida; proyecto `omni-demo-33675` |
+| Firebase Admin Auth | Configuración recibida; proyecto `omni-admin-52e3f` |
+| Variantes DEMO de Principal y Admin | Preparadas en Gradle |
+| Worker DEMO | Código y configuración aislada preparados; no desplegado |
+| Pruebas Worker | **12/12 aprobadas** en GitHub Actions |
+| Sintaxis JavaScript del Worker | Correcta |
+| YAML de los workflows DEMO | Validado |
+| Workflow de compilación Android | Preparado y ahora configurado para ejecutarse al actualizar esta rama |
+| APK Principal DEMO | **No generado** |
+| APK Admin DEMO | **No generado** |
 
-## Qué falta para generar los APK
+## Evidencia de pruebas
 
-El workflow requiere configurar/verificar en GitHub las variables y secretos DEMO que consume, incluida la configuración Firebase de ambas aplicaciones, el proyecto de Admin Auth, la URL del Worker DEMO y la clave de firma esperada por el workflow.
+Última ejecución de pruebas Worker:  
+https://github.com/jmredmond262-cmyk/omni-advance-plataform-import/actions/runs/44531903675
 
-Después hay que ejecutar manualmente **Build OMNI DEMO APKs** desde GitHub Actions. Hasta que esa ejecución termine correctamente, no habrá APK ni artefactos para descargar.
+Resultado: 12 pruebas aprobadas, 0 fallidas. Se comprobaron, entre otros puntos, la separación del proyecto Firebase DEMO, el rechazo de producción desde DEMO, la validación de pedidos y la idempotencia.
 
-## Qué falta para habilitar el backend DEMO
+## Bloqueo de compilación Android
 
-El despliegue del Worker es un paso separado. Requiere credenciales de servicio Firebase DEMO y credenciales de Cloudflare. **No se desplegará ni se publicará nada sin autorización expresa.**
+El workflow Android requiere secretos/variables de GitHub para las configuraciones Firebase de las dos apps, el proyecto Admin Auth, la URL HTTPS del Worker DEMO y la identidad de firma persistente. No puedo leer desde esta integración si esos secretos ya están cargados ni puedo iniciar manualmente el workflow con las herramientas disponibles. Por eso no afirmo que haya APK ni compilación exitosa.
 
-## Seguimiento
+## Backend
 
-- Rama de trabajo: https://github.com/jmredmond262-cmyk/omni-advance-plataform-import/tree/feat/omni-demo-online-isolated-complete
-- Ejecuciones y resultados: https://github.com/jmredmond262-cmyk/omni-advance-plataform-import/actions
-- Workflow de compilación: `.github/workflows/build-omni-demo-apks.yml`
+El Worker DEMO no está desplegado. El despliegue requiere credencial de servicio Firebase DEMO y credenciales Cloudflare; no se realizará sin autorización expresa.
 
 ## Protección de producción
 
-No se ha hecho merge a `main`, no se ha desplegado el Worker, no se han publicado reglas de Firebase y no se han modificado secretos de producción.
+No se hizo merge a `main`, no se desplegó el Worker, no se publicaron reglas Firebase y no se modificaron secretos de producción.
