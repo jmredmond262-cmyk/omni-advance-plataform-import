@@ -1,6 +1,6 @@
 const DEFAULT_PRIMARY_PROJECT = "omni-57f69";
 const DEFAULT_ADMIN_AUTH_PROJECT = "omni-admin-52e3f";
-function firebaseProjectId(env) {
+export function firebaseProjectId(env) {
   const isDemo = String(env.OMNI_ENVIRONMENT || "").toUpperCase() === "DEMO";
   const configured = String(env.OMNI_FIREBASE_PROJECT_ID || "").trim();
   if (isDemo && (!configured || configured === DEFAULT_PRIMARY_PROJECT)) {
@@ -15,7 +15,7 @@ function adminAuthProjectId(env) {
   if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(id)) throw new Error("OMNI_ADMIN_AUTH_PROJECT_ID no es válido.");
   return id;
 }
-function firestoreRoot(env) {
+export function firestoreRoot(env) {
   return `https://firestore.googleapis.com/v1/projects/${firebaseProjectId(env)}/databases/(default)/documents`;
 }
 let serviceTokenCache = { token: "", expiresAt: 0 };
