@@ -16,7 +16,7 @@ Habilitar pruebas entre teléfonos externos con cuentas, comercios, pedidos, inv
 
 ## Preparación externa todavía necesaria
 
-1. Crear un proyecto Firebase independiente, por ejemplo `omni-demo-lab`, en plan Spark.
+1. Proyecto Firebase DEMO creado: `omni-demo-33675`. Falta habilitar Authentication y Firestore en ese proyecto.
 2. Habilitar Authentication con los proveedores que usa OMNI Principal y crear Firestore.
 3. Aplicar reglas específicas al entorno DEMO. Deben contemplar wallet, comercios, catálogo, pedidos, movimientos, historial y lectura Admin. No publicar reglas de producción a ciegas.
 4. Crear una cuenta de servicio restringida al proyecto DEMO.
