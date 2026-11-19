@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.omni.admin.BuildConfig
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,7 +51,7 @@ private val Mint = Color(0xFF00E5FF)
 private val Muted = Color(0xFF9EADC3)
 private val White = Color(0xFFF4F7FC)
 private val Danger = Color(0xFFFF8585)
-private const val ADMIN_API_URL = "https://omni-admin-api.jmredmond262.workers.dev"
+private val ADMIN_API_URL = BuildConfig.OMNI_ADMIN_API_URL
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
