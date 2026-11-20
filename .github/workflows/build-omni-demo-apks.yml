@@ -82,10 +82,10 @@ jobs:
           if web_client:
               values["default_web_client_id"] = web_client
           with open("admin/src/demo/res/values/firebase_config.xml", "w", encoding="utf-8") as f:
-              f.write("<resources>\\n")
+              f.write("<resources>\n")
               for key, value in values.items():
-                  f.write(f'  <string name="{key}" translatable="false">{xml.escape(value)}</string>\\n')
-              f.write("</resources>\\n")
+                  f.write(f'  <string name="{key}" translatable="false">{xml.escape(value)}</string>\n')
+              f.write("</resources>\n")
           PY
           echo "OMNI_DEMO_WORKER_BASE_URL=$DEMO_WORKER_URL" >> "$GITHUB_ENV"
 
