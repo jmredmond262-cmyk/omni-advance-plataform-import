@@ -45,7 +45,7 @@ jobs:
         env:
           PRINCIPAL_DEMO_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
           ADMIN_DEMO_JSON: ${{ secrets.OMNI_ADMIN_GOOGLE_SERVICES_JSON_BASE64 }}
-          DEMO_WORKER_URL: ${{ vars.OMNI_DEMO_WORKER_BASE_URL }}
+          DEMO_WORKER_URL: ${{ secrets.OMNI_DEMO_WORKER_BASE_URL }}
         run: |
           set -euo pipefail
           test -n "$PRINCIPAL_DEMO_JSON" || { echo "::error::Falta OMNI_DEMO_GOOGLE_SERVICES_JSON_BASE64"; exit 1; }
