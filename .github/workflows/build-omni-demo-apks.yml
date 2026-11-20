@@ -101,6 +101,17 @@ jobs:
           test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || { echo "::error::La firma persistente de OMNI no coincide."; exit 1; }
           echo "Firma persistente validada."
 
+      - name: Configure optional API keys for free DEMO mode
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          GEMINI_VALUE="${GEMINI_API_KEY:-NOT_CONFIGURED}"
+          MAPS_VALUE="${GOOGLE_MAPS_API_KEY:-NOT_CONFIGURED}"
+          printf 'GEMINI_API_KEY=%s\nGOOGLE_MAPS_API_KEY=%s\n' "$GEMINI_VALUE" "$MAPS_VALUE" > .env
+          echo "Claves opcionales configuradas; DEMO puede compilar sin servicios pagos."
+
       - name: Build Principal and Admin DEMO variants
         env:
           OMNI_VERSION_CODE: ${{ github.run_number }}
