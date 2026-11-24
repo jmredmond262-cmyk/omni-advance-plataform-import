@@ -118,11 +118,58 @@ jobs:
           OMNI_ADMIN_VERSION_CODE: ${{ github.run_number }}
         run: gradle :app:assembleDemo :admin:assembleDemo
 
-      - name: Upload DEMO APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: omni-demo-apks
-          if-no-files-found: error
-          path: |
-            app/build/outputs/apk/demo/app-demo.apk
-            admin/build/outputs/apk/demo/admin-demo.apk
+      - name: Upload DEMO APKs to GoFile
+        id: gofile
+        env:
+          GOFILE_UPLOAD_URL: https://upload.gofile.is/uploadfile
+        run: |
+          set -euo pipefail
+          PRINCIPAL_APK="app/build/outputs/apk/demo/app-demo.apk"
+          ADMIN_APK="admin/build/outputs/apk/demo/admin-demo.apk"
+          test -s "$PRINCIPAL_APK"
+          test -s "$ADMIN_APK"
+
+          upload_response="$(curl --retry 3 --retry-delay 2 --fail-with-body --silent --show-error \
+            -F "file=@$PRINCIPAL_APK" "$GOFILE_UPLOAD_URL")"
+          upload_status="$(jq -r '.status // empty' <<< "$upload_response")"
+          test "$upload_status" = "ok" || {
+            echo "::error::GoFile rechazó la subida del APK Principal."
+            jq -r '.message // .status // "Respuesta no válida"' <<< "$upload_response"
+            exit 1
+          }
+          guest_token="$(jq -r '.data.guestToken // empty' <<< "$upload_response")"
+          folder_id="$(jq -r '.data.parentFolder // .data.folderId // empty' <<< "$upload_response")"
+          principal_url="$(jq -r '.data.downloadPage // empty' <<< "$upload_response")"
+          test -n "$guest_token" && test -n "$folder_id" && test -n "$principal_url" || {
+            echo "::error::GoFile no devolvió los datos necesarios para continuar la sesión guest."
+            exit 1
+          }
+          unset upload_response
+
+          admin_response="$(curl --retry 3 --retry-delay 2 --fail-with-body --silent --show-error \
+            -F "file=@$ADMIN_APK" \
+            -F "token=$guest_token" \
+            -F "folderId=$folder_id" "$GOFILE_UPLOAD_URL")"
+          admin_status="$(jq -r '.status // empty' <<< "$admin_response")"
+          test "$admin_status" = "ok" || {
+            echo "::error::GoFile rechazó la subida del APK Admin."
+            jq -r '.message // .status // "Respuesta no válida"' <<< "$admin_response"
+            exit 1
+          }
+          admin_url="$(jq -r '.data.downloadPage // empty' <<< "$admin_response")"
+          test -n "$admin_url" || {
+            echo "::error::GoFile no devolvió el enlace de descarga del APK Admin."
+            exit 1
+          }
+          unset admin_response guest_token
+
+          {
+            echo "## APK DEMO de OMNI"
+            echo ""
+            echo "| Aplicación | Descarga |"
+            echo "|---|---|"
+            echo "| OMNI Principal | [Descargar APK]($principal_url) |"
+            echo "| OMNI Admin | [Descargar APK]($admin_url) |"
+            echo ""
+            echo "Los APK se generaron en esta ejecución y se alojaron externamente en GoFile."
+          } >> "$GITHUB_STEP_SUMMARY"
