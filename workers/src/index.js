@@ -1211,8 +1211,11 @@ export default {
       return json({ ok: true, result });
     } catch (error) {
       if (error instanceof ApiError) return json({ ok: false, error: error.code, message: error.message }, error.status);
-      console.error("OMNI Admin API error", error);
-      return json({ ok: false, error: "internal", message: "No se pudo completar la operación." }, 500);
+      const action = typeof body?.action === "string" ? body.action.slice(0, 80) : "unknown";
+      const incidentId = crypto.randomUUID();
+      console.error("OMNI Admin API error", { action, incidentId, error: error?.stack || String(error) });
+      return json({ ok: false, error: "internal", action, incidentId,
+        message: "Falló la acción administrativa '" + action + "'. Código de incidente: " + incidentId }, 500);
     }
   }
 };
