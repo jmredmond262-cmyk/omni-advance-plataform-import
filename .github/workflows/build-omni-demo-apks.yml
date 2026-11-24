@@ -199,7 +199,6 @@ jobs:
             echo "| OMNI Admin | [Descargar APK]($admin_url) |"
             echo ""
             echo "Los APK se generaron en esta ejecución y se alojaron externamente en GoFile."
-          }
+          } >> "$GITHUB_STEP_SUMMARY"
           echo "OMNI_PRINCIPAL_DEMO_APK_URL=$principal_url"
           echo "OMNI_ADMIN_DEMO_APK_URL=$admin_url"
-          } >> "$GITHUB_STEP_SUMMARY"
