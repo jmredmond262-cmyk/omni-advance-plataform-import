@@ -1270,13 +1270,18 @@ private object AdminApi {
       setRequestProperty("Accept", "application/json")
     }
     try {
+      if (ADMIN_API_URL.isBlank()) throw IllegalStateException("Admin DEMO no tiene configurada la URL del servidor.")
       val body = JSONObject().put("action", action).put("data", data).toString()
       connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
       val status = connection.responseCode
       val stream = if (status in 200..299) connection.inputStream else connection.errorStream
       val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
       val response = JSONObject(text.ifBlank { "{}" })
-      if (status !in 200..299 || !response.optBoolean("ok", false)) throw IllegalStateException(response.optString("message", "Error HTTP " + status))
+      if (status !in 200..299 || !response.optBoolean("ok", false)) {
+        val code = response.optString("error", "unknown")
+        val detail = response.optString("message", "El servidor no devolvió detalles.")
+        throw IllegalStateException("Falló la acción '$action' (HTTP $status, $code): $detail")
+      }
       response.optJSONObject("result") ?: JSONObject()
     } finally { connection.disconnect() }
   }
