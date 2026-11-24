@@ -2,6 +2,9 @@ name: Deploy isolated OMNI DEMO Worker
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/omni-demo-online-isolated-complete
 
 permissions:
   contents: read
