@@ -52,7 +52,11 @@ jobs:
           test -n "$ADMIN_DEMO_JSON" || { echo "::error::Falta OMNI_ADMIN_DEMO_GOOGLE_SERVICES_JSON_BASE64"; exit 1; }
           [[ "$DEMO_WORKER_URL" == https://* ]] || { echo "::error::OMNI_DEMO_WORKER_BASE_URL debe ser HTTPS"; exit 1; }
           mkdir -p app/src/demo admin/src/demo/res/values
-          printf '%s' "$PRINCIPAL_DEMO_JSON" | base64 --decode > app/src/demo/google-services.json
+          if [ -f "app/src/demo/google-services.json" ]; then
+            echo "Usando google-services.json actualizado del repositorio con SHA-1 OAuth."
+          else
+            printf '%s' "$PRINCIPAL_DEMO_JSON" | base64 --decode > app/src/demo/google-services.json
+          fi
           printf '%s' "$ADMIN_DEMO_JSON" | base64 --decode > admin/src/demo/google-services.json
           python3 - <<'PY'
           import json, os, sys, xml.sax.saxutils as xml
