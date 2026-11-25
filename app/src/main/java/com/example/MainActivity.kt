@@ -565,156 +565,186 @@ fun OmniApp(viewModel: MainViewModel) {
     Scaffold(
         topBar = {
             if (!isFullScreenSubpage) {
-                TopAppBar(
-                    title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(end = 4.dp)
-                        ) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(13.dp),
-                                modifier = Modifier.size(39.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = "O",
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 25.sp
+                Surface(
+                    color = Color(0xEB0A101D), // Fondo esmerilado vidrioso (Glassmorphism)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .drawBehind {
+                            // Fino borde inferior cian luminoso con difuminado
+                            val h = size.height
+                            val w = size.width
+                            drawLine(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        CyberGlowCyan.copy(alpha = 0.05f),
+                                        CyberGlowCyan.copy(alpha = 0.75f),
+                                        CyberGlowCyan.copy(alpha = 0.05f)
                                     )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(9.dp))
-
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        customCityInput = displayLocality
-                                        showLocationDialog = true
-                                    },
-                                verticalArrangement = Arrangement.Center
+                                ),
+                                start = Offset(0f, h),
+                                end = Offset(w, h),
+                                strokeWidth = 1.5.dp.toPx()
+                            )
+                        }
+                ) {
+                    TopAppBar(
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(end = 4.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "OMNI",
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 19.sp,
-                                        letterSpacing = 1.4.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
-                                        shape = RoundedCornerShape(5.dp)
-                                    ) {
+                                Surface(
+                                    color = Color(0xFF0D2538),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.2.dp, CyberGlowCyan.copy(alpha = 0.65f)),
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
                                         Text(
-                                            text = "BETA",
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                            text = "O",
+                                            color = CyberGlowCyan,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 24.sp
                                         )
                                     }
                                 }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    val firstName = userProfile.fullName.trim().split(" ").firstOrNull().orEmpty().ifBlank { "Hola" }
-                                    Text(
-                                        text = "Hola, $firstName",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            customCityInput = displayLocality
+                                            showLocationDialog = true
+                                        },
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "OMNI",
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 19.sp,
+                                            letterSpacing = 1.4.sp,
+                                            color = CyberGlowCyan
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = Color(0xFF1E2D4A),
+                                            shape = RoundedCornerShape(6.dp),
+                                            border = androidx.compose.foundation.BorderStroke(0.8.dp, CyberGlowCyan.copy(alpha = 0.4f))
+                                        ) {
+                                            Text(
+                                                text = "BETA",
+                                                color = Color.White,
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val firstName = userProfile.fullName.trim().split(" ").firstOrNull().orEmpty().ifBlank { "Juan" }
+                                        Text(
+                                            text = "Hola, $firstName",
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            maxLines = 1
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "📍 $displayLocality",
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFCBD5E1),
+                                            maxLines = 1
+                                        )
+                                        Spacer(modifier = Modifier.width(7.dp))
+                                        Text(
+                                            text = "$currentWeatherSymbol $currentTemp · ${liveWeather?.weatherDescription ?: "Nublado"}",
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = CyberGlowCyan,
+                                            maxLines = 1,
+                                            modifier = Modifier.clickable { viewModel.navigateTo(Screen.Weather) }
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        actions = {
+                            Box {
+                                IconButton(onClick = { overflowMenuExpanded = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Más Opciones",
+                                        tint = CyberGlowCyan
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "📍 $displayLocality",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
+                                }
+
+                                DropdownMenu(
+                                    expanded = overflowMenuExpanded,
+                                    onDismissRequest = { overflowMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("✨", fontSize = 16.sp)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("OMNI FLOW · Asistente y Resumen", fontWeight = FontWeight.Bold)
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.navigateTo(Screen.MorningBriefing)
+                                            overflowMenuExpanded = false
+                                        }
                                     )
-                                    Spacer(modifier = Modifier.width(7.dp))
-                                    Text(
-                                        text = "$currentWeatherSymbol $currentTemp · ${liveWeather?.weatherDescription ?: "Clima local"}",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.tertiary,
-                                        maxLines = 1,
-                                        modifier = Modifier.clickable { viewModel.navigateTo(Screen.Weather) }
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(if (isLiveMode) "📡 Modo: En Vivo (APIs Reales)" else "🧪 Modo: Simulación")
+                                        },
+                                        onClick = {
+                                            viewModel.toggleLiveRealTimeMode()
+                                            overflowMenuExpanded = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("🎨 Elegir apariencia · ${activeTheme.title}") },
+                                        onClick = {
+                                            showThemeDialog = true
+                                            overflowMenuExpanded = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("🏪 Portal de Comerciante") },
+                                        onClick = {
+                                            viewModel.navigateTo(Screen.MerchantHub)
+                                            overflowMenuExpanded = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("📷 Modo comercio · Escanear pedido QR") },
+                                        onClick = {
+                                            viewModel.navigateTo(Screen.MerchantOrders)
+                                            overflowMenuExpanded = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("↪ Cerrar sesión") },
+                                        onClick = {
+                                            FirebaseAuth.getInstance().signOut()
+                                            overflowMenuExpanded = false
+                                        }
                                     )
                                 }
                             }
-                        }
-                    },
-                    actions = {
-                        // Menú camuflado para Modo En Vivo / Simulación y Selección de Tema
-                        Box {
-                            IconButton(onClick = { overflowMenuExpanded = true }) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Más Opciones",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = overflowMenuExpanded,
-                                onDismissRequest = { overflowMenuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(if (isLiveMode) "📡 Modo: En Vivo (APIs Reales)" else "🧪 Modo: Simulación")
-                                    },
-                                    onClick = {
-                                        viewModel.toggleLiveRealTimeMode()
-                                        overflowMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("🎨 Elegir apariencia · ${activeTheme.title}") },
-                                    onClick = {
-                                        showThemeDialog = true
-                                        overflowMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("🌅 OMNI Buenos Días · Ver presentación") },
-                                    onClick = {
-                                        viewModel.navigateTo(Screen.MorningBriefing)
-                                        overflowMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("🏪 Portal de Comerciante") },
-                                    onClick = {
-                                        viewModel.navigateTo(Screen.MerchantHub)
-                                        overflowMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("📷 Modo comercio · Escanear pedido QR") },
-                                    onClick = {
-                                        viewModel.navigateTo(Screen.MerchantOrders)
-                                        overflowMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("↪ Cerrar sesión") },
-                                    onClick = {
-                                        FirebaseAuth.getInstance().signOut()
-                                        overflowMenuExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent
+                        )
                     )
-                )
+                }
             }
         },
         bottomBar = {
