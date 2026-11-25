@@ -762,41 +762,127 @@ fun CyberCategoryCard(item: HomeCategoryItem, modifier: Modifier = Modifier) {
     val pressed by interaction.collectIsPressedAsState()
     val transition = rememberInfiniteTransition(label = "category_neon")
     val pulse by transition.animateFloat(
-        initialValue = 0.48f, targetValue = 0.82f,
-        animationSpec = infiniteRepeatable(tween(2200), repeatMode = RepeatMode.Reverse),
+        initialValue = 0.55f, targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(tween(2000), repeatMode = RepeatMode.Reverse),
         label = "category_glow"
     )
-    val glow = if (pressed) 1f else pulse
-    val shape = RoundedCornerShape(14.dp)
+    val glow = if (pressed) 1.15f else pulse
+    val shape = RoundedCornerShape(16.dp)
     Box(
-        modifier = modifier.height(90.dp).clip(shape)
-            .background(Brush.radialGradient(listOf(item.accentColor.copy(alpha = 0.16f), Color(0xFF101B30), Color(0xFF080F1D))))
+        modifier = modifier
+            .height(96.dp)
+            .clip(shape)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        item.accentColor.copy(alpha = 0.22f * glow),
+                        Color(0xFF0F1829),
+                        Color(0xFF060B14)
+                    )
+                )
+            )
             .drawBehind {
-                val radius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())
-                drawRoundRect(item.accentColor.copy(alpha = 0.10f + glow * 0.10f), style = Stroke(9.dp.toPx()), cornerRadius = radius)
-                drawRoundRect(item.accentColor.copy(alpha = 0.42f + glow * 0.38f), style = Stroke(1.35.dp.toPx()), cornerRadius = radius)
-                drawRoundRect(Color.White.copy(alpha = 0.10f + glow * 0.08f), topLeft = Offset(2.dp.toPx(), 2.dp.toPx()),
+                val radius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx())
+                // Halo exterior difuminado neón
+                drawRoundRect(
+                    item.accentColor.copy(alpha = 0.15f + glow * 0.12f),
+                    style = Stroke(8.dp.toPx()),
+                    cornerRadius = radius
+                )
+                // Contorno fino brillante
+                drawRoundRect(
+                    item.accentColor.copy(alpha = 0.50f + glow * 0.45f),
+                    style = Stroke(1.4.dp.toPx()),
+                    cornerRadius = radius
+                )
+                // Reflejo interior vidrioso
+                drawRoundRect(
+                    Color.White.copy(alpha = 0.12f + glow * 0.08f),
+                    topLeft = Offset(2.dp.toPx(), 2.dp.toPx()),
                     size = androidx.compose.ui.geometry.Size(size.width - 4.dp.toPx(), size.height - 4.dp.toPx()),
-                    style = Stroke(0.65.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()))
-                drawRoundRect(brush = Brush.horizontalGradient(listOf(Color.Transparent, item.accentColor.copy(alpha = 0.62f * glow), Color.Transparent)),
-                    topLeft = Offset(size.width * 0.24f, 1.dp.toPx()), size = androidx.compose.ui.geometry.Size(size.width * 0.52f, 1.2.dp.toPx()),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
+                    style = Stroke(0.7.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())
+                )
+                // Acento luminoso superior
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            item.accentColor.copy(alpha = 0.85f * glow),
+                            Color.Transparent
+                        )
+                    ),
+                    topLeft = Offset(size.width * 0.20f, 1.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(size.width * 0.60f, 1.5.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
+                )
             }
             .clickable(interactionSource = interaction, indication = null) { item.onClick() }
             .testTag("home_category_${item.id}"),
         contentAlignment = Alignment.Center
     ) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
-            Box(Modifier.size(25.dp).drawBehind {
-                drawCircle(item.accentColor.copy(alpha = 0.18f + glow * 0.20f), radius = size.minDimension * 0.48f)
-                drawCircle(item.accentColor.copy(alpha = 0.10f + glow * 0.12f), radius = size.minDimension * 0.62f)
-            }, contentAlignment = Alignment.Center) {
-                Icon(item.icon, contentDescription = item.title, tint = item.accentColor, modifier = Modifier.size(20.dp))
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 7.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Contenedor de icono estilizado con halo de neón
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(item.accentColor.copy(alpha = 0.12f))
+                    .drawBehind {
+                        drawCircle(
+                            item.accentColor.copy(alpha = 0.25f + glow * 0.25f),
+                            radius = size.minDimension * 0.52f
+                        )
+                        drawCircle(
+                            item.accentColor.copy(alpha = 0.12f + glow * 0.15f),
+                            radius = size.minDimension * 0.70f
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    item.icon,
+                    contentDescription = item.title,
+                    tint = item.accentColor,
+                    modifier = Modifier.size(19.dp)
+                )
             }
-            Text(item.title, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
-            Text(item.subtitle, fontSize = 8.sp, lineHeight = 10.sp, color = Color(0xFF9AAAC2), maxLines = 2,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 2.dp))
-            Box(Modifier.width(18.dp).height(2.dp).clip(RoundedCornerShape(2.dp)).background(Brush.horizontalGradient(listOf(item.accentColor.copy(alpha = 0.55f), item.accentColor))))
+            Text(
+                item.title,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 1
+            )
+            Text(
+                item.subtitle,
+                fontSize = 8.sp,
+                lineHeight = 10.sp,
+                color = Color(0xFFCBD5E1),
+                maxLines = 2,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 2.dp)
+            )
+            // Barra de acento inferior neón
+            Box(
+                Modifier
+                    .width(22.dp)
+                    .height(2.2.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                item.accentColor.copy(alpha = 0.3f),
+                                item.accentColor,
+                                item.accentColor.copy(alpha = 0.3f)
+                            )
+                        )
+                    )
+            )
         }
     }
 }
