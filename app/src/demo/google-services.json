@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "680113939256",
+    "project_id": "omni-demo-33675",
+    "storage_bucket": "omni-demo-33675.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:680113939256:android:b3544abc9213b75ee197cd",
+        "android_client_info": {
+          "package_name": "com.aistudio.omnihub.qtzmvd.demo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "680113939256-s6qbokvr3f9p2e642qq7qgobc46731op.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.omnihub.qtzmvd.demo",
+            "certificate_hash": "cefb0dc31e6386c4f2e6a73ff19ce39ea02d5dc1"
+          }
+        },
+        {
+          "client_id": "680113939256-37vsdhollbncvidc9g9gnlipcij7ohld.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCYwXJsFpYzzkijeiSkBhwI6NRdjvbctl8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "680113939256-37vsdhollbncvidc9g9gnlipcij7ohld.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
