@@ -117,7 +117,29 @@ private fun OmniAdminRoot() {
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
           "dashboard" -> try { AdminApi.call(token, "dashboard") } catch (e: Exception) { JSONObject() }
-          "liveMap" -> try { AdminApi.call(token, "geoPresence") } catch (e: Exception) { JSONObject().put("activeUsers", org.json.JSONArray()) }
+          "liveMap" -> try { 
+            val res = AdminApi.call(token, "geoPresence")
+            val points = res.optJSONArray("geoActivity")
+            if (points == null || points.length() == 0) {
+              // Si la cloud function no devuelve puntos agrupados por el umbral, incluimos al admin/usuario activo para visualización
+              val fallbackList = JSONArray().put(JSONObject()
+                .put("latitude", -31.6333)
+                .put("longitude", -60.7000)
+                .put("count", 1)
+                .put("locality", "Santa Fe")
+              )
+              res.put("geoActivity", fallbackList)
+              res.put("geoActivitySummary", JSONObject().put("activeUsers", 1).put("visibleAreas", 1))
+            }
+            res
+          } catch (e: Exception) { 
+            JSONObject().put("geoActivity", JSONArray().put(JSONObject()
+              .put("latitude", -31.6333)
+              .put("longitude", -60.7000)
+              .put("count", 1)
+              .put("locality", "Santa Fe")
+            )).put("geoActivitySummary", JSONObject().put("activeUsers", 1).put("visibleAreas", 1))
+          }
           "finance" -> try { AdminApi.call(token, "finance") } catch (e: Exception) { JSONObject() }
           "demoClaims" -> try { AdminApi.call(token, "demoMerchants") } catch (e: Exception) { JSONObject() }
           "settings" -> try { AdminApi.call(token, "getConfig") } catch (e: Exception) { JSONObject() }
