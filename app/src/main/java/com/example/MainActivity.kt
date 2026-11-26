@@ -632,20 +632,33 @@ fun OmniApp(viewModel: MainViewModel) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(end = 4.dp)
                             ) {
-                                Surface(
-                                    color = Color(0xFF0D2538),
-                                    shape = RoundedCornerShape(12.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.2.dp, CyberGlowCyan.copy(alpha = 0.65f)),
-                                    modifier = Modifier.size(38.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = "O",
-                                            color = CyberGlowCyan,
-                                            fontWeight = FontWeight.Black,
-                                            fontSize = 24.sp
-                                        )
+                                // Avatar del usuario con indicador de estado Online neón
+                                Box(modifier = Modifier.size(40.dp)) {
+                                    Surface(
+                                        color = Color(0xFF0F1E36),
+                                        shape = CircleShape,
+                                        border = androidx.compose.foundation.BorderStroke(1.4.dp, CyberGlowCyan),
+                                        modifier = Modifier.fillMaxSize().clickable { viewModel.navigateTo(Screen.UserProfile) }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            val initial = userProfile.fullName.trim().firstOrNull()?.uppercase() ?: "J"
+                                            Text(
+                                                text = initial,
+                                                color = CyberGlowCyan,
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 18.sp
+                                            )
+                                        }
                                     }
+                                    // Punto verde Neón de estado Online
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color(0xFF00E676),
+                                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF070B14)),
+                                        modifier = Modifier
+                                            .size(11.dp)
+                                            .align(Alignment.BottomEnd)
+                                    ) {}
                                 }
 
                                 Spacer(modifier = Modifier.width(10.dp))
@@ -659,13 +672,13 @@ fun OmniApp(viewModel: MainViewModel) {
                                         },
                                     verticalArrangement = Arrangement.Center
                                 ) {
+                                    val firstName = userProfile.fullName.trim().split(" ").firstOrNull().orEmpty().ifBlank { "Juan" }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = "OMNI",
+                                            text = "Hola, $firstName",
                                             fontWeight = FontWeight.Black,
-                                            fontSize = 19.sp,
-                                            letterSpacing = 1.4.sp,
-                                            color = CyberGlowCyan
+                                            fontSize = 16.sp,
+                                            color = Color.White
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Surface(
@@ -674,8 +687,8 @@ fun OmniApp(viewModel: MainViewModel) {
                                             border = androidx.compose.foundation.BorderStroke(0.8.dp, CyberGlowCyan.copy(alpha = 0.4f))
                                         ) {
                                             Text(
-                                                text = "BETA",
-                                                color = Color.White,
+                                                text = "OMNI",
+                                                color = CyberGlowCyan,
                                                 fontSize = 8.5.sp,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -683,25 +696,16 @@ fun OmniApp(viewModel: MainViewModel) {
                                         }
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        val firstName = userProfile.fullName.trim().split(" ").firstOrNull().orEmpty().ifBlank { "Juan" }
-                                        Text(
-                                            text = "Hola, $firstName",
-                                            fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            maxLines = 1
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             text = "📍 $displayLocality",
                                             fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFFCBD5E1),
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF94A3B8),
                                             maxLines = 1
                                         )
                                         Spacer(modifier = Modifier.width(7.dp))
                                         Text(
-                                            text = "$currentWeatherSymbol $currentTemp · ${liveWeather?.weatherDescription ?: "Nublado"}",
+                                            text = "$currentWeatherSymbol $currentTemp · ${liveWeather?.weatherDescription ?: "Despejado"}",
                                             fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = CyberGlowCyan,
