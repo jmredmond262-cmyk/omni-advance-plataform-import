@@ -45,7 +45,11 @@ import com.google.firebase.auth.PhoneAuthProvider
 import kotlinx.coroutines.launch
 
 @Composable
-fun AuthScreen(activity: Activity, repository: AuthRepository = remember { AuthRepository() }) {
+fun AuthScreen(
+    activity: Activity,
+    repository: AuthRepository = remember { AuthRepository() },
+    onEmergencyBypass: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var method by remember { mutableStateOf("email") }
@@ -186,6 +190,34 @@ fun AuthScreen(activity: Activity, repository: AuthRepository = remember { AuthR
                     enabled = !loading,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Continuar con Google") }
+
+                // ACCESO RÁPIDO PARA DESARROLLO Y PRUEBAS EN VIVO
+                Button(
+                    onClick = {
+                        loading = true
+                        message = "Iniciando sesión demo..."
+                        repository.signInEmail("juan@omni.app", "omni2026", { res ->
+                            if (res.isSuccess) {
+                                finish(res)
+                            } else {
+                                repository.registerEmail("Juan Redmond", "juan@omni.app", "omni2026", ::finish)
+                            }
+                        })
+                    },
+                    enabled = !loading,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("⚡ Ingreso Rápido a OMNI (1 Clic)", fontWeight = FontWeight.Bold)
+                }
+
+                // LLAVE MAESTRA DE EMERGENCIA (Bypass total para ver el diseño y probar la app)
+                TextButton(
+                    onClick = { onEmergencyBypass() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("🔑 Llave de Emergencia · Entrar sin login", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
+                }
 
                 if (loading) CircularProgressIndicator()
                 if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
