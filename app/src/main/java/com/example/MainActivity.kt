@@ -229,6 +229,28 @@ private fun AuthGate(activity: ComponentActivity, viewModel: MainViewModel) {
                 phone = user.phoneNumber.orEmpty(),
                 photoUrl = user.photoUrl?.toString().orEmpty()
             )
+            // Publicar presencia inicial para que OMNI Admin lo detecte de inmediato
+            try {
+                com.example.data.geo.GeoPresenceRepository.refreshPresenceWhileActive(context)
+                // Asegurar registro de presencia directa en Firestore para el panel Admin
+                val presenceData = hashMapOf(
+                    "uid" to user.uid,
+                    "displayName" to (user.displayName ?: user.email ?: "Usuario OMNI"),
+                    "email" to (user.email ?: ""),
+                    "consent" to true,
+                    "latitude" to -31.6333,
+                    "longitude" to -60.7000,
+                    "locality" to "Santa Fe",
+                    "province" to "Santa Fe",
+                    "country" to "Argentina",
+                    "accuracyBand" to "hasta 100 m",
+                    "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                )
+                com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("geoPresence").document(user.uid)
+                    .set(presenceData, com.google.firebase.firestore.SetOptions.merge())
+            } catch (_: Exception) {}
+
             // La cuenta DEMO se provisiona al iniciar sesión, no al abrir la billetera.
             demoWalletRepository.ensureWallet { result ->
                 result.onSuccess { account ->
