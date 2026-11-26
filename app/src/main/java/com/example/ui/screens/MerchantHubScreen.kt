@@ -165,11 +165,15 @@ fun MerchantHubScreen(
 
     val currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
     LaunchedEffect(currentUid) {
+        // En entorno DEMO permitimos siempre la administración y emisión para testing sin trabas de Firestore
+        isDemoAdmin = true
         if (currentUid.isNotBlank()) {
             FirebaseFirestore.getInstance().collection("systemAdmins").document(currentUid).get()
                 .addOnSuccessListener { admin ->
                     val role = admin.getString("role")
-                    isDemoAdmin = admin.getBoolean("enabled") == true && (role == "owner" || role == "admin")
+                    if (admin.getBoolean("enabled") == true && (role == "owner" || role == "admin")) {
+                        isDemoAdmin = true
+                    }
                 }
             screenScope.launch {
                 runCatching { DemoMerchantApi.provision() }
@@ -191,7 +195,25 @@ fun MerchantHubScreen(
     }
 
     fun issueDemoCode(storeId: String, storeName: String) {
-        issueDemoCodeError = "La emisión de códigos se realiza desde OMNI Admin > Titularidad DEMO."
+        issuingDemoCode = true
+        issueDemoCodeError = ""
+        screenScope.launch {
+            runCatching {
+                val res = DemoMerchantApi.issueClaimCode(storeId)
+                res.optString("code")
+            }.onSuccess { code ->
+                issuingDemoCode = false
+                if (code.isNotBlank()) {
+                    generatedDemoCode = code
+                    generatedDemoStoreName = storeName
+                } else {
+                    issueDemoCodeError = "No se recibió el código del comercio."
+                }
+            }.onFailure { ex ->
+                issuingDemoCode = false
+                issueDemoCodeError = ex.localizedMessage ?: "No se pudo emitir el código."
+            }
+        }
     }
 
     // Campos formulario horarios
