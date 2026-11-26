@@ -33,6 +33,7 @@ android {
       initWith(getByName("debug"))
       applicationIdSuffix = ".demo"
       versionNameSuffix = "-demo"
+      signingConfig = signingConfigs.getByName("debugConfig")
       val demoApiUrl = System.getenv("OMNI_DEMO_WORKER_BASE_URL") ?: ""
       buildConfigField("String", "OMNI_ADMIN_API_URL", "\"${demoApiUrl}\"")
     }
