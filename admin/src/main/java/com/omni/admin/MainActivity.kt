@@ -116,12 +116,12 @@ private fun OmniAdminRoot() {
         val tab = tabs.first { it.id == selected }
         nextPageToken = ""; nextOffset = 0; hasMore = false
         payload = when (selected) {
-          "dashboard" -> AdminApi.call(token, "dashboard")
-          "liveMap" -> AdminApi.call(token, "geoPresence")
-          "finance" -> AdminApi.call(token, "finance")
-          "demoClaims" -> AdminApi.call(token, "demoMerchants")
-          "settings" -> AdminApi.call(token, "getConfig")
-          else -> AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100))
+          "dashboard" -> try { AdminApi.call(token, "dashboard") } catch (e: Exception) { JSONObject() }
+          "liveMap" -> try { AdminApi.call(token, "geoPresence") } catch (e: Exception) { JSONObject().put("activeUsers", org.json.JSONArray()) }
+          "finance" -> try { AdminApi.call(token, "finance") } catch (e: Exception) { JSONObject() }
+          "demoClaims" -> try { AdminApi.call(token, "demoMerchants") } catch (e: Exception) { JSONObject() }
+          "settings" -> try { AdminApi.call(token, "getConfig") } catch (e: Exception) { JSONObject() }
+          else -> try { AdminApi.call(token, "list", JSONObject().put("collection", tab.collection).put("limit", 100)) } catch (e: Exception) { JSONObject() }
         }
         nextPageToken = payload.optString("nextPageToken", "")
         nextOffset = payload.optInt("nextOffset", 0)
