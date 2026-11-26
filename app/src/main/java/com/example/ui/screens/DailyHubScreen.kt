@@ -107,7 +107,17 @@ import com.example.ui.theme.CyberGlowGreen
 import com.example.ui.theme.CyberGlowPink
 import com.example.ui.theme.CyberGlowPurple
 import com.example.ui.theme.CyberGlowRose
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import com.example.ui.theme.CyberGlowTeal
+import com.example.ui.theme.CyberGlowCyan
+import com.example.ui.theme.CyberGlowPurple
+import com.example.ui.theme.CyberGlowAmber
+import com.example.ui.theme.CyberGlowPink
+import com.example.ui.theme.CyberGlowGold
 import com.example.ui.theme.CyberOrbGradient
 
 data class HomeCategoryItem(
@@ -139,6 +149,8 @@ fun DailyHubScreen(
     val stores by viewModel.stores.collectAsState()
     val weather by viewModel.liveWeatherData.collectAsState()
     val touristAttractions by viewModel.touristAttractions.collectAsState()
+    val wallet by viewModel.wallet.collectAsState()
+    var isBalanceVisible by remember { mutableStateOf(true) }
 
     var showTrackingDetails by remember { mutableStateOf(false) }
     var showRedeemDialog by remember { mutableStateOf(false) }
@@ -225,32 +237,188 @@ fun DailyHubScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF070A14))
+            .background(Color(0xFF070B14))
             .testTag("daily_hub_screen"),
         // El padding inferior de 100.dp previene que la barra dock o la barra del sistema tape contenido
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 100.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Acceso directo al pronóstico extendido desde Inicio.
+        // ==========================================
+        // 1. TARJETA GLASSMORPHISM OMNI PAY (BILLETERA)
+        // ==========================================
         item {
             Card(
-                shape = RoundedCornerShape(15.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0E1B2E)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, CyberGlowCyan.copy(alpha = 0.42f)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0E1726).copy(alpha = 0.85f)),
+                border = androidx.compose.foundation.BorderStroke(1.2.dp, CyberGlowCyan.copy(alpha = 0.45f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("home_omni_pay_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    // Header de la tarjeta
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = CircleShape,
+                                color = CyberGlowCyan.copy(alpha = 0.15f),
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccountBalanceWallet,
+                                        contentDescription = null,
+                                        tint = CyberGlowCyan,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "OMNI PAY",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        }
+
+                        // Badge de CashBack / Estado
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF00E676).copy(alpha = 0.15f),
+                            border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF00E676).copy(alpha = 0.4f))
+                        ) {
+                            Text(
+                                text = "CASHBACK ACTIVO",
+                                color = Color(0xFF00E676),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Saldo disponible
+                    Text(
+                        text = "Saldo disponible",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (isBalanceVisible) "OM$ ${String.format("%,.2f", wallet.balance)}" else "OM$ ••••••••",
+                            color = Color.White,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.5.sp
+                        )
+                        IconButton(
+                            onClick = { isBalanceVisible = !isBalanceVisible },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = "Toggle saldo",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Botones de acción rápida: Transferir, Pagar QR, Cargar
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // 1. Transferir
+                        Button(
+                            onClick = { viewModel.navigateTo(Screen.Wallet) },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Send, contentDescription = null, tint = CyberGlowCyan, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Transferir", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
+                        // 2. Pagar QR
+                        Button(
+                            onClick = { viewModel.navigateTo(Screen.Wallet) },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberGlowCyan.copy(alpha = 0.22f)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CyberGlowCyan.copy(alpha = 0.6f)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = CyberGlowCyan, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Pagar QR", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // 3. Cargar
+                        Button(
+                            onClick = { viewModel.navigateTo(Screen.Wallet) },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF38D6A6), modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text("Cargar", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Acceso al pronóstico extendido
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1321)),
+                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF1E2D4A)),
                 modifier = Modifier.fillMaxWidth().clickable { viewModel.navigateTo(Screen.Weather) }
                     .testTag("home_weather_forecast_entry")
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("🌤️", fontSize = 25.sp)
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Clima y pronóstico extendido", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("🌤️", fontSize = 22.sp)
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Text("Clima y pronóstico extendido", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text(
                             text = "Pronóstico por hora, próximos 7 días y alertas de tu zona",
-                            color = Color(0xFF9AAAC2), fontSize = 10.sp, maxLines = 1
+                            color = Color(0xFF94A3B8), fontSize = 10.sp, maxLines = 1
                         )
                     }
                     Text("VER ›", color = CyberGlowCyan, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
@@ -699,47 +867,92 @@ fun DailyHubScreen(
             ) {
                 items(stores.take(8), key = { it.id }) { store ->
                     Card(
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1829)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2D4A)),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1627)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CyberGlowCyan.copy(alpha = 0.25f)),
                         modifier = Modifier
-                            .width(185.dp)
+                            .width(200.dp)
                             .clickable {
                                 viewModel.selectStore(store)
                                 viewModel.navigateTo(Screen.StoreDetail)
                             }
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            // Badge superior de estado y rating
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = if (store.isEffectivelyOpen) "Abierto 🟢" else "Cerrado 🔴",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (store.isEffectivelyOpen) Color(0xFF00E676) else Color(0xFFEF4444)
-                                )
-                                Text(
-                                    text = "⭐ ${store.rating}",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = CyberGlowGold
-                                )
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (store.isEffectivelyOpen) Color(0xFF00E676).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f),
+                                    border = androidx.compose.foundation.BorderStroke(0.6.dp, if (store.isEffectivelyOpen) Color(0xFF00E676).copy(alpha = 0.4f) else Color(0xFFEF4444).copy(alpha = 0.4f))
+                                ) {
+                                    Text(
+                                        text = if (store.isEffectivelyOpen) "ABIERTO" else "CERRADO",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (store.isEffectivelyOpen) Color(0xFF00E676) else Color(0xFFEF4444),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = CyberGlowGold.copy(alpha = 0.15f)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(text = "★", color = CyberGlowGold, fontSize = 9.sp)
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "${store.rating}",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
                             }
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
                             Text(
                                 text = store.name,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 maxLines = 1
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = store.address,
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 color = Color(0xFF94A3B8),
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "⚡ 15-30 min",
+                                    fontSize = 10.sp,
+                                    color = CyberGlowCyan,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Ver menú ›",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF94A3B8),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
                                 maxLines = 1
                             )
                         }
