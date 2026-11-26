@@ -231,7 +231,7 @@ private fun AuthGate(activity: ComponentActivity, viewModel: MainViewModel) {
             )
             // Publicar presencia inicial para que OMNI Admin lo detecte de inmediato
             try {
-                com.example.data.geo.GeoPresenceRepository.refreshPresenceWhileActive(context)
+                com.example.data.geo.GeoPresenceRepository.refreshPresenceWhileActive(activity)
                 // Asegurar registro de presencia directa en Firestore para el panel Admin
                 val presenceData = hashMapOf(
                     "uid" to user.uid,
