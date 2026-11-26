@@ -59,6 +59,9 @@ object DemoMerchantApi {
     suspend fun claim(code: String): JSONObject =
         post("claim", JSONObject().put("code", code.trim().uppercase()))
 
+    suspend fun issueClaimCode(storeId: String): JSONObject =
+        post("issueClaimCode", JSONObject().put("storeId", storeId))
+
     suspend fun saveCatalog(payload: JSONObject): JSONObject = post("saveCatalog", payload)
 
     suspend fun createOrder(payload: JSONObject): JSONObject = post("createOrder", payload)
