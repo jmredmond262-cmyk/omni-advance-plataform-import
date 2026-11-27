@@ -953,16 +953,9 @@ fun DailyHubScreen(
                         }
                     }
                 }
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
             }
         }
     }
-
-
 }
 
 /**
