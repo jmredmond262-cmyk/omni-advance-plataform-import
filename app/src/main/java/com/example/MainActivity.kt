@@ -863,15 +863,24 @@ fun CyberBottomDock(
             .navigationBarsPadding()
             .padding(horizontal = 14.dp, vertical = 6.dp)
     ) {
-        // Contenedor principal de la barra tipo Dock Neón
+        // Dock flotante esmerilado translúcido estilo Glassmorphism
         Surface(
-            shape = RoundedCornerShape(26.dp),
-            color = Color(0xFF0D1627),
-            border = androidx.compose.foundation.BorderStroke(1.4.dp, CyberGlowCyan.copy(alpha = 0.72f)),
-            shadowElevation = 14.dp,
+            shape = RoundedCornerShape(28.dp),
+            color = Color(0xCC0A1120), // 80% opacidad para transparencia real
+            border = androidx.compose.foundation.BorderStroke(
+                width = 1.2.dp,
+                brush = Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.28f), // Borde superior con brillo de vidrio
+                        Color(0xFF00E5FF).copy(alpha = 0.35f),
+                        Color(0xFF0F1E36).copy(alpha = 0.15f)
+                    )
+                )
+            ),
+            shadowElevation = 18.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(68.dp)
+                .height(72.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -880,77 +889,92 @@ fun CyberBottomDock(
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 1. Inicio
+                // 1. Flow / Inicio
                 CyberDockItem(
                     icon = Icons.Default.Home,
-                    label = "Inicio",
+                    label = "Flow",
                     selected = currentScreen is Screen.DailyHub,
                     onClick = { onNavigate(Screen.DailyHub) },
                     modifier = Modifier.weight(1f),
                     testTag = "nav_daily_hub"
                 )
 
-                // 2. Contactos: segundo acceso del bloque izquierdo
+                // 2. CONEX: Empleo y Servicios
                 CyberDockItem(
-                    icon = Icons.Default.People,
-                    label = "Contactos",
-                    selected = currentScreen is Screen.Contacts,
-                    onClick = { onNavigate(Screen.Contacts) },
+                    icon = Icons.Default.Work,
+                    label = "CONEX",
+                    selected = currentScreen is Screen.JobBoard,
+                    onClick = { onNavigate(Screen.JobBoard) },
                     modifier = Modifier.weight(1f),
-                    testTag = "nav_contacts"
+                    testTag = "nav_conex"
                 )
 
-                // Orbe central: acceso único a Omni AI (evita duplicar Chat + Orbe)
+                // Espacio para el Orbe Central AI
                 Spacer(modifier = Modifier.weight(1.3f))
 
-                // 3. Billetera (OmniPay)
+                // 3. Momentos (Vaquitas, Eventos y Vouchers)
+                CyberDockItem(
+                    icon = Icons.Default.Celebration,
+                    label = "Momentos",
+                    selected = currentScreen is Screen.Moments || currentScreen is Screen.Events,
+                    onClick = { onNavigate(Screen.Moments) },
+                    modifier = Modifier.weight(1f),
+                    testTag = "nav_moments"
+                )
+
+                // 4. Billetera OMNI Pay
                 CyberDockItem(
                     icon = Icons.Default.AccountBalanceWallet,
-                    label = "Billetera",
+                    label = "OMNI Pay",
                     selected = currentScreen is Screen.Wallet,
                     onClick = { onNavigate(Screen.Wallet) },
                     modifier = Modifier.weight(1f),
                     testTag = "nav_wallet"
                 )
-
-                // 4. Perfil (Perfil / Omni Business)
-                CyberDockItem(
-                    icon = Icons.Default.Person,
-                    label = "Perfil",
-                    selected = currentScreen is Screen.UserProfile || currentScreen is Screen.MerchantHub,
-                    onClick = { onNavigate(Screen.UserProfile) },
-                    modifier = Modifier.weight(1f),
-                    testTag = "nav_profile"
-                )
             }
         }
 
-        // Orbe 3D Central Luminoso "Ai" (Réplica exacta de la captura de pantalla)
+        // Orbe Central 3D Pulsante "OMNI AI" con aura luminosa
+        val transition = rememberInfiniteTransition(label = "orb_pulse")
+        val orbGlow by transition.animateFloat(
+            initialValue = 0.65f, targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(tween(1800), repeatMode = RepeatMode.Reverse),
+            label = "orb_glow"
+        )
+
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = (-14).dp)
-                .size(62.dp)
+                .offset(y = (-16).dp)
+                .size(66.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF080E1C))
-                .border(2.dp, CyberGlowCyan.copy(alpha = 0.95f), CircleShape)
+                .background(Color(0xFF060B14))
+                .border(2.dp, Brush.sweepGradient(listOf(Color(0xFF00E5FF), Color(0xFF7C3AED), Color(0xFF00E5FF))), CircleShape)
                 .clickable { onNavigate(Screen.OmniAi) }
                 .testTag("nav_central_ai_orb"),
             contentAlignment = Alignment.Center
         ) {
-            // Esfera interna con gradiente radial ámbar / naranja y resplandor
+            // Esfera con efecto Glassmorphic y brillo interno
             Box(
                 modifier = Modifier
-                    .size(50.dp)
+                    .size(52.dp)
                     .clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(Color(0xFF6AF0FF), Color(0xFF087BFF), Color(0xFF082A78)))),
+                    .background(
+                        Brush.radialGradient(
+                            listOf(
+                                Color(0xFF00F0FF).copy(alpha = orbGlow),
+                                Color(0xFF2563EB),
+                                Color(0xFF1E1B4B)
+                            )
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "Ai",
                     color = Color.White,
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.Black,
+                    fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 0.5.sp
                 )
             }
@@ -975,18 +999,26 @@ fun CyberDockItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = if (selected) CyberGlowCyan else Color(0xFF8298B8),
-            modifier = Modifier.size(22.dp)
-        )
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (selected) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (selected) Color(0xFF00E5FF) else Color(0xFF64748B),
+                modifier = Modifier.size(23.dp)
+            )
+        }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = label,
             fontSize = 10.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            color = if (selected) CyberGlowCyan else Color(0xFF8298B8)
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) Color(0xFF00E5FF) else Color(0xFF64748B)
         )
     }
 }

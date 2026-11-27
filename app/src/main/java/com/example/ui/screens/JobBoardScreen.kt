@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -347,11 +349,27 @@ fun JobBoardScreen(onBack: () -> Unit) {
             }
         }
         Spacer(Modifier.height(10.dp))
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(selected = selectedTab == 0, onClick = { selectedTab = 0 }, shape = SegmentedButtonDefaults.itemShape(0, 4)) { Text("Buscar") }
-            SegmentedButton(selected = selectedTab == 1, onClick = { selectedTab = 1 }, shape = SegmentedButtonDefaults.itemShape(1, 4)) { Text("Publicar") }
-            SegmentedButton(selected = selectedTab == 2, onClick = { selectedTab = 2 }, shape = SegmentedButtonDefaults.itemShape(2, 4)) { Text("Postulaciones") }
-            SegmentedButton(selected = selectedTab == 3, onClick = { selectedTab = 3 }, shape = SegmentedButtonDefaults.itemShape(3, 4)) { Text("Mi perfil") }
+        // Solapas de navegación fluidas con distribución equilibrada
+        ScrollableTabRow(
+            selectedTabIndex = selectedTab,
+            edgePadding = 0.dp,
+            containerColor = Color(0xFF0C1322),
+            contentColor = Color(0xFF00E5FF),
+            indicator = { tabPositions ->
+                if (selectedTab < tabPositions.size) {
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                        color = Color(0xFF00E5FF)
+                    )
+                }
+            },
+            divider = { HorizontalDivider(color = Color(0xFF1E293B)) },
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+        ) {
+            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Buscar", fontSize = 12.sp, fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium) })
+            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Publicar", fontSize = 12.sp, fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium) })
+            Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Postulaciones", fontSize = 12.sp, fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Medium) })
+            Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text("Mi perfil", fontSize = 12.sp, fontWeight = if (selectedTab == 3) FontWeight.Bold else FontWeight.Medium) })
         }
         if (selectedTab == 0) {
             Spacer(Modifier.height(10.dp))

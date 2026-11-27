@@ -500,11 +500,12 @@ fun MerchantHubScreen(
                 }
             }
         }
-        if (merchantProfileLoading || merchantProfileMessage != null) {
+        if (merchantProfileLoading || (merchantProfileMessage != null && !merchantProfileMessage.orEmpty().contains("no está habilitado como DEMO", ignoreCase = true))) {
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF101B30)),
                     shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (merchantProfileLoading) Color(0xFF00E5FF).copy(alpha = 0.3f) else Color(0xFFFFB4A8).copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(

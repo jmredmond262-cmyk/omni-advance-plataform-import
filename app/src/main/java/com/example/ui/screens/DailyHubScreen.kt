@@ -966,128 +966,72 @@ fun DailyHubScreen(
 fun CyberCategoryCard(item: HomeCategoryItem, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val transition = rememberInfiniteTransition(label = "category_neon")
-    val pulse by transition.animateFloat(
-        initialValue = 0.55f, targetValue = 0.95f,
-        animationSpec = infiniteRepeatable(tween(2000), repeatMode = RepeatMode.Reverse),
-        label = "category_glow"
-    )
-    val glow = if (pressed) 1.15f else pulse
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(18.dp)
+
+    // Superficie unificada: fondo oscuro esmerilado con acento de color SOLO en el ícono
     Box(
         modifier = modifier
-            .height(96.dp)
+            .height(102.dp)
             .clip(shape)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        item.accentColor.copy(alpha = 0.22f * glow),
-                        Color(0xFF0F1829),
-                        Color(0xFF060B14)
+            .background(Color(0xFF0C1424).copy(alpha = 0.85f))
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = if (pressed) 0.35f else 0.16f),
+                        Color(0xFF1E293B).copy(alpha = 0.40f)
                     )
-                )
+                ),
+                shape = shape
             )
-            .drawBehind {
-                val radius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx())
-                // Halo exterior difuminado neón
-                drawRoundRect(
-                    item.accentColor.copy(alpha = 0.15f + glow * 0.12f),
-                    style = Stroke(8.dp.toPx()),
-                    cornerRadius = radius
-                )
-                // Contorno fino brillante
-                drawRoundRect(
-                    item.accentColor.copy(alpha = 0.50f + glow * 0.45f),
-                    style = Stroke(1.4.dp.toPx()),
-                    cornerRadius = radius
-                )
-                // Reflejo interior vidrioso
-                drawRoundRect(
-                    Color.White.copy(alpha = 0.12f + glow * 0.08f),
-                    topLeft = Offset(2.dp.toPx(), 2.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(size.width - 4.dp.toPx(), size.height - 4.dp.toPx()),
-                    style = Stroke(0.7.dp.toPx()),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())
-                )
-                // Acento luminoso superior
-                drawRoundRect(
-                    brush = Brush.horizontalGradient(
-                        listOf(
-                            Color.Transparent,
-                            item.accentColor.copy(alpha = 0.85f * glow),
-                            Color.Transparent
-                        )
-                    ),
-                    topLeft = Offset(size.width * 0.20f, 1.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(size.width * 0.60f, 1.5.dp.toPx()),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
-                )
-            }
             .clickable(interactionSource = interaction, indication = null) { item.onClick() }
             .testTag("home_category_${item.id}"),
         contentAlignment = Alignment.Center
     ) {
         Column(
-            Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 7.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 6.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Contenedor de icono estilizado con halo de neón
+            // Contenedor de ícono con color característico de la categoría
             Box(
                 Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(item.accentColor.copy(alpha = 0.12f))
-                    .drawBehind {
-                        drawCircle(
-                            item.accentColor.copy(alpha = 0.25f + glow * 0.25f),
-                            radius = size.minDimension * 0.52f
-                        )
-                        drawCircle(
-                            item.accentColor.copy(alpha = 0.12f + glow * 0.15f),
-                            radius = size.minDimension * 0.70f
-                        )
-                    },
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(item.accentColor.copy(alpha = 0.14f))
+                    .border(1.dp, item.accentColor.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     item.icon,
                     contentDescription = item.title,
                     tint = item.accentColor,
-                    modifier = Modifier.size(19.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
+
+            // Título sin desborde (evita que se corte 'Comida', 'Mis compras', etc.)
             Text(
                 item.title,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
-                maxLines = 1
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
+
+            // Subtítulo conciso
             Text(
                 item.subtitle,
-                fontSize = 8.sp,
-                lineHeight = 10.sp,
-                color = Color(0xFFCBD5E1),
+                fontSize = 8.5.sp,
+                lineHeight = 11.sp,
+                color = Color(0xFF94A3B8),
                 maxLines = 2,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 2.dp)
-            )
-            // Barra de acento inferior neón
-            Box(
-                Modifier
-                    .width(22.dp)
-                    .height(2.2.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                item.accentColor.copy(alpha = 0.3f),
-                                item.accentColor,
-                                item.accentColor.copy(alpha = 0.3f)
-                            )
-                        )
-                    )
             )
         }
     }
